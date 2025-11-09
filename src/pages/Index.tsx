@@ -32,7 +32,7 @@ const Index = () => {
   const [clickId, setClickId] = useState<string>("");
   const [leadData, setLeadData] = useState<LeadData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const BOT_USERNAME = "YourBotUsername"; // Replace with your actual bot username
+  const BOT_USERNAME = "ClientinfoHarvestBot";
 
   // Parse URL params and save initial click data
   useEffect(() => {
@@ -135,7 +135,7 @@ const Index = () => {
 
           // Redirect to Telegram bot after 3 seconds
           setTimeout(() => {
-            window.location.href = `https://t.me/${BOT_USERNAME}?start=${clickId}`;
+            window.location.href = `https://t.me/${BOT_USERNAME}`;
           }, 3000);
         }
       } catch (error: any) {
@@ -150,6 +150,7 @@ const Index = () => {
       script.src = "https://telegram.org/js/telegram-widget.js?22";
       script.setAttribute("data-telegram-login", BOT_USERNAME);
       script.setAttribute("data-size", "large");
+      script.setAttribute("data-userpic", "false");
       script.setAttribute("data-onauth", "onTelegramAuth(user)");
       script.setAttribute("data-request-access", "write");
       script.async = true;
