@@ -9,25 +9,25 @@ const Redirect = () => {
   useEffect(() => {
     const handleRedirect = async () => {
       try {
-        // Get fbclid from URL parameters
+        // Get parameters from URL
         const fbclid = searchParams.get("fbclid");
-        
-        if (!fbclid) {
-          console.error("No fbclid found in URL");
-          setStatus("error");
-          return;
-        }
+        const utmCampaign = searchParams.get("utm_campaign");
+        const utmContent = searchParams.get("utm_content");
 
         // Get device information
         const device = /Mobile|Android|iPhone/i.test(navigator.userAgent) 
           ? "mobile" 
           : "desktop";
 
+        console.log("Redirect params:", { fbclid, utmCampaign, utmContent, device });
+
         // Insert traffic data and generate click_id
         const { data, error } = await supabase
           .from("telegram_leads")
           .insert({
-            fbclid,
+            fbclid: fbclid || null,
+            utm_campaign: utmCampaign || null,
+            utm_content: utmContent || null,
             device,
             timestamp: new Date().toISOString(),
           })
@@ -50,8 +50,7 @@ const Redirect = () => {
         setStatus("redirecting");
 
         // Redirect to Telegram bot with the generated token
-        // Replace 'YOUR_BOT_USERNAME' with your actual bot username
-        const botUsername = "YOUR_BOT_USERNAME"; // TODO: Configure this
+        const botUsername = "lovableclouddemo_bot"; // Your bot username
         const telegramUrl = `https://t.me/${botUsername}?start=${data.click_id}`;
         
         // Redirect after a brief delay to show status
