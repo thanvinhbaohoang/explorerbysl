@@ -20,7 +20,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Users, Bell, MessageSquare, Send } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Users, Bell, MessageSquare, Send, TrendingUp } from "lucide-react";
 
 interface Customer {
   id: string;
@@ -55,6 +56,19 @@ interface Message {
   sender_type: string;
 }
 
+interface TrafficData {
+  id: string;
+  facebook_click_id: string | null;
+  created_at: string;
+  customer: {
+    id: string;
+    telegram_id: number;
+    username: string | null;
+    first_name: string | null;
+    last_name: string | null;
+  } | null;
+}
+
 const Dashboard = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -64,6 +78,8 @@ const Dashboard = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [trafficData, setTrafficData] = useState<TrafficData[]>([]);
+  const [isLoadingTraffic, setIsLoadingTraffic] = useState(false);
 
   // Fetch customers
   useEffect(() => {
@@ -86,6 +102,52 @@ const Dashboard = () => {
 
     fetchCustomers();
   }, []);
+
+  // Fetch traffic data
+  const fetchTrafficData = async () => {
+    setIsLoadingTraffic(true);
+    try {
+      const { data: leads, error } = await supabase
+        .from("telegram_leads")
+        .select("id, facebook_click_id, created_at, user_id")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      // Fetch customer data for each lead that has a user_id
+      const trafficWithCustomers = await Promise.all(
+        (leads || []).map(async (lead) => {
+          if (lead.user_id) {
+            const { data: customer } = await supabase
+              .from("customer")
+              .select("id, telegram_id, username, first_name, last_name")
+              .eq("id", lead.user_id)
+              .single();
+
+            return {
+              id: lead.id,
+              facebook_click_id: lead.facebook_click_id,
+              created_at: lead.created_at,
+              customer,
+            };
+          }
+          return {
+            id: lead.id,
+            facebook_click_id: lead.facebook_click_id,
+            created_at: lead.created_at,
+            customer: null,
+          };
+        })
+      );
+
+      setTrafficData(trafficWithCustomers);
+    } catch (error: any) {
+      console.error("Error fetching traffic data:", error);
+      toast.error("Failed to load traffic data");
+    } finally {
+      setIsLoadingTraffic(false);
+    }
+  };
 
   // Send reply to customer
   const sendReply = async () => {
@@ -242,7 +304,7 @@ const Dashboard = () => {
           <div>
             <h1 className="text-4xl font-bold text-foreground">Dashboard</h1>
             <p className="text-muted-foreground mt-2">
-              Monitor your Telegram bot customers in real-time
+              Monitor your Telegram bot customers and traffic
             </p>
           </div>
           <div className="flex items-center gap-2 text-muted-foreground">
@@ -252,87 +314,187 @@ const Dashboard = () => {
           </div>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Customer List</CardTitle>
-            <CardDescription>
-              All customers who have interacted with your bot
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {customers.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No customers yet. Share your bot to get started!
-              </div>
-            ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Username</TableHead>
-                      <TableHead>Telegram ID</TableHead>
-                      <TableHead>Language</TableHead>
-                      <TableHead>Premium</TableHead>
-                      <TableHead>First Message</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {customers.map((customer) => (
-                      <TableRow key={customer.id}>
-                        <TableCell className="font-medium">
-                          {customer.first_name} {customer.last_name}
-                        </TableCell>
-                        <TableCell>
-                          {customer.username ? (
-                            <span className="text-muted-foreground">
-                              @{customer.username}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground italic">
-                              No username
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <code className="text-xs bg-muted px-2 py-1 rounded">
-                            {customer.telegram_id}
-                          </code>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {customer.language_code || "Unknown"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {customer.is_premium ? (
-                            <Badge variant="default">Premium</Badge>
-                          ) : (
-                            <Badge variant="secondary">Standard</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {formatDate(customer.first_message_at)}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => loadMessages(customer)}
-                          >
-                            <MessageSquare className="h-4 w-4 mr-2" />
-                            View Messages
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="customers" className="w-full">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="customers">
+              <Users className="h-4 w-4 mr-2" />
+              Customers
+            </TabsTrigger>
+            <TabsTrigger value="traffic" onClick={() => fetchTrafficData()}>
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Customer Traffic
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="customers">
+            <Card>
+              <CardHeader>
+                <CardTitle>Customer List</CardTitle>
+                <CardDescription>
+                  All customers who have interacted with your bot
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {customers.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No customers yet. Share your bot to get started!
+                  </div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Username</TableHead>
+                          <TableHead>Telegram ID</TableHead>
+                          <TableHead>Language</TableHead>
+                          <TableHead>Premium</TableHead>
+                          <TableHead>First Message</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {customers.map((customer) => (
+                          <TableRow key={customer.id}>
+                            <TableCell className="font-medium">
+                              {customer.first_name} {customer.last_name}
+                            </TableCell>
+                            <TableCell>
+                              {customer.username ? (
+                                <span className="text-muted-foreground">
+                                  @{customer.username}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground italic">
+                                  No username
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <code className="text-xs bg-muted px-2 py-1 rounded">
+                                {customer.telegram_id}
+                              </code>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">
+                                {customer.language_code || "Unknown"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {customer.is_premium ? (
+                                <Badge variant="default">Premium</Badge>
+                              ) : (
+                                <Badge variant="secondary">Standard</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {formatDate(customer.first_message_at)}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => loadMessages(customer)}
+                              >
+                                <MessageSquare className="h-4 w-4 mr-2" />
+                                View Messages
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="traffic">
+            <Card>
+              <CardHeader>
+                <CardTitle>Customer Traffic</CardTitle>
+                <CardDescription>
+                  Ad source tracking and customer acquisition data
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingTraffic ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    Loading traffic data...
+                  </div>
+                ) : trafficData.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No traffic data yet.
+                  </div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Token ID</TableHead>
+                          <TableHead>Ad Source</TableHead>
+                          <TableHead>Customer</TableHead>
+                          <TableHead>Telegram ID</TableHead>
+                          <TableHead>Username</TableHead>
+                          <TableHead>Created At</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {trafficData.map((traffic) => (
+                          <TableRow key={traffic.id}>
+                            <TableCell>
+                              <code className="text-xs bg-muted px-2 py-1 rounded">
+                                {traffic.id.slice(0, 8)}...
+                              </code>
+                            </TableCell>
+                            <TableCell>
+                              {traffic.facebook_click_id ? (
+                                <Badge variant="default">
+                                  FB: {traffic.facebook_click_id.slice(0, 12)}...
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary">Direct</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {traffic.customer ? (
+                                `${traffic.customer.first_name || ''} ${traffic.customer.last_name || ''}`
+                              ) : (
+                                <span className="text-muted-foreground italic">Not linked</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {traffic.customer ? (
+                                <code className="text-xs bg-muted px-2 py-1 rounded">
+                                  {traffic.customer.telegram_id}
+                                </code>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {traffic.customer?.username ? (
+                                <span className="text-muted-foreground">
+                                  @{traffic.customer.username}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {formatDate(traffic.created_at)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Messages Dialog */}
