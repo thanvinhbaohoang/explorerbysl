@@ -158,6 +158,7 @@ async function saveMessage(message: any) {
         photoFileId = largestPhoto.file_id;
         photoUrl = await getFileUrl(photoFileId);
         messageText = message.caption || '[Photo]';
+        console.log("Photo captured:", { photoFileId, photoUrl, caption: message.caption });
       }
 
       // Handle voice messages
@@ -222,13 +223,14 @@ async function saveMessage(message: any) {
           photo_url: photoUrl,
           voice_file_id: voiceFileId,
           voice_duration: voiceDuration,
+          voice_url: null, // Will be null for non-voice messages
           timestamp: new Date(message.date * 1000).toISOString(),
         });
 
       if (error) {
         console.error("Error saving message:", error);
       } else {
-        console.log("Message saved successfully:", messageType);
+        console.log("Message saved successfully:", { messageType, photoUrl, messageText });
       }
     }
   } catch (error) {

@@ -353,9 +353,16 @@ const Dashboard = () => {
                     </div>
                   )}
 
-                  {/* Text content */}
-                  {message.message_text && message.message_type !== 'voice' && (
+                  {/* Text content - only show for text messages or as caption */}
+                  {message.message_text && message.message_type === 'text' && (
                     <div className="text-sm">
+                      {message.message_text}
+                    </div>
+                  )}
+                  
+                  {/* Caption for photos */}
+                  {message.message_text && message.message_type === 'photo' && message.message_text !== '[Photo]' && (
+                    <div className="text-sm text-muted-foreground italic">
                       {message.message_text}
                     </div>
                   )}
