@@ -9,6 +9,11 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const HUMAN_ACCOUNT = "Haroldthan";
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 if (!BOT_TOKEN) {
   throw new Error("TELEGRAM_BOT_TOKEN is not set");
 }
@@ -250,6 +255,11 @@ async function saveMessage(message: any) {
 
 // Handle incoming webhook
 serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
   try {
     if (req.method === "POST") {
       // Parse the body once
@@ -263,7 +273,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ error: "Missing required fields" }),
             {
-              headers: { "Content-Type": "application/json" },
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
               status: 400,
             }
           );
@@ -297,7 +307,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ success: true }),
             {
-              headers: { "Content-Type": "application/json" },
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
               status: 200,
             }
           );
@@ -306,7 +316,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ error: error.message }),
             {
-              headers: { "Content-Type": "application/json" },
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
               status: 500,
             }
           );
@@ -327,7 +337,7 @@ serve(async (req) => {
       }
 
       return new Response(JSON.stringify({ ok: true }), {
-        headers: { "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
     }
@@ -342,7 +352,7 @@ serve(async (req) => {
         bot_username: meData.result?.username,
       }),
       {
-        headers: { "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       }
     );
@@ -351,7 +361,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ error: error.message }),
       {
-        headers: { "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
       }
     );
