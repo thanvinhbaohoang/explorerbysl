@@ -102,6 +102,14 @@ const Dashboard = () => {
 
       toast.success("Message sent successfully!");
       setReplyText("");
+      
+      // Scroll to bottom after sending
+      setTimeout(() => {
+        const messagesContainer = document.getElementById('messages-container');
+        if (messagesContainer) {
+          messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+      }, 100);
     } catch (error: any) {
       console.error("Error sending message:", error);
       toast.error("Failed to send message");
@@ -121,10 +129,18 @@ const Dashboard = () => {
         .from("messages")
         .select("*")
         .eq("customer_id", customer.id)
-        .order("timestamp", { ascending: false });
+        .order("timestamp", { ascending: true }); // Changed to ascending
 
       if (error) throw error;
       setMessages(data || []);
+      
+      // Scroll to bottom after loading
+      setTimeout(() => {
+        const messagesContainer = document.getElementById('messages-container');
+        if (messagesContainer) {
+          messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+      }, 100);
     } catch (error: any) {
       console.error("Error fetching messages:", error);
       toast.error("Failed to load messages");
@@ -185,7 +201,15 @@ const Dashboard = () => {
         (payload) => {
           const newMessage = payload.new as Message;
           console.log("New message received:", newMessage);
-          setMessages((prev) => [newMessage, ...prev]);
+          setMessages((prev) => [...prev, newMessage]); // Changed to append at end
+          
+          // Scroll to bottom when new message arrives
+          setTimeout(() => {
+            const messagesContainer = document.getElementById('messages-container');
+            if (messagesContainer) {
+              messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+          }, 100);
         }
       )
       .subscribe();
@@ -331,7 +355,11 @@ const Dashboard = () => {
                 No messages yet
               </div>
             ) : (
-              messages.map((message) => (
+              <div 
+                id="messages-container"
+                className="space-y-4 max-h-[400px] overflow-y-auto"
+              >
+                {messages.map((message) => (
                 <div
                   key={message.id}
                   className={`border rounded-lg p-4 space-y-3 ${
@@ -409,7 +437,8 @@ const Dashboard = () => {
                     </div>
                   )}
                 </div>
-              ))
+              ))}
+              </div>
             )}
           </div>
 
