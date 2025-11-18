@@ -1,6 +1,11 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const HUMAN_ACCOUNT = "Haroldthan";
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
@@ -55,6 +60,32 @@ async function handleStart(message: any) {
   };
 
   console.log("User started bot:", info);
+
+  // Save customer to database
+  try {
+    const { data, error } = await supabase
+      .from('customer')
+      .upsert({
+        telegram_id: u.id,
+        username: u.username || null,
+        first_name: u.first_name || null,
+        last_name: u.last_name || null,
+        language_code: u.language_code || null,
+        is_premium: u.is_premium || false,
+        first_message_at: new Date().toISOString(),
+      }, {
+        onConflict: 'telegram_id',
+        ignoreDuplicates: false
+      });
+
+    if (error) {
+      console.error("Error saving customer to database:", error);
+    } else {
+      console.log("Customer saved to database:", data);
+    }
+  } catch (dbError) {
+    console.error("Database error:", dbError);
+  }
 
   // Format message
   const msg = `

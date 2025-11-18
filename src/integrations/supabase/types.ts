@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      customer: {
+        Row: {
+          created_at: string
+          first_message_at: string
+          first_name: string | null
+          id: string
+          is_premium: boolean | null
+          language_code: string | null
+          last_name: string | null
+          telegram_id: number
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          created_at?: string
+          first_message_at?: string
+          first_name?: string | null
+          id?: string
+          is_premium?: boolean | null
+          language_code?: string | null
+          last_name?: string | null
+          telegram_id: number
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          created_at?: string
+          first_message_at?: string
+          first_name?: string | null
+          id?: string
+          is_premium?: boolean | null
+          language_code?: string | null
+          last_name?: string | null
+          telegram_id?: number
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
       telegram_leads: {
         Row: {
           click_id: string
