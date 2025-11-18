@@ -53,6 +53,44 @@ export type Database = {
         }
         Relationships: []
       }
+      messages: {
+        Row: {
+          created_at: string
+          customer_id: string | null
+          id: string
+          message_text: string | null
+          message_type: string | null
+          telegram_id: number
+          timestamp: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          message_text?: string | null
+          message_type?: string | null
+          telegram_id: number
+          timestamp?: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          message_text?: string | null
+          message_type?: string | null
+          telegram_id?: number
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       telegram_leads: {
         Row: {
           click_id: string
