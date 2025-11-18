@@ -1,11 +1,23 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const Redirect = () => {
   const [searchParams] = useSearchParams();
-  const [status, setStatus] = useState<"processing" | "redirecting" | "error">("processing");
+  const [status, setStatus] = useState<"processing" | "ready" | "redirecting" | "error">("processing");
   const [debugInfo, setDebugInfo] = useState<{ fullUrl: string; fbclid: string | null }>({ fullUrl: "", fbclid: null });
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [telegramUrl, setTelegramUrl] = useState("");
 
   useEffect(() => {
     const handleRedirect = async () => {
@@ -63,16 +75,15 @@ const Redirect = () => {
           id: data.id, 
           facebook_click_id: data.facebook_click_id 
         });
-        setStatus("redirecting");
+        setStatus("ready");
 
-        // Redirect to Telegram bot with the generated token
+        // Prepare Telegram URL
         const botUsername = "ClientinfoHarvestBot";
-        const telegramUrl = `https://t.me/${botUsername}?start=${data.id}`;
+        const url = `https://t.me/${botUsername}?start=${data.id}`;
+        setTelegramUrl(url);
         
-        // Redirect after a brief delay to show status
-        setTimeout(() => {
-          window.location.href = telegramUrl;
-        }, 1000);
+        // Show confirmation dialog
+        setShowConfirmDialog(true);
 
       } catch (err) {
         console.error("Unexpected error:", err);
@@ -82,6 +93,19 @@ const Redirect = () => {
 
     handleRedirect();
   }, [searchParams]);
+
+  const handleConfirmRedirect = () => {
+    setShowConfirmDialog(false);
+    setStatus("redirecting");
+    setTimeout(() => {
+      window.location.href = telegramUrl;
+    }, 500);
+  };
+
+  const handleCancelRedirect = () => {
+    setShowConfirmDialog(false);
+    setStatus("error");
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -104,6 +128,17 @@ const Redirect = () => {
           </>
         )}
         
+        {status === "ready" && (
+          <>
+            <div className="w-16 h-16 border-4 border-primary rounded-full mx-auto mb-4 flex items-center justify-center">
+              <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p className="text-lg text-foreground">Ready to redirect. Please confirm...</p>
+          </>
+        )}
+        
         {status === "redirecting" && (
           <>
             <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -122,6 +157,29 @@ const Redirect = () => {
           </>
         )}
       </div>
+
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Redirect</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>Please confirm the tracking information before redirecting to Telegram:</p>
+              <div className="mt-4 p-3 bg-muted rounded-md text-left">
+                <p className="text-sm">
+                  <strong>Facebook Click ID:</strong>{" "}
+                  <span className="font-mono">{debugInfo.fbclid || "(none)"}</span>
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelRedirect}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmRedirect}>
+              Continue to Telegram
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
