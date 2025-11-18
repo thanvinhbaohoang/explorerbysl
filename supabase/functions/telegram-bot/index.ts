@@ -207,7 +207,7 @@ async function saveMessage(message: any) {
         return; // Early return for voice messages
       }
 
-      // Handle video messages
+      // Handle video messages (regular videos)
       if (message.video) {
         messageType = 'video';
         const videoFileId = message.video.file_id;
@@ -240,6 +240,40 @@ async function saveMessage(message: any) {
           console.log("Video message saved successfully");
         }
         return; // Early return for video messages
+      }
+
+      // Handle video note messages (circular videos)
+      if (message.video_note) {
+        messageType = 'video';
+        const videoFileId = message.video_note.file_id;
+        const videoDuration = message.video_note.duration;
+        const videoUrl = await getFileUrl(videoFileId);
+        messageText = '[Video Note]';
+        
+        console.log("Video note captured:", { videoFileId, videoUrl, duration: videoDuration });
+        
+        // Save with video URL
+        const { error } = await supabase
+          .from('messages')
+          .insert({
+            customer_id: customer.id,
+            telegram_id: message.from.id,
+            message_text: messageText,
+            message_type: messageType,
+            video_file_id: videoFileId,
+            video_url: videoUrl,
+            video_duration: videoDuration,
+            video_mime_type: 'video/mp4',
+            sender_type: 'customer',
+            timestamp: new Date(message.date * 1000).toISOString(),
+          });
+
+        if (error) {
+          console.error("Error saving video note:", error);
+        } else {
+          console.log("Video note saved successfully");
+        }
+        return; // Early return for video note messages
       }
 
       // Handle audio messages
