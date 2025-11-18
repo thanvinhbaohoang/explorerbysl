@@ -11,27 +11,16 @@ const Redirect = () => {
       try {
         // Get parameters from URL
         const fbclid = searchParams.get("fbclid");
-        const utmCampaign = searchParams.get("utm_campaign");
-        const utmContent = searchParams.get("utm_content");
 
-        // Get device information
-        const device = /Mobile|Android|iPhone/i.test(navigator.userAgent) 
-          ? "mobile" 
-          : "desktop";
+        console.log("Redirect params:", { fbclid });
 
-        console.log("Redirect params:", { fbclid, utmCampaign, utmContent, device });
-
-        // Insert traffic data and generate click_id
+        // Insert traffic data and generate token (id)
         const { data, error } = await supabase
           .from("telegram_leads")
           .insert({
-            fbclid: fbclid || null,
-            utm_campaign: utmCampaign || null,
-            utm_content: utmContent || null,
-            device,
-            timestamp: new Date().toISOString(),
+            facebook_click_id: fbclid || null,
           })
-          .select("click_id")
+          .select("id")
           .single();
 
         if (error) {
@@ -40,18 +29,18 @@ const Redirect = () => {
           return;
         }
 
-        if (!data?.click_id) {
-          console.error("No click_id returned");
+        if (!data?.id) {
+          console.error("No id returned");
           setStatus("error");
           return;
         }
 
-        console.log("Traffic saved with click_id:", data.click_id);
+        console.log("Traffic saved with token:", data.id);
         setStatus("redirecting");
 
         // Redirect to Telegram bot with the generated token
-        const botUsername = "ClientinfoHarvestBot"; // Your bot username
-        const telegramUrl = `https://t.me/${botUsername}?start=${data.click_id}`;
+        const botUsername = "ClientinfoHarvestBot";
+        const telegramUrl = `https://t.me/${botUsername}?start=${data.id}`;
         
         // Redirect after a brief delay to show status
         setTimeout(() => {
