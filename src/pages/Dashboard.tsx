@@ -46,6 +46,7 @@ interface Message {
   voice_file_id: string | null;
   voice_duration: number | null;
   voice_transcription: string | null;
+  voice_url: string | null;
 }
 
 const Dashboard = () => {
@@ -324,19 +325,31 @@ const Dashboard = () => {
 
                   {/* Voice message display */}
                   {message.message_type === 'voice' && (
-                    <div className="flex items-center gap-3 p-3 bg-muted rounded-md">
-                      <MessageSquare className="h-5 w-5 text-muted-foreground" />
-                      <div className="flex-1">
-                        <div className="text-sm font-medium">Voice Message</div>
-                        <div className="text-xs text-muted-foreground">
-                          Duration: {message.voice_duration}s
-                        </div>
-                        {message.voice_transcription && (
-                          <div className="text-sm mt-1 italic">
-                            "{message.voice_transcription}"
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-3 p-3 bg-muted rounded-md">
+                        <MessageSquare className="h-5 w-5 text-muted-foreground" />
+                        <div className="flex-1">
+                          <div className="text-sm font-medium">Voice Message</div>
+                          <div className="text-xs text-muted-foreground">
+                            Duration: {message.voice_duration}s
                           </div>
-                        )}
+                        </div>
                       </div>
+                      {message.voice_url && (
+                        <audio 
+                          controls 
+                          className="w-full"
+                          preload="metadata"
+                        >
+                          <source src={message.voice_url} type="audio/ogg" />
+                          Your browser does not support the audio element.
+                        </audio>
+                      )}
+                      {message.voice_transcription && (
+                        <div className="text-sm mt-2 p-2 bg-muted/50 rounded italic">
+                          "{message.voice_transcription}"
+                        </div>
+                      )}
                     </div>
                   )}
 
