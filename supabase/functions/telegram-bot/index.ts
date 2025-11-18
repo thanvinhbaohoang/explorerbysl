@@ -252,79 +252,78 @@ async function saveMessage(message: any) {
 serve(async (req) => {
   try {
     if (req.method === "POST") {
-      const contentType = req.headers.get("content-type");
+      // Parse the body once
+      const body = await req.json();
       
-      // Handle JSON requests (from frontend to send messages)
-      if (contentType?.includes("application/json")) {
-        const body = await req.json();
+      // Check if this is a send message request from frontend
+      if (body.action === "send_message") {
+        const { telegram_id, customer_id, message_text } = body;
         
-        // Check if this is a send message request from frontend
-        if (body.action === "send_message") {
-          const { telegram_id, customer_id, message_text } = body;
-          
-          if (!telegram_id || !message_text) {
-            return new Response(
-              JSON.stringify({ error: "Missing required fields" }),
-              {
-                headers: { "Content-Type": "application/json" },
-                status: 400,
-              }
-            );
-          }
-
-          try {
-            // Send message to Telegram user
-            await sendMessage(telegram_id, message_text);
-            
-            // Save to database
-            const { error: dbError } = await supabase
-              .from('messages')
-              .insert({
-                customer_id,
-                telegram_id,
-                message_text,
-                message_type: 'text',
-                sender_type: 'employee',
-                timestamp: new Date().toISOString(),
-              });
-
-            if (dbError) {
-              console.error("Error saving employee message:", dbError);
-              throw dbError;
+        if (!telegram_id || !message_text) {
+          return new Response(
+            JSON.stringify({ error: "Missing required fields" }),
+            {
+              headers: { "Content-Type": "application/json" },
+              status: 400,
             }
+          );
+        }
 
-            return new Response(
-              JSON.stringify({ success: true }),
-              {
-                headers: { "Content-Type": "application/json" },
-                status: 200,
-              }
-            );
-          } catch (error: any) {
-            console.error("Error sending message:", error);
-            return new Response(
-              JSON.stringify({ error: error.message }),
-              {
-                headers: { "Content-Type": "application/json" },
-                status: 500,
-              }
-            );
+        try {
+          console.log("Sending message to:", telegram_id, "Text:", message_text);
+          
+          // Send message to Telegram user
+          await sendMessage(telegram_id, message_text);
+          
+          // Save to database
+          const { error: dbError } = await supabase
+            .from('messages')
+            .insert({
+              customer_id,
+              telegram_id,
+              message_text,
+              message_type: 'text',
+              sender_type: 'employee',
+              timestamp: new Date().toISOString(),
+            });
+
+          if (dbError) {
+            console.error("Error saving employee message:", dbError);
+            throw dbError;
           }
+
+          console.log("Message sent and saved successfully");
+          
+          return new Response(
+            JSON.stringify({ success: true }),
+            {
+              headers: { "Content-Type": "application/json" },
+              status: 200,
+            }
+          );
+        } catch (error: any) {
+          console.error("Error sending message:", error);
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            {
+              headers: { "Content-Type": "application/json" },
+              status: 500,
+            }
+          );
         }
       }
       
       // Handle webhook updates from Telegram
-      const update = await req.json();
-      console.log("Received webhook:", JSON.stringify(update));
+      console.log("Received webhook:", JSON.stringify(body));
 
       // Handle /start command
-      if (update.message?.text?.startsWith("/start")) {
-        await handleStart(update.message);
+      if (body.message?.text?.startsWith("/start")) {
+        await handleStart(body.message);
       }
       
       // Save all messages to database
-      if (update.message) {
-        await saveMessage(update.message);
+      if (body.message) {
+        await saveMessage(body.message);
       }
 
       return new Response(JSON.stringify({ ok: true }), {
