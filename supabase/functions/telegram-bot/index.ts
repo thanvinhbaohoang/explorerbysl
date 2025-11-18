@@ -59,31 +59,55 @@ async function handleStart(message: any) {
   
   console.log("Start command token:", token);
 
-  // Save customer to database first
+  // Check if customer already exists, otherwise create new one
   let customerId = null;
   try {
-    const { data: customerData, error: customerError } = await supabase
+    // First check if customer exists
+    const { data: existingCustomer } = await supabase
       .from('customer')
-      .upsert({
-        telegram_id: u.id,
-        username: u.username || null,
-        first_name: u.first_name || null,
-        last_name: u.last_name || null,
-        language_code: u.language_code || null,
-        is_premium: u.is_premium || false,
-        first_message_at: new Date().toISOString(),
-      }, {
-        onConflict: 'telegram_id',
-        ignoreDuplicates: false
-      })
       .select('id')
-      .single();
+      .eq('telegram_id', u.id)
+      .maybeSingle();
 
-    if (customerError) {
-      console.error("Error saving customer to database:", customerError);
+    if (existingCustomer) {
+      // Customer exists - use existing ID
+      customerId = existingCustomer.id;
+      console.log("Existing customer found with id:", customerId);
+      
+      // Update customer info
+      await supabase
+        .from('customer')
+        .update({
+          username: u.username || null,
+          first_name: u.first_name || null,
+          last_name: u.last_name || null,
+          language_code: u.language_code || null,
+          is_premium: u.is_premium || false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', customerId);
     } else {
-      customerId = customerData?.id;
-      console.log("Customer saved to database with id:", customerId);
+      // Customer doesn't exist - create new one
+      const { data: newCustomer, error: insertError } = await supabase
+        .from('customer')
+        .insert({
+          telegram_id: u.id,
+          username: u.username || null,
+          first_name: u.first_name || null,
+          last_name: u.last_name || null,
+          language_code: u.language_code || null,
+          is_premium: u.is_premium || false,
+          first_message_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single();
+
+      if (insertError) {
+        console.error("Error creating new customer:", insertError);
+      } else {
+        customerId = newCustomer?.id;
+        console.log("New customer created with id:", customerId);
+      }
     }
   } catch (dbError) {
     console.error("Database error:", dbError);
