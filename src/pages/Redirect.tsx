@@ -50,7 +50,7 @@ const Redirect = () => {
         setStatus("redirecting");
 
         // Redirect to Telegram bot with the generated token
-        const botUsername = "@ClientinfoHarvestBot"; // Your bot username
+        const botUsername = "ClientinfoHarvestBot"; // Your bot username
         const telegramUrl = `https://t.me/${botUsername}?start=${data.click_id}`;
         
         // Redirect after a brief delay to show status
