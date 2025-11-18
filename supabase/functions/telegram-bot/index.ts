@@ -116,6 +116,39 @@ Please tap below to chat with our human support team 👇
   });
 }
 
+// Save message to database
+async function saveMessage(message: any) {
+  try {
+    // First, ensure customer exists
+    const { data: customer } = await supabase
+      .from('customer')
+      .select('id')
+      .eq('telegram_id', message.from.id)
+      .single();
+
+    if (customer) {
+      // Save the message
+      const { error } = await supabase
+        .from('messages')
+        .insert({
+          customer_id: customer.id,
+          telegram_id: message.from.id,
+          message_text: message.text || message.caption || '[Non-text message]',
+          message_type: message.text ? 'text' : (message.photo ? 'photo' : 'other'),
+          timestamp: new Date(message.date * 1000).toISOString(),
+        });
+
+      if (error) {
+        console.error("Error saving message:", error);
+      } else {
+        console.log("Message saved successfully");
+      }
+    }
+  } catch (error) {
+    console.error("Error in saveMessage:", error);
+  }
+}
+
 // Handle incoming webhook
 serve(async (req) => {
   try {
@@ -126,6 +159,11 @@ serve(async (req) => {
       // Handle /start command
       if (update.message?.text?.startsWith("/start")) {
         await handleStart(update.message);
+      }
+      
+      // Save all messages to database
+      if (update.message) {
+        await saveMessage(update.message);
       }
 
       return new Response(JSON.stringify({ ok: true }), {

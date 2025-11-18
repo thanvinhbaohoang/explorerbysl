@@ -11,7 +11,15 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, Bell } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Users, Bell, MessageSquare } from "lucide-react";
 
 interface Customer {
   id: string;
@@ -25,9 +33,23 @@ interface Customer {
   created_at: string;
 }
 
+interface Message {
+  id: string;
+  customer_id: string;
+  telegram_id: number;
+  message_text: string | null;
+  message_type: string;
+  timestamp: string;
+  created_at: string;
+}
+
 const Dashboard = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   // Fetch customers
   useEffect(() => {
@@ -50,6 +72,29 @@ const Dashboard = () => {
 
     fetchCustomers();
   }, []);
+
+  // Load messages for selected customer
+  const loadMessages = async (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setDialogOpen(true);
+    setIsLoadingMessages(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("customer_id", customer.id)
+        .order("timestamp", { ascending: false });
+
+      if (error) throw error;
+      setMessages(data || []);
+    } catch (error: any) {
+      console.error("Error fetching messages:", error);
+      toast.error("Failed to load messages");
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  };
 
   // Real-time subscription for new customers
   useEffect(() => {
@@ -85,6 +130,33 @@ const Dashboard = () => {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // Real-time subscription for new messages
+  useEffect(() => {
+    if (!selectedCustomer) return;
+
+    const channel = supabase
+      .channel("message-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `customer_id=eq.${selectedCustomer.id}`,
+        },
+        (payload) => {
+          const newMessage = payload.new as Message;
+          console.log("New message received:", newMessage);
+          setMessages((prev) => [newMessage, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedCustomer]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
@@ -138,6 +210,7 @@ const Dashboard = () => {
                       <TableHead>Language</TableHead>
                       <TableHead>Premium</TableHead>
                       <TableHead>First Message</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -177,6 +250,16 @@ const Dashboard = () => {
                         <TableCell className="text-muted-foreground text-sm">
                           {formatDate(customer.first_message_at)}
                         </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => loadMessages(customer)}
+                          >
+                            <MessageSquare className="h-4 w-4 mr-2" />
+                            View Messages
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -186,6 +269,51 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Messages Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Messages from {selectedCustomer?.first_name}{" "}
+              {selectedCustomer?.last_name}
+            </DialogTitle>
+            <DialogDescription>
+              @{selectedCustomer?.username || "No username"} • Telegram ID:{" "}
+              {selectedCustomer?.telegram_id}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-4">
+            {isLoadingMessages ? (
+              <div className="text-center py-8 text-muted-foreground">
+                Loading messages...
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No messages yet
+              </div>
+            ) : (
+              messages.map((message) => (
+                <div
+                  key={message.id}
+                  className="border rounded-lg p-4 space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <Badge variant="outline">{message.message_type}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(message.timestamp)}
+                    </span>
+                  </div>
+                  <div className="text-sm">
+                    {message.message_text || "[No text content]"}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
