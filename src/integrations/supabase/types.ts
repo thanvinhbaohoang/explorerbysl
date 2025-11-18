@@ -62,6 +62,7 @@ export type Database = {
           message_type: string | null
           photo_file_id: string | null
           photo_url: string | null
+          sender_type: string | null
           telegram_id: number
           timestamp: string
           voice_duration: number | null
@@ -77,6 +78,7 @@ export type Database = {
           message_type?: string | null
           photo_file_id?: string | null
           photo_url?: string | null
+          sender_type?: string | null
           telegram_id: number
           timestamp?: string
           voice_duration?: number | null
@@ -92,6 +94,7 @@ export type Database = {
           message_type?: string | null
           photo_file_id?: string | null
           photo_url?: string | null
+          sender_type?: string | null
           telegram_id?: number
           timestamp?: string
           voice_duration?: number | null

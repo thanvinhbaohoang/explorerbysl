@@ -12,6 +12,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Users, Bell, MessageSquare } from "lucide-react";
+import { Users, Bell, MessageSquare, Send } from "lucide-react";
 
 interface Customer {
   id: string;
@@ -47,6 +48,7 @@ interface Message {
   voice_duration: number | null;
   voice_transcription: string | null;
   voice_url: string | null;
+  sender_type: string;
 }
 
 const Dashboard = () => {
@@ -56,6 +58,8 @@ const Dashboard = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [isSending, setIsSending] = useState(false);
 
   // Fetch customers
   useEffect(() => {
@@ -78,6 +82,33 @@ const Dashboard = () => {
 
     fetchCustomers();
   }, []);
+
+  // Send reply to customer
+  const sendReply = async () => {
+    if (!replyText.trim() || !selectedCustomer || isSending) return;
+
+    setIsSending(true);
+    try {
+      const response = await supabase.functions.invoke("telegram-bot", {
+        body: {
+          action: "send_message",
+          telegram_id: selectedCustomer.telegram_id,
+          customer_id: selectedCustomer.id,
+          message_text: replyText,
+        },
+      });
+
+      if (response.error) throw response.error;
+
+      toast.success("Message sent successfully!");
+      setReplyText("");
+    } catch (error: any) {
+      console.error("Error sending message:", error);
+      toast.error("Failed to send message");
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   // Load messages for selected customer
   const loadMessages = async (customer: Customer) => {
@@ -303,10 +334,21 @@ const Dashboard = () => {
               messages.map((message) => (
                 <div
                   key={message.id}
-                  className="border rounded-lg p-4 space-y-3"
+                  className={`border rounded-lg p-4 space-y-3 ${
+                    message.sender_type === 'employee' 
+                      ? 'bg-primary/5 ml-8' 
+                      : 'mr-8'
+                  }`}
                 >
                   <div className="flex items-center justify-between">
-                    <Badge variant="outline">{message.message_type}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={message.sender_type === 'employee' ? 'default' : 'outline'}>
+                        {message.sender_type === 'employee' ? 'You' : message.message_type}
+                      </Badge>
+                      {message.sender_type === 'employee' && (
+                        <span className="text-xs text-muted-foreground">Employee Reply</span>
+                      )}
+                    </div>
                     <span className="text-xs text-muted-foreground">
                       {formatDate(message.timestamp)}
                     </span>
@@ -370,6 +412,36 @@ const Dashboard = () => {
               ))
             )}
           </div>
+
+          {/* Reply Input */}
+          {selectedCustomer && (
+            <div className="mt-4 pt-4 border-t">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Type your reply..."
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      sendReply();
+                    }
+                  }}
+                  disabled={isSending}
+                />
+                <Button 
+                  onClick={sendReply} 
+                  disabled={!replyText.trim() || isSending}
+                  size="icon"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Press Enter to send • This will be sent via Telegram bot
+              </p>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
