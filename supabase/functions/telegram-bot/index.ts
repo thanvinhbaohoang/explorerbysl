@@ -210,7 +210,36 @@ async function saveMessage(message: any) {
       // Handle video messages
       if (message.video) {
         messageType = 'video';
+        const videoFileId = message.video.file_id;
+        const videoDuration = message.video.duration;
+        const videoUrl = await getFileUrl(videoFileId);
+        const videoMimeType = message.video.mime_type || 'video/mp4';
         messageText = message.caption || '[Video]';
+        
+        console.log("Video captured:", { videoFileId, videoUrl, duration: videoDuration });
+        
+        // Save with video URL
+        const { error } = await supabase
+          .from('messages')
+          .insert({
+            customer_id: customer.id,
+            telegram_id: message.from.id,
+            message_text: messageText,
+            message_type: messageType,
+            video_file_id: videoFileId,
+            video_url: videoUrl,
+            video_duration: videoDuration,
+            video_mime_type: videoMimeType,
+            sender_type: 'customer',
+            timestamp: new Date(message.date * 1000).toISOString(),
+          });
+
+        if (error) {
+          console.error("Error saving video message:", error);
+        } else {
+          console.log("Video message saved successfully");
+        }
+        return; // Early return for video messages
       }
 
       // Handle audio messages

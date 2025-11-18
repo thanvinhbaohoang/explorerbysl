@@ -65,6 +65,10 @@ export type Database = {
           sender_type: string | null
           telegram_id: number
           timestamp: string
+          video_duration: number | null
+          video_file_id: string | null
+          video_mime_type: string | null
+          video_url: string | null
           voice_duration: number | null
           voice_file_id: string | null
           voice_transcription: string | null
@@ -81,6 +85,10 @@ export type Database = {
           sender_type?: string | null
           telegram_id: number
           timestamp?: string
+          video_duration?: number | null
+          video_file_id?: string | null
+          video_mime_type?: string | null
+          video_url?: string | null
           voice_duration?: number | null
           voice_file_id?: string | null
           voice_transcription?: string | null
@@ -97,6 +105,10 @@ export type Database = {
           sender_type?: string | null
           telegram_id?: number
           timestamp?: string
+          video_duration?: number | null
+          video_file_id?: string | null
+          video_mime_type?: string | null
+          video_url?: string | null
           voice_duration?: number | null
           voice_file_id?: string | null
           voice_transcription?: string | null

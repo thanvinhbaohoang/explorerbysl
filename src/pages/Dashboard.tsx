@@ -48,6 +48,10 @@ interface Message {
   voice_duration: number | null;
   voice_transcription: string | null;
   voice_url: string | null;
+  video_file_id: string | null;
+  video_url: string | null;
+  video_duration: number | null;
+  video_mime_type: string | null;
   sender_type: string;
 }
 
@@ -418,6 +422,25 @@ const Dashboard = () => {
                       {message.voice_transcription && (
                         <div className="text-sm mt-2 p-2 bg-muted/50 rounded italic">
                           "{message.voice_transcription}"
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Video message display */}
+                  {message.message_type === 'video' && message.video_url && (
+                    <div className="rounded-md overflow-hidden border">
+                      <video 
+                        controls 
+                        className="w-full max-h-96 bg-muted"
+                        preload="metadata"
+                      >
+                        <source src={message.video_url} type={message.video_mime_type || 'video/mp4'} />
+                        Your browser does not support the video element.
+                      </video>
+                      {message.video_duration && (
+                        <div className="text-xs text-muted-foreground p-2 bg-muted/50">
+                          Duration: {message.video_duration}s
                         </div>
                       )}
                     </div>
