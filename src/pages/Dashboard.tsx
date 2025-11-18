@@ -41,6 +41,11 @@ interface Message {
   message_type: string;
   timestamp: string;
   created_at: string;
+  photo_file_id: string | null;
+  photo_url: string | null;
+  voice_file_id: string | null;
+  voice_duration: number | null;
+  voice_transcription: string | null;
 }
 
 const Dashboard = () => {
@@ -297,7 +302,7 @@ const Dashboard = () => {
               messages.map((message) => (
                 <div
                   key={message.id}
-                  className="border rounded-lg p-4 space-y-2"
+                  className="border rounded-lg p-4 space-y-3"
                 >
                   <div className="flex items-center justify-between">
                     <Badge variant="outline">{message.message_type}</Badge>
@@ -305,9 +310,42 @@ const Dashboard = () => {
                       {formatDate(message.timestamp)}
                     </span>
                   </div>
-                  <div className="text-sm">
-                    {message.message_text || "[No text content]"}
-                  </div>
+
+                  {/* Photo display */}
+                  {message.message_type === 'photo' && message.photo_url && (
+                    <div className="rounded-md overflow-hidden border">
+                      <img 
+                        src={message.photo_url} 
+                        alt="Message photo" 
+                        className="w-full max-h-96 object-contain bg-muted"
+                      />
+                    </div>
+                  )}
+
+                  {/* Voice message display */}
+                  {message.message_type === 'voice' && (
+                    <div className="flex items-center gap-3 p-3 bg-muted rounded-md">
+                      <MessageSquare className="h-5 w-5 text-muted-foreground" />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">Voice Message</div>
+                        <div className="text-xs text-muted-foreground">
+                          Duration: {message.voice_duration}s
+                        </div>
+                        {message.voice_transcription && (
+                          <div className="text-sm mt-1 italic">
+                            "{message.voice_transcription}"
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Text content */}
+                  {message.message_text && message.message_type !== 'voice' && (
+                    <div className="text-sm">
+                      {message.message_text}
+                    </div>
+                  )}
                 </div>
               ))
             )}

@@ -60,8 +60,13 @@ export type Database = {
           id: string
           message_text: string | null
           message_type: string | null
+          photo_file_id: string | null
+          photo_url: string | null
           telegram_id: number
           timestamp: string
+          voice_duration: number | null
+          voice_file_id: string | null
+          voice_transcription: string | null
         }
         Insert: {
           created_at?: string
@@ -69,8 +74,13 @@ export type Database = {
           id?: string
           message_text?: string | null
           message_type?: string | null
+          photo_file_id?: string | null
+          photo_url?: string | null
           telegram_id: number
           timestamp?: string
+          voice_duration?: number | null
+          voice_file_id?: string | null
+          voice_transcription?: string | null
         }
         Update: {
           created_at?: string
@@ -78,8 +88,13 @@ export type Database = {
           id?: string
           message_text?: string | null
           message_type?: string | null
+          photo_file_id?: string | null
+          photo_url?: string | null
           telegram_id?: number
           timestamp?: string
+          voice_duration?: number | null
+          voice_file_id?: string | null
+          voice_transcription?: string | null
         }
         Relationships: [
           {

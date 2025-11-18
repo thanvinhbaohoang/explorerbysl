@@ -116,6 +116,22 @@ Please tap below to chat with our human support team 👇
   });
 }
 
+// Get file URL from Telegram
+async function getFileUrl(fileId: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
+    const data = await response.json();
+    
+    if (data.ok && data.result.file_path) {
+      return `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error getting file URL:", error);
+    return null;
+  }
+}
+
 // Save message to database
 async function saveMessage(message: any) {
   try {
@@ -127,21 +143,68 @@ async function saveMessage(message: any) {
       .single();
 
     if (customer) {
+      let messageType = 'text';
+      let messageText = message.text || message.caption || null;
+      let photoFileId = null;
+      let photoUrl = null;
+      let voiceFileId = null;
+      let voiceDuration = null;
+
+      // Handle photo messages
+      if (message.photo && message.photo.length > 0) {
+        messageType = 'photo';
+        // Get the largest photo
+        const largestPhoto = message.photo[message.photo.length - 1];
+        photoFileId = largestPhoto.file_id;
+        photoUrl = await getFileUrl(photoFileId);
+        messageText = message.caption || '[Photo]';
+      }
+
+      // Handle voice messages
+      if (message.voice) {
+        messageType = 'voice';
+        voiceFileId = message.voice.file_id;
+        voiceDuration = message.voice.duration;
+        messageText = '[Voice message]';
+      }
+
+      // Handle video messages
+      if (message.video) {
+        messageType = 'video';
+        messageText = message.caption || '[Video]';
+      }
+
+      // Handle audio messages
+      if (message.audio) {
+        messageType = 'audio';
+        messageText = '[Audio]';
+      }
+
+      // Handle document messages
+      if (message.document) {
+        messageType = 'document';
+        messageText = message.caption || `[Document: ${message.document.file_name || 'file'}]`;
+      }
+
       // Save the message
       const { error } = await supabase
         .from('messages')
         .insert({
           customer_id: customer.id,
           telegram_id: message.from.id,
-          message_text: message.text || message.caption || '[Non-text message]',
-          message_type: message.text ? 'text' : (message.photo ? 'photo' : 'other'),
+          message_text: messageText,
+          message_type: messageType,
+          photo_file_id: photoFileId,
+          photo_url: photoUrl,
+          voice_file_id: voiceFileId,
+          voice_duration: voiceDuration,
           timestamp: new Date(message.date * 1000).toISOString(),
         });
 
       if (error) {
         console.error("Error saving message:", error);
       } else {
-        console.log("Message saved successfully");
+        console.log("Message saved successfully:", messageType);
       }
     }
   } catch (error) {
