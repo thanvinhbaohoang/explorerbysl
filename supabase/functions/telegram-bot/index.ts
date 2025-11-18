@@ -59,25 +59,51 @@ async function handleStart(message: any) {
   
   console.log("Start command token:", token);
 
-  // If token exists, try to link to telegram_leads
-  if (token) {
+  // Save customer to database first
+  let customerId = null;
+  try {
+    const { data: customerData, error: customerError } = await supabase
+      .from('customer')
+      .upsert({
+        telegram_id: u.id,
+        username: u.username || null,
+        first_name: u.first_name || null,
+        last_name: u.last_name || null,
+        language_code: u.language_code || null,
+        is_premium: u.is_premium || false,
+        first_message_at: new Date().toISOString(),
+      }, {
+        onConflict: 'telegram_id',
+        ignoreDuplicates: false
+      })
+      .select('id')
+      .single();
+
+    if (customerError) {
+      console.error("Error saving customer to database:", customerError);
+    } else {
+      customerId = customerData?.id;
+      console.log("Customer saved to database with id:", customerId);
+    }
+  } catch (dbError) {
+    console.error("Database error:", dbError);
+  }
+
+  // If token exists, link to telegram_leads with customer_id
+  if (token && customerId) {
     try {
       const { error: updateError } = await supabase
         .from('telegram_leads')
         .update({
-          telegram_id: u.id,
-          telegram_username: u.username,
-          telegram_first_name: u.first_name,
-          telegram_last_name: u.last_name,
-          telegram_language: u.language_code,
+          user_id: customerId,
           updated_at: new Date().toISOString(),
         })
-        .eq('click_id', token);
+        .eq('id', token);
 
       if (updateError) {
         console.error("Error updating telegram_leads:", updateError);
       } else {
-        console.log("Successfully linked Telegram user to click_id:", token);
+        console.log("Successfully linked customer to telegram_leads token:", token);
       }
     } catch (linkError) {
       console.error("Error linking to telegram_leads:", linkError);
@@ -95,32 +121,6 @@ async function handleStart(message: any) {
   };
 
   console.log("User started bot:", info);
-
-  // Save customer to database
-  try {
-    const { data, error } = await supabase
-      .from('customer')
-      .upsert({
-        telegram_id: u.id,
-        username: u.username || null,
-        first_name: u.first_name || null,
-        last_name: u.last_name || null,
-        language_code: u.language_code || null,
-        is_premium: u.is_premium || false,
-        first_message_at: new Date().toISOString(),
-      }, {
-        onConflict: 'telegram_id',
-        ignoreDuplicates: false
-      });
-
-    if (error) {
-      console.error("Error saving customer to database:", error);
-    } else {
-      console.log("Customer saved to database:", data);
-    }
-  } catch (dbError) {
-    console.error("Database error:", dbError);
-  }
 
   // Format message
   const tokenInfo = token ? `\n🔗 *Tracking Token:* \`${escapeMd(token)}\`\n` : '';

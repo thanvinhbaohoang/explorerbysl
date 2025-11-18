@@ -126,60 +126,35 @@ export type Database = {
       }
       telegram_leads: {
         Row: {
-          click_id: string
           created_at: string | null
-          device: string | null
-          fbclid: string | null
+          facebook_click_id: string | null
           id: string
-          ip_address: unknown
-          telegram_first_name: string | null
-          telegram_id: number | null
-          telegram_language: string | null
-          telegram_last_name: string | null
-          telegram_photo: string | null
-          telegram_username: string | null
-          timestamp: string | null
           updated_at: string | null
-          utm_campaign: string | null
-          utm_content: string | null
+          user_id: string | null
         }
         Insert: {
-          click_id?: string
           created_at?: string | null
-          device?: string | null
-          fbclid?: string | null
+          facebook_click_id?: string | null
           id?: string
-          ip_address?: unknown
-          telegram_first_name?: string | null
-          telegram_id?: number | null
-          telegram_language?: string | null
-          telegram_last_name?: string | null
-          telegram_photo?: string | null
-          telegram_username?: string | null
-          timestamp?: string | null
           updated_at?: string | null
-          utm_campaign?: string | null
-          utm_content?: string | null
+          user_id?: string | null
         }
         Update: {
-          click_id?: string
           created_at?: string | null
-          device?: string | null
-          fbclid?: string | null
+          facebook_click_id?: string | null
           id?: string
-          ip_address?: unknown
-          telegram_first_name?: string | null
-          telegram_id?: number | null
-          telegram_language?: string | null
-          telegram_last_name?: string | null
-          telegram_photo?: string | null
-          telegram_username?: string | null
-          timestamp?: string | null
           updated_at?: string | null
-          utm_campaign?: string | null
-          utm_content?: string | null
+          user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "telegram_leads_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
