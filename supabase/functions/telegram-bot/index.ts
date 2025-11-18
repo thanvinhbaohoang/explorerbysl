@@ -25,7 +25,6 @@ async function sendMessage(
     body: JSON.stringify({
       chat_id: chatId,
       text: text,
-      parse_mode: "MarkdownV2",
       reply_markup: replyMarkup,
     }),
   });
@@ -103,16 +102,25 @@ Here's the info we captured from your Telegram account:
 Please tap below to chat with our human support team 👇
 `;
 
-  // Send message with inline button
-  await sendMessage(chatId, msg, {
-    inline_keyboard: [
-      [
-        {
-          text: "💬 Chat with Human Support",
-          url: `https://t.me/${HUMAN_ACCOUNT}`,
-        },
-      ],
-    ],
+  // Send message with inline button (with MarkdownV2)
+  await fetch(`${TELEGRAM_API}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: msg,
+      parse_mode: "MarkdownV2",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "💬 Chat with Human Support",
+              url: `https://t.me/${HUMAN_ACCOUNT}`,
+            },
+          ],
+        ],
+      },
+    }),
   });
 }
 
@@ -182,6 +190,7 @@ async function saveMessage(message: any) {
             voice_file_id: voiceFileId,
             voice_duration: voiceDuration,
             voice_url: voiceUrl,
+            sender_type: 'customer',
             timestamp: new Date(message.date * 1000).toISOString(),
           });
 
@@ -224,6 +233,7 @@ async function saveMessage(message: any) {
           voice_file_id: voiceFileId,
           voice_duration: voiceDuration,
           voice_url: null, // Will be null for non-voice messages
+          sender_type: 'customer',
           timestamp: new Date(message.date * 1000).toISOString(),
         });
 
@@ -242,6 +252,68 @@ async function saveMessage(message: any) {
 serve(async (req) => {
   try {
     if (req.method === "POST") {
+      const contentType = req.headers.get("content-type");
+      
+      // Handle JSON requests (from frontend to send messages)
+      if (contentType?.includes("application/json")) {
+        const body = await req.json();
+        
+        // Check if this is a send message request from frontend
+        if (body.action === "send_message") {
+          const { telegram_id, customer_id, message_text } = body;
+          
+          if (!telegram_id || !message_text) {
+            return new Response(
+              JSON.stringify({ error: "Missing required fields" }),
+              {
+                headers: { "Content-Type": "application/json" },
+                status: 400,
+              }
+            );
+          }
+
+          try {
+            // Send message to Telegram user
+            await sendMessage(telegram_id, message_text);
+            
+            // Save to database
+            const { error: dbError } = await supabase
+              .from('messages')
+              .insert({
+                customer_id,
+                telegram_id,
+                message_text,
+                message_type: 'text',
+                sender_type: 'employee',
+                timestamp: new Date().toISOString(),
+              });
+
+            if (dbError) {
+              console.error("Error saving employee message:", dbError);
+              throw dbError;
+            }
+
+            return new Response(
+              JSON.stringify({ success: true }),
+              {
+                headers: { "Content-Type": "application/json" },
+                status: 200,
+              }
+            );
+          } catch (error: any) {
+            console.error("Error sending message:", error);
+            return new Response(
+              JSON.stringify({ error: error.message }),
+              {
+                headers: { "Content-Type": "application/json" },
+                status: 500,
+              }
+            );
+          }
+        }
+      }
+      
+      // Handle webhook updates from Telegram
       const update = await req.json();
       console.log("Received webhook:", JSON.stringify(update));
 
