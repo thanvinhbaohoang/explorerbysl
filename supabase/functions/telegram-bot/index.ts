@@ -123,9 +123,10 @@ async function handleStart(message: any) {
   }
 
   // Format message
+  const tokenInfo = token ? `\n🔗 *Tracking Token:* \`${escapeMd(token)}\`\n` : '';
   const msg = `
 👋 Hi ${escapeMd(u.first_name || "there")}\\!
-
+${tokenInfo}
 Here's the info we captured from your Telegram account:
 
 🧾 *User Data*
