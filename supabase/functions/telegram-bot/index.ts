@@ -53,6 +53,37 @@ async function handleStart(message: any) {
   const u = message.from;
   const chatId = message.chat.id;
 
+  // Extract token from /start command (e.g., /start TOKEN)
+  const commandText = message.text || '';
+  const token = commandText.split(' ')[1]; // Get the part after /start
+  
+  console.log("Start command token:", token);
+
+  // If token exists, try to link to telegram_leads
+  if (token) {
+    try {
+      const { error: updateError } = await supabase
+        .from('telegram_leads')
+        .update({
+          telegram_id: u.id,
+          telegram_username: u.username,
+          telegram_first_name: u.first_name,
+          telegram_last_name: u.last_name,
+          telegram_language: u.language_code,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('click_id', token);
+
+      if (updateError) {
+        console.error("Error updating telegram_leads:", updateError);
+      } else {
+        console.log("Successfully linked Telegram user to click_id:", token);
+      }
+    } catch (linkError) {
+      console.error("Error linking to telegram_leads:", linkError);
+    }
+  }
+
   // Gather user data
   const info = {
     ID: u.id,
