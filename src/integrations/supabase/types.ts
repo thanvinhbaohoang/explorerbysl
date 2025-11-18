@@ -67,6 +67,7 @@ export type Database = {
           voice_duration: number | null
           voice_file_id: string | null
           voice_transcription: string | null
+          voice_url: string | null
         }
         Insert: {
           created_at?: string
@@ -81,6 +82,7 @@ export type Database = {
           voice_duration?: number | null
           voice_file_id?: string | null
           voice_transcription?: string | null
+          voice_url?: string | null
         }
         Update: {
           created_at?: string
@@ -95,6 +97,7 @@ export type Database = {
           voice_duration?: number | null
           voice_file_id?: string | null
           voice_transcription?: string | null
+          voice_url?: string | null
         }
         Relationships: [
           {

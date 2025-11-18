@@ -165,7 +165,31 @@ async function saveMessage(message: any) {
         messageType = 'voice';
         voiceFileId = message.voice.file_id;
         voiceDuration = message.voice.duration;
+        const voiceUrl = await getFileUrl(voiceFileId);
         messageText = '[Voice message]';
+        
+        // Save with voice URL
+        const { error } = await supabase
+          .from('messages')
+          .insert({
+            customer_id: customer.id,
+            telegram_id: message.from.id,
+            message_text: messageText,
+            message_type: messageType,
+            photo_file_id: photoFileId,
+            photo_url: photoUrl,
+            voice_file_id: voiceFileId,
+            voice_duration: voiceDuration,
+            voice_url: voiceUrl,
+            timestamp: new Date(message.date * 1000).toISOString(),
+          });
+
+        if (error) {
+          console.error("Error saving voice message:", error);
+        } else {
+          console.log("Voice message saved successfully");
+        }
+        return; // Early return for voice messages
       }
 
       // Handle video messages
