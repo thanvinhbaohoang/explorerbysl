@@ -126,6 +126,12 @@ export type Database = {
       }
       telegram_leads: {
         Row: {
+          ad_id: string | null
+          ad_name: string | null
+          adset_id: string | null
+          adset_name: string | null
+          campaign_id: string | null
+          campaign_name: string | null
           created_at: string | null
           facebook_click_id: string | null
           id: string
@@ -133,6 +139,12 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          ad_id?: string | null
+          ad_name?: string | null
+          adset_id?: string | null
+          adset_name?: string | null
+          campaign_id?: string | null
+          campaign_name?: string | null
           created_at?: string | null
           facebook_click_id?: string | null
           id?: string
@@ -140,6 +152,12 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          ad_id?: string | null
+          ad_name?: string | null
+          adset_id?: string | null
+          adset_name?: string | null
+          campaign_id?: string | null
+          campaign_name?: string | null
           created_at?: string | null
           facebook_click_id?: string | null
           id?: string

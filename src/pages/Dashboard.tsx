@@ -21,7 +21,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Bell, MessageSquare, Send, TrendingUp } from "lucide-react";
+import { Users, Bell, MessageSquare, Send, TrendingUp, BarChart3 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface Customer {
   id: string;
@@ -70,6 +71,7 @@ interface TrafficData {
 }
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -315,7 +317,7 @@ const Dashboard = () => {
         </div>
 
         <Tabs defaultValue="customers" className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsList className="grid w-full max-w-md grid-cols-3">
             <TabsTrigger value="customers">
               <Users className="h-4 w-4 mr-2" />
               Customers
@@ -323,6 +325,10 @@ const Dashboard = () => {
             <TabsTrigger value="traffic" onClick={() => fetchTrafficData()}>
               <TrendingUp className="h-4 w-4 mr-2" />
               Customer Traffic
+            </TabsTrigger>
+            <TabsTrigger value="ads" onClick={() => navigate('/ads-insight')}>
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Ad Insights
             </TabsTrigger>
           </TabsList>
 
