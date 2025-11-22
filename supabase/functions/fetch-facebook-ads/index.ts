@@ -66,7 +66,9 @@ serve(async (req) => {
       );
     }
 
-    const baseUrl = `https://graph.facebook.com/v21.0/${accountId}`;
+    // Ensure account ID has 'act_' prefix for Facebook Graph API
+    const formattedAccountId = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
+    const baseUrl = `https://graph.facebook.com/v21.0/${formattedAccountId}`;
     const dateRange = startDate && endDate ? `&time_range={'since':'${startDate}','until':'${endDate}'}` : '';
     
     let endpoint = '';
