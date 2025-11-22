@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import AdsInsight from "./pages/AdsInsight";
+import AdDetail from "./pages/AdDetail";
 import Redirect from "./pages/Redirect";
 import Ad from "./pages/Ad";
 import NotFound from "./pages/NotFound";
@@ -24,6 +25,7 @@ const App = () => (
           <Route path="/ad/*" element={<Ad />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/ads-insight" element={<AdsInsight />} />
+          <Route path="/ads-insight/:adId" element={<AdDetail />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

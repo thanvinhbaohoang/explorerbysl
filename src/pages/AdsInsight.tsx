@@ -416,7 +416,11 @@ const AdsInsight = () => {
                         {ads.map((ad) => {
                           const data = getInsightData(ad);
                           return (
-                            <TableRow key={ad.id}>
+                            <TableRow 
+                              key={ad.id}
+                              className="cursor-pointer hover:bg-muted/50"
+                              onClick={() => navigate(`/ads-insight/${ad.id}`)}
+                            >
                               <TableCell className="font-medium">{ad.name}</TableCell>
                               <TableCell>
                                 <Badge variant={ad.status === 'ACTIVE' ? 'default' : 'secondary'}>

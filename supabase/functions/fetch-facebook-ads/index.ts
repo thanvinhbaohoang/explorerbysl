@@ -51,7 +51,7 @@ serve(async (req) => {
   }
 
   try {
-    const { startDate, endDate, level } = await req.json();
+    const { startDate, endDate, level, adId } = await req.json();
     
     const accountId = Deno.env.get('FACEBOOK_AD_ACCOUNT_ID');
     const accessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
@@ -68,32 +68,38 @@ serve(async (req) => {
 
     // Ensure account ID has 'act_' prefix for Facebook Graph API
     const formattedAccountId = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
-    const baseUrl = `https://graph.facebook.com/v21.0/${formattedAccountId}`;
+    const baseUrl = `https://graph.facebook.com/v21.0`;
     const dateRange = startDate && endDate ? `&time_range={'since':'${startDate}','until':'${endDate}'}` : '';
     
     let endpoint = '';
     let fields = '';
 
-    switch (level) {
-      case 'campaigns':
-        fields = 'id,name,status,insights.time_range({"since":"' + (startDate || '2024-01-01') + '","until":"' + (endDate || '2024-12-31') + '"}){impressions,clicks,spend,ctr,cpc,cpm,date_start,date_stop}';
-        endpoint = `${baseUrl}/campaigns?fields=${fields}&access_token=${accessToken}`;
-        break;
-      
-      case 'adsets':
-        fields = 'id,name,campaign_id,status,insights.time_range({"since":"' + (startDate || '2024-01-01') + '","until":"' + (endDate || '2024-12-31') + '"}){impressions,clicks,spend,ctr,cpc,cpm,date_start,date_stop}';
-        endpoint = `${baseUrl}/adsets?fields=${fields}&access_token=${accessToken}`;
-        break;
-      
-      case 'ads':
-        fields = 'id,name,adset_id,status,insights.time_range({"since":"' + (startDate || '2024-01-01') + '","until":"' + (endDate || '2024-12-31') + '"}){impressions,clicks,spend,ctr,cpc,cpm,date_start,date_stop}';
-        endpoint = `${baseUrl}/ads?fields=${fields}&access_token=${accessToken}`;
-        break;
-      
-      default:
-        // Account-level insights
-        fields = 'impressions,clicks,spend,ctr,cpc,cpm,date_start,date_stop';
-        endpoint = `${baseUrl}/insights?fields=${fields}&access_token=${accessToken}${dateRange}`;
+    // If fetching specific ad details
+    if (adId) {
+      fields = 'id,name,status,adset_id,creative{id,name,title,body,image_url,video_id,thumbnail_url,object_story_spec},targeting{age_min,age_max,genders,geo_locations,interests},insights{impressions,clicks,spend,ctr,cpc,cpm,reach,frequency,actions,cost_per_action_type}';
+      endpoint = `${baseUrl}/${adId}?fields=${fields}&access_token=${accessToken}`;
+    } else {
+      switch (level) {
+        case 'campaigns':
+          fields = 'id,name,status,insights.time_range({"since":"' + (startDate || '2024-01-01') + '","until":"' + (endDate || '2024-12-31') + '"}){impressions,clicks,spend,ctr,cpc,cpm,date_start,date_stop}';
+          endpoint = `${baseUrl}/${formattedAccountId}/campaigns?fields=${fields}&access_token=${accessToken}`;
+          break;
+        
+        case 'adsets':
+          fields = 'id,name,campaign_id,status,insights.time_range({"since":"' + (startDate || '2024-01-01') + '","until":"' + (endDate || '2024-12-31') + '"}){impressions,clicks,spend,ctr,cpc,cpm,date_start,date_stop}';
+          endpoint = `${baseUrl}/${formattedAccountId}/adsets?fields=${fields}&access_token=${accessToken}`;
+          break;
+        
+        case 'ads':
+          fields = 'id,name,adset_id,status,insights.time_range({"since":"' + (startDate || '2024-01-01') + '","until":"' + (endDate || '2024-12-31') + '"}){impressions,clicks,spend,ctr,cpc,cpm,date_start,date_stop}';
+          endpoint = `${baseUrl}/${formattedAccountId}/ads?fields=${fields}&access_token=${accessToken}`;
+          break;
+        
+        default:
+          // Account-level insights
+          fields = 'impressions,clicks,spend,ctr,cpc,cpm,date_start,date_stop';
+          endpoint = `${baseUrl}/${formattedAccountId}/insights?fields=${fields}&access_token=${accessToken}${dateRange}`;
+      }
     }
 
     console.log('Fetching Facebook Ads data:', { level, endpoint: endpoint.replace(accessToken, 'HIDDEN') });
