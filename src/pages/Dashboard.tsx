@@ -27,6 +27,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { Users, Bell, MessageSquare, Send, TrendingUp, BarChart3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -99,6 +107,9 @@ const Dashboard = () => {
   const [trafficData, setTrafficData] = useState<TrafficData[]>([]);
   const [isLoadingTraffic, setIsLoadingTraffic] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [customersPage, setCustomersPage] = useState(1);
+  const [trafficPage, setTrafficPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Fetch unread counts for all customers
   const fetchUnreadCounts = async () => {
@@ -381,6 +392,20 @@ const Dashboard = () => {
     return new Date(dateString).toLocaleString();
   };
 
+  // Pagination calculations for customers
+  const totalCustomerPages = Math.ceil(customers.length / itemsPerPage);
+  const paginatedCustomers = customers.slice(
+    (customersPage - 1) * itemsPerPage,
+    customersPage * itemsPerPage
+  );
+
+  // Pagination calculations for traffic
+  const totalTrafficPages = Math.ceil(trafficData.length / itemsPerPage);
+  const paginatedTraffic = trafficData.slice(
+    (trafficPage - 1) * itemsPerPage,
+    trafficPage * itemsPerPage
+  );
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -448,9 +473,9 @@ const Dashboard = () => {
                           <TableHead>First Message</TableHead>
                           <TableHead>Actions</TableHead>
                         </TableRow>
-                      </TableHeader>
+                       </TableHeader>
                       <TableBody>
-                        {customers.map((customer) => (
+                        {paginatedCustomers.map((customer) => (
                           <TableRow key={customer.id}>
                             <TableCell className="font-medium">
                               {customer.first_name} {customer.last_name}
@@ -511,6 +536,37 @@ const Dashboard = () => {
                     </Table>
                   </div>
                 )}
+                {customers.length > itemsPerPage && (
+                  <div className="mt-4 flex justify-center">
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            onClick={() => setCustomersPage((prev) => Math.max(1, prev - 1))}
+                            className={customersPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                          />
+                        </PaginationItem>
+                        {Array.from({ length: totalCustomerPages }, (_, i) => i + 1).map((page) => (
+                          <PaginationItem key={page}>
+                            <PaginationLink
+                              onClick={() => setCustomersPage(page)}
+                              isActive={page === customersPage}
+                              className="cursor-pointer"
+                            >
+                              {page}
+                            </PaginationLink>
+                          </PaginationItem>
+                        ))}
+                        <PaginationItem>
+                          <PaginationNext
+                            onClick={() => setCustomersPage((prev) => Math.min(totalCustomerPages, prev + 1))}
+                            className={customersPage === totalCustomerPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -546,7 +602,7 @@ const Dashboard = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {trafficData.map((traffic) => (
+                        {paginatedTraffic.map((traffic) => (
                           <TableRow key={traffic.id}>
                             <TableCell>
                               <code className="text-xs bg-muted px-2 py-1 rounded">
@@ -686,6 +742,37 @@ const Dashboard = () => {
                         ))}
                       </TableBody>
                     </Table>
+                  </div>
+                )}
+                {trafficData.length > itemsPerPage && (
+                  <div className="mt-4 flex justify-center">
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious
+                            onClick={() => setTrafficPage((prev) => Math.max(1, prev - 1))}
+                            className={trafficPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                          />
+                        </PaginationItem>
+                        {Array.from({ length: totalTrafficPages }, (_, i) => i + 1).map((page) => (
+                          <PaginationItem key={page}>
+                            <PaginationLink
+                              onClick={() => setTrafficPage(page)}
+                              isActive={page === trafficPage}
+                              className="cursor-pointer"
+                            >
+                              {page}
+                            </PaginationLink>
+                          </PaginationItem>
+                        ))}
+                        <PaginationItem>
+                          <PaginationNext
+                            onClick={() => setTrafficPage((prev) => Math.min(totalTrafficPages, prev + 1))}
+                            className={trafficPage === totalTrafficPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
                   </div>
                 )}
               </CardContent>
