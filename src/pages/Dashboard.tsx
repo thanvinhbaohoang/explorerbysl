@@ -14,6 +14,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -60,6 +66,15 @@ interface Message {
 interface TrafficData {
   id: string;
   facebook_click_id: string | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_content: string | null;
+  utm_term: string | null;
+  utm_adset_id: string | null;
+  utm_ad_id: string | null;
+  utm_campaign_id: string | null;
+  referrer: string | null;
   created_at: string;
   customer: {
     id: string;
@@ -111,7 +126,7 @@ const Dashboard = () => {
     try {
       const { data: leads, error } = await supabase
         .from("telegram_leads")
-        .select("id, facebook_click_id, created_at, user_id")
+        .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, created_at, user_id")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -129,6 +144,15 @@ const Dashboard = () => {
             return {
               id: lead.id,
               facebook_click_id: lead.facebook_click_id,
+              utm_source: lead.utm_source,
+              utm_medium: lead.utm_medium,
+              utm_campaign: lead.utm_campaign,
+              utm_content: lead.utm_content,
+              utm_term: lead.utm_term,
+              utm_adset_id: lead.utm_adset_id,
+              utm_ad_id: lead.utm_ad_id,
+              utm_campaign_id: lead.utm_campaign_id,
+              referrer: lead.referrer,
               created_at: lead.created_at,
               customer,
             };
@@ -136,6 +160,15 @@ const Dashboard = () => {
           return {
             id: lead.id,
             facebook_click_id: lead.facebook_click_id,
+            utm_source: lead.utm_source,
+            utm_medium: lead.utm_medium,
+            utm_campaign: lead.utm_campaign,
+            utm_content: lead.utm_content,
+            utm_term: lead.utm_term,
+            utm_adset_id: lead.utm_adset_id,
+            utm_ad_id: lead.utm_ad_id,
+            utm_campaign_id: lead.utm_campaign_id,
+            referrer: lead.referrer,
             created_at: lead.created_at,
             customer: null,
           };
@@ -455,13 +488,101 @@ const Dashboard = () => {
                               </code>
                             </TableCell>
                             <TableCell>
-                              {traffic.facebook_click_id ? (
-                                <Badge variant="default">
-                                  FB: {traffic.facebook_click_id.slice(0, 12)}...
-                                </Badge>
-                              ) : (
-                                <Badge variant="secondary">Direct</Badge>
-                              )}
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="cursor-help">
+                                      {traffic.facebook_click_id ? (
+                                        <Badge variant="default">
+                                          FB: {traffic.facebook_click_id.slice(0, 12)}...
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="secondary">Direct</Badge>
+                                      )}
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-md p-4" side="right">
+                                    <div className="space-y-2 text-sm">
+                                      <div className="font-semibold text-foreground border-b pb-2">
+                                        Tracking Information
+                                      </div>
+                                      {traffic.facebook_click_id && (
+                                        <div>
+                                          <span className="font-semibold">Facebook Click ID:</span>
+                                          <div className="text-xs font-mono text-muted-foreground break-all mt-1">
+                                            {traffic.facebook_click_id}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {traffic.utm_source && (
+                                        <div>
+                                          <span className="font-semibold">UTM Source:</span>
+                                          <span className="ml-2 text-muted-foreground">{traffic.utm_source}</span>
+                                        </div>
+                                      )}
+                                      {traffic.utm_medium && (
+                                        <div>
+                                          <span className="font-semibold">UTM Medium:</span>
+                                          <span className="ml-2 text-muted-foreground">{traffic.utm_medium}</span>
+                                        </div>
+                                      )}
+                                      {traffic.utm_campaign && (
+                                        <div>
+                                          <span className="font-semibold">UTM Campaign:</span>
+                                          <span className="ml-2 text-muted-foreground">{traffic.utm_campaign}</span>
+                                        </div>
+                                      )}
+                                      {traffic.utm_campaign_id && (
+                                        <div>
+                                          <span className="font-semibold">Campaign ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono">{traffic.utm_campaign_id}</span>
+                                        </div>
+                                      )}
+                                      {traffic.utm_adset_id && (
+                                        <div>
+                                          <span className="font-semibold">Ad Set ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono">{traffic.utm_adset_id}</span>
+                                        </div>
+                                      )}
+                                      {traffic.utm_ad_id && (
+                                        <div>
+                                          <span className="font-semibold">Ad ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono">{traffic.utm_ad_id}</span>
+                                        </div>
+                                      )}
+                                      {traffic.utm_content && (
+                                        <div>
+                                          <span className="font-semibold">UTM Content:</span>
+                                          <span className="ml-2 text-muted-foreground">{traffic.utm_content}</span>
+                                        </div>
+                                      )}
+                                      {traffic.utm_term && (
+                                        <div>
+                                          <span className="font-semibold">UTM Term:</span>
+                                          <span className="ml-2 text-muted-foreground">{traffic.utm_term}</span>
+                                        </div>
+                                      )}
+                                      {traffic.referrer && (
+                                        <div>
+                                          <span className="font-semibold">Referrer:</span>
+                                          <div className="text-xs text-muted-foreground break-all mt-1">
+                                            {traffic.referrer}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {!traffic.facebook_click_id && 
+                                       !traffic.utm_source && 
+                                       !traffic.utm_medium && 
+                                       !traffic.utm_campaign && 
+                                       !traffic.referrer && (
+                                        <div className="text-muted-foreground italic">
+                                          No tracking data available
+                                        </div>
+                                      )}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                             </TableCell>
                             <TableCell className="font-medium">
                               {traffic.customer ? (
