@@ -61,6 +61,7 @@ interface Message {
   video_duration: number | null;
   video_mime_type: string | null;
   sender_type: string;
+  is_read: boolean;
 }
 
 interface TrafficData {
@@ -97,6 +98,30 @@ const Dashboard = () => {
   const [isSending, setIsSending] = useState(false);
   const [trafficData, setTrafficData] = useState<TrafficData[]>([]);
   const [isLoadingTraffic, setIsLoadingTraffic] = useState(false);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+
+  // Fetch unread counts for all customers
+  const fetchUnreadCounts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("customer_id")
+        .eq("sender_type", "customer")
+        .eq("is_read", false);
+
+      if (error) {
+        console.error("Error fetching unread counts:", error);
+      } else if (data) {
+        const counts: Record<string, number> = {};
+        data.forEach((msg) => {
+          counts[msg.customer_id] = (counts[msg.customer_id] || 0) + 1;
+        });
+        setUnreadCounts(counts);
+      }
+    } catch (err) {
+      console.error("Error:", err);
+    }
+  };
 
   // Fetch customers
   useEffect(() => {
@@ -118,6 +143,7 @@ const Dashboard = () => {
     };
 
     fetchCustomers();
+    fetchUnreadCounts();
   }, []);
 
   // Fetch traffic data
@@ -226,11 +252,25 @@ const Dashboard = () => {
     setIsLoadingMessages(true);
 
     try {
+      // Mark all unread messages as read for this customer
+      await supabase
+        .from("messages")
+        .update({ is_read: true })
+        .eq("customer_id", customer.id)
+        .eq("sender_type", "customer")
+        .eq("is_read", false);
+
+      // Reset unread count for this customer
+      setUnreadCounts((prev) => ({
+        ...prev,
+        [customer.id]: 0,
+      }));
+
       const { data, error } = await supabase
         .from("messages")
         .select("*")
         .eq("customer_id", customer.id)
-        .order("timestamp", { ascending: true }); // Changed to ascending
+        .order("timestamp", { ascending: true });
 
       if (error) throw error;
       setMessages(data || []);
@@ -285,32 +325,49 @@ const Dashboard = () => {
     };
   }, []);
 
-  // Real-time subscription for new messages
+  // Real-time subscription for ALL new customer messages
   useEffect(() => {
-    if (!selectedCustomer) return;
-
     const channel = supabase
-      .channel("message-changes")
+      .channel("all-customer-messages")
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "messages",
-          filter: `customer_id=eq.${selectedCustomer.id}`,
+          filter: "sender_type=eq.customer",
         },
         (payload) => {
           const newMessage = payload.new as Message;
-          console.log("New message received:", newMessage);
-          setMessages((prev) => [...prev, newMessage]); // Changed to append at end
+          console.log("New customer message received:", newMessage);
           
-          // Scroll to bottom when new message arrives
-          setTimeout(() => {
-            const messagesContainer = document.getElementById('messages-container');
-            if (messagesContainer) {
-              messagesContainer.scrollTop = messagesContainer.scrollHeight;
+          // Update unread count
+          setUnreadCounts((prev) => ({
+            ...prev,
+            [newMessage.customer_id]: (prev[newMessage.customer_id] || 0) + 1,
+          }));
+
+          // If this message is for the currently open dialog, add it to messages
+          if (selectedCustomer?.id === newMessage.customer_id) {
+            setMessages((prev) => [...prev, newMessage]);
+            
+            // Scroll to bottom when new message arrives
+            setTimeout(() => {
+              const messagesContainer = document.getElementById('messages-container');
+              if (messagesContainer) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+              }
+            }, 100);
+          } else {
+            // Show toast notification for messages from other customers
+            const customer = customers.find((c) => c.id === newMessage.customer_id);
+            if (customer) {
+              toast.success("New message received", {
+                description: `${customer.first_name || "Customer"} sent a message`,
+                icon: <Bell className="h-4 w-4" />,
+              });
             }
-          }, 100);
+          }
         }
       )
       .subscribe();
@@ -318,7 +375,7 @@ const Dashboard = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedCustomer]);
+  }, [selectedCustomer, customers]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
@@ -434,9 +491,18 @@ const Dashboard = () => {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => loadMessages(customer)}
+                                className="relative"
                               >
                                 <MessageSquare className="h-4 w-4 mr-2" />
                                 Telegram
+                                {unreadCounts[customer.id] > 0 && (
+                                  <Badge
+                                    variant="destructive"
+                                    className="ml-2 px-1.5 py-0 h-5 min-w-5 flex items-center justify-center"
+                                  >
+                                    {unreadCounts[customer.id]}
+                                  </Badge>
+                                )}
                               </Button>
                             </TableCell>
                           </TableRow>
