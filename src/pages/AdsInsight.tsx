@@ -50,6 +50,14 @@ interface Ad {
   };
 }
 
+interface AccountInfo {
+  id: string;
+  name: string;
+  account_status: string;
+  currency: string;
+  timezone_name: string;
+}
+
 const AdsInsight = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
@@ -57,7 +65,28 @@ const AdsInsight = () => {
   const [adSets, setAdSets] = useState<AdSet[]>([]);
   const [ads, setAds] = useState<Ad[]>([]);
   const [accountInsights, setAccountInsights] = useState<Insight[]>([]);
+  const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+
+  const fetchAccountInfo = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-facebook-ads', {
+        body: { level: 'account-info' },
+      });
+
+      if (error) throw error;
+      if (data?.error) {
+        console.error('Failed to fetch account info:', data.error);
+        return;
+      }
+
+      if (data?.data) {
+        setAccountInfo(data.data);
+      }
+    } catch (error: any) {
+      console.error('Error fetching account info:', error);
+    }
+  };
 
   const fetchAdsData = async (level: 'account' | 'campaigns' | 'adsets' | 'ads') => {
     setIsLoading(true);
@@ -98,6 +127,7 @@ const AdsInsight = () => {
   };
 
   useEffect(() => {
+    fetchAccountInfo();
     fetchAdsData('account');
     fetchAdsData('campaigns');
   }, []);
@@ -150,6 +180,16 @@ const AdsInsight = () => {
               <p className="text-muted-foreground mt-2">
                 Monitor your Facebook advertising performance
               </p>
+              {accountInfo && (
+                <div className="mt-3 flex items-center gap-2">
+                  <Badge variant="outline" className="text-sm">
+                    {accountInfo.name}
+                  </Badge>
+                  <Badge variant="secondary" className="text-sm font-mono">
+                    ID: {accountInfo.id.replace('act_', '')}
+                  </Badge>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-4">

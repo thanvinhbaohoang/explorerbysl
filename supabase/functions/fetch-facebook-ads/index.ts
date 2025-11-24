@@ -74,8 +74,13 @@ serve(async (req) => {
     let endpoint = '';
     let fields = '';
 
+    // If fetching account info
+    if (level === 'account-info') {
+      fields = 'id,name,account_status,currency,timezone_name';
+      endpoint = `${baseUrl}/${formattedAccountId}?fields=${fields}&access_token=${accessToken}`;
+    }
     // If fetching specific ad details
-    if (adId) {
+    else if (adId) {
       fields = 'id,name,status,adset_id,creative{id,name,title,body,image_url,video_id,thumbnail_url,object_story_spec},targeting{age_min,age_max,genders,geo_locations,interests},insights{impressions,clicks,spend,ctr,cpc,cpm,reach,frequency,actions,cost_per_action_type}';
       endpoint = `${baseUrl}/${adId}?fields=${fields}&access_token=${accessToken}`;
     } else {
