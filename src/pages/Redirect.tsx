@@ -15,7 +15,11 @@ import {
 const Redirect = () => {
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<"processing" | "ready" | "redirecting" | "error">("processing");
-  const [debugInfo, setDebugInfo] = useState<{ fullUrl: string; fbclid: string | null }>({ fullUrl: "", fbclid: null });
+  const [debugInfo, setDebugInfo] = useState<{ 
+    fullUrl: string; 
+    fbclid: string | null;
+    utmParams: Record<string, string>;
+  }>({ fullUrl: "", fbclid: null, utmParams: {} });
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [telegramUrl, setTelegramUrl] = useState("");
 
@@ -38,16 +42,50 @@ const Redirect = () => {
         // Use whichever method found the parameter
         const fbclid = fbclidFromRouter || fbclidFromWindow;
         
+        // Extract all UTM parameters
+        const utmParams: Record<string, string> = {};
+        const utmKeys = [
+          'utm_source',
+          'utm_medium', 
+          'utm_campaign',
+          'utm_content',
+          'utm_term',
+          'utm_adset_id',
+          'utm_ad_id',
+          'utm_campaign_id'
+        ];
+        
+        utmKeys.forEach(key => {
+          const value = searchParams.get(key) || urlParams.get(key);
+          if (value) {
+            utmParams[key] = value;
+          }
+        });
+
+        // Get referrer
+        const referrer = document.referrer || null;
+        
         // Set debug info for display
-        setDebugInfo({ fullUrl, fbclid });
+        setDebugInfo({ fullUrl, fbclid, utmParams });
 
         console.log("Final fbclid value to save:", fbclid);
+        console.log("UTM parameters:", utmParams);
+        console.log("Referrer:", referrer);
 
         // Insert traffic data and generate token (id)
-        console.log("Attempting to insert into database with fbclid:", fbclid);
+        console.log("Attempting to insert into database with fbclid and UTM params:", fbclid, utmParams);
         
         const insertData = {
           facebook_click_id: fbclid || null,
+          utm_source: utmParams.utm_source || null,
+          utm_medium: utmParams.utm_medium || null,
+          utm_campaign: utmParams.utm_campaign || null,
+          utm_content: utmParams.utm_content || null,
+          utm_term: utmParams.utm_term || null,
+          utm_adset_id: utmParams.utm_adset_id || null,
+          utm_ad_id: utmParams.utm_ad_id || null,
+          utm_campaign_id: utmParams.utm_campaign_id || null,
+          referrer: referrer,
         };
         console.log("Insert data object:", insertData);
 
@@ -119,6 +157,16 @@ const Redirect = () => {
           <p className="text-muted-foreground">
             <strong>Detected fbclid:</strong> {debugInfo.fbclid || "(none)"}
           </p>
+          {Object.keys(debugInfo.utmParams).length > 0 && (
+            <div className="mt-2">
+              <p className="font-semibold text-foreground">UTM Parameters:</p>
+              {Object.entries(debugInfo.utmParams).map(([key, value]) => (
+                <p key={key} className="text-muted-foreground ml-2">
+                  <strong>{key}:</strong> {value}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
 
         {status === "processing" && (
@@ -169,6 +217,16 @@ const Redirect = () => {
                   <strong>Facebook Click ID:</strong>{" "}
                   <span className="font-mono">{debugInfo.fbclid || "(none)"}</span>
                 </p>
+                {Object.keys(debugInfo.utmParams).length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-sm font-semibold">UTM Parameters:</p>
+                    {Object.entries(debugInfo.utmParams).map(([key, value]) => (
+                      <p key={key} className="text-sm ml-2">
+                        <strong>{key}:</strong> <span className="font-mono">{value}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
