@@ -65,7 +65,7 @@ export const CustomersTable = ({ onViewMessages, unreadCounts }: CustomersTableP
     { id: "created_at", desc: true },
   ]);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const debouncedSearch = useDebounce(search, 300);
 
@@ -83,18 +83,28 @@ export const CustomersTable = ({ onViewMessages, unreadCounts }: CustomersTableP
         ? `${sorting[0].id}_${sorting[0].desc ? "desc" : "asc"}`
         : "created_at_desc";
 
-      const { data, error } = await supabase.functions.invoke("fetch-customers", {
-        body: {
-          page: pagination.pageIndex + 1,
-          pageSize: pagination.pageSize,
-          search: debouncedSearch,
-          filter_status: statusFilter,
-          sort: sortParam,
-        },
+      const params = new URLSearchParams({
+        page: String(pagination.pageIndex + 1),
+        pageSize: String(pagination.pageSize),
+        search: debouncedSearch,
+        filter_status: statusFilter === "all" ? "" : statusFilter,
+        sort: sortParam,
       });
 
-      if (error) throw error;
-      return data;
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-customers?${params}`,
+        {
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch customers");
+      }
+
+      return response.json();
     },
   });
 
@@ -226,7 +236,7 @@ export const CustomersTable = ({ onViewMessages, unreadCounts }: CustomersTableP
             <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All</SelectItem>
+            <SelectItem value="all">All</SelectItem>
             <SelectItem value="premium">Premium</SelectItem>
             <SelectItem value="standard">Standard</SelectItem>
           </SelectContent>

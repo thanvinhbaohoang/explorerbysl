@@ -74,7 +74,7 @@ export const TrafficTable = () => {
     { id: "created_at", desc: true },
   ]);
   const [search, setSearch] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [campaignFilter, setCampaignFilter] = useState("");
   const [dateFrom, setDateFrom] = useState<Date | undefined>();
   const [dateTo, setDateTo] = useState<Date | undefined>();
@@ -98,21 +98,31 @@ export const TrafficTable = () => {
         ? `${sorting[0].id}_${sorting[0].desc ? "desc" : "asc"}`
         : "created_at_desc";
 
-      const { data, error } = await supabase.functions.invoke("fetch-traffic", {
-        body: {
-          page: pagination.pageIndex + 1,
-          pageSize: pagination.pageSize,
-          search: debouncedSearch,
-          filter_source: sourceFilter,
-          filter_campaign: campaignFilter,
-          date_from: dateFrom ? format(dateFrom, "yyyy-MM-dd") : "",
-          date_to: dateTo ? format(dateTo, "yyyy-MM-dd") : "",
-          sort: sortParam,
-        },
+      const params = new URLSearchParams({
+        page: String(pagination.pageIndex + 1),
+        pageSize: String(pagination.pageSize),
+        search: debouncedSearch,
+        filter_source: sourceFilter === "all" ? "" : sourceFilter,
+        filter_campaign: campaignFilter,
+        date_from: dateFrom ? format(dateFrom, "yyyy-MM-dd") : "",
+        date_to: dateTo ? format(dateTo, "yyyy-MM-dd") : "",
+        sort: sortParam,
       });
 
-      if (error) throw error;
-      return data;
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-traffic?${params}`,
+        {
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch traffic data");
+      }
+
+      return response.json();
     },
   });
 
@@ -232,7 +242,7 @@ export const TrafficTable = () => {
             <SelectValue placeholder="Filter by source" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Sources</SelectItem>
+            <SelectItem value="all">All Sources</SelectItem>
             <SelectItem value="facebook">Facebook</SelectItem>
             <SelectItem value="google">Google</SelectItem>
             <SelectItem value="telegram">Telegram</SelectItem>
