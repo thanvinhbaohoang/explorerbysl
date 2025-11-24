@@ -496,6 +496,10 @@ const Dashboard = () => {
                                         <Badge variant="default">
                                           FB: {traffic.facebook_click_id.slice(0, 12)}...
                                         </Badge>
+                                      ) : traffic.utm_source ? (
+                                        <Badge variant="default" className="capitalize">
+                                          {traffic.utm_source}
+                                        </Badge>
                                       ) : (
                                         <Badge variant="secondary">Direct</Badge>
                                       )}
