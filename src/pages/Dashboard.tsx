@@ -109,6 +109,11 @@ const Dashboard = () => {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [customersPage, setCustomersPage] = useState(1);
   const [trafficPage, setTrafficPage] = useState(1);
+  const [totalCustomers, setTotalCustomers] = useState(0);
+  const [totalTraffic, setTotalTraffic] = useState(0);
+  const [trafficDataCached, setTrafficDataCached] = useState(false);
+  const [hasNewCustomers, setHasNewCustomers] = useState(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
   const itemsPerPage = 10;
 
   // Fetch unread counts for all customers
@@ -134,37 +139,76 @@ const Dashboard = () => {
     }
   };
 
-  // Fetch customers
+  // Fetch customers with pagination
+  const fetchCustomers = async (page: number) => {
+    setIsLoading(true);
+    try {
+      // Get total count
+      const { count, error: countError } = await supabase
+        .from("customer")
+        .select("*", { count: "exact", head: true });
+
+      if (countError) throw countError;
+      setTotalCustomers(count || 0);
+
+      // Fetch paginated data
+      const from = (page - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+
+      const { data, error } = await supabase
+        .from("customer")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .range(from, to);
+
+      if (error) throw error;
+      setCustomers(data || []);
+      setHasNewCustomers(false);
+    } catch (error: any) {
+      console.error("Error fetching customers:", error);
+      toast.error("Failed to load customers");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Initial fetch
   useEffect(() => {
-    const fetchCustomers = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("customer")
-          .select("*")
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        setCustomers(data || []);
-      } catch (error: any) {
-        console.error("Error fetching customers:", error);
-        toast.error("Failed to load customers");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchCustomers();
+    fetchCustomers(customersPage);
     fetchUnreadCounts();
   }, []);
 
-  // Fetch traffic data
-  const fetchTrafficData = async () => {
+  // Fetch when page changes
+  useEffect(() => {
+    if (customersPage > 1) {
+      fetchCustomers(customersPage);
+    }
+  }, [customersPage]);
+
+  // Fetch traffic data with pagination
+  const fetchTrafficData = async (page: number) => {
+    // Don't refetch if already cached
+    if (trafficDataCached && page === trafficPage) return;
+    
     setIsLoadingTraffic(true);
     try {
+      // Get total count
+      const { count, error: countError } = await supabase
+        .from("telegram_leads")
+        .select("*", { count: "exact", head: true });
+
+      if (countError) throw countError;
+      setTotalTraffic(count || 0);
+
+      // Fetch paginated data
+      const from = (page - 1) * itemsPerPage;
+      const to = from + itemsPerPage - 1;
+
       const { data: leads, error } = await supabase
         .from("telegram_leads")
         .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, created_at, user_id")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .range(from, to);
 
       if (error) throw error;
 
@@ -176,7 +220,7 @@ const Dashboard = () => {
               .from("customer")
               .select("id, telegram_id, username, first_name, last_name")
               .eq("id", lead.user_id)
-              .single();
+              .maybeSingle();
 
             return {
               id: lead.id,
@@ -213,6 +257,7 @@ const Dashboard = () => {
       );
 
       setTrafficData(trafficWithCustomers);
+      setTrafficDataCached(true);
     } catch (error: any) {
       console.error("Error fetching traffic data:", error);
       toast.error("Failed to load traffic data");
@@ -220,6 +265,13 @@ const Dashboard = () => {
       setIsLoadingTraffic(false);
     }
   };
+
+  // Fetch traffic when page changes
+  useEffect(() => {
+    if (trafficPage > 1) {
+      fetchTrafficData(trafficPage);
+    }
+  }, [trafficPage]);
 
   // Send reply to customer
   const sendReply = async () => {
@@ -301,7 +353,7 @@ const Dashboard = () => {
     }
   };
 
-  // Real-time subscription for new customers
+  // Real-time subscription for new customers - show toast notification
   useEffect(() => {
     const channel = supabase
       .channel("customer-changes")
@@ -316,15 +368,18 @@ const Dashboard = () => {
           const newCustomer = payload.new as Customer;
           console.log("New customer joined:", newCustomer);
           
-          // Add to the beginning of the list
-          setCustomers((prev) => [newCustomer, ...prev]);
+          setHasNewCustomers(true);
           
-          // Show notification
+          // Show notification with refresh option
           toast.success(
             `New customer: ${newCustomer.first_name || "Unknown"} ${newCustomer.last_name || ""}`,
             {
-              description: `@${newCustomer.username || "No username"} just started the bot!`,
+              description: "Click to refresh the customer list",
               icon: <Bell className="h-4 w-4" />,
+              action: {
+                label: "Refresh",
+                onClick: () => fetchCustomers(customersPage),
+              },
             }
           );
         }
@@ -334,7 +389,7 @@ const Dashboard = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [customersPage]);
 
   // Real-time subscription for ALL new customer messages
   useEffect(() => {
@@ -358,17 +413,16 @@ const Dashboard = () => {
             [newMessage.customer_id]: (prev[newMessage.customer_id] || 0) + 1,
           }));
 
-          // If this message is for the currently open dialog, add it to messages
+          // If this message is for the currently open dialog, show toast instead of auto-adding
           if (selectedCustomer?.id === newMessage.customer_id) {
-            setMessages((prev) => [...prev, newMessage]);
-            
-            // Scroll to bottom when new message arrives
-            setTimeout(() => {
-              const messagesContainer = document.getElementById('messages-container');
-              if (messagesContainer) {
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-              }
-            }, 100);
+            setHasNewMessages(true);
+            toast.info("New message received", {
+              description: "Click to refresh the conversation",
+              action: {
+                label: "Refresh",
+                onClick: () => loadMessages(selectedCustomer),
+              },
+            });
           } else {
             // Show toast notification for messages from other customers
             const customer = customers.find((c) => c.id === newMessage.customer_id);
@@ -392,19 +446,9 @@ const Dashboard = () => {
     return new Date(dateString).toLocaleString();
   };
 
-  // Pagination calculations for customers
-  const totalCustomerPages = Math.ceil(customers.length / itemsPerPage);
-  const paginatedCustomers = customers.slice(
-    (customersPage - 1) * itemsPerPage,
-    customersPage * itemsPerPage
-  );
-
-  // Pagination calculations for traffic
-  const totalTrafficPages = Math.ceil(trafficData.length / itemsPerPage);
-  const paginatedTraffic = trafficData.slice(
-    (trafficPage - 1) * itemsPerPage,
-    trafficPage * itemsPerPage
-  );
+  // Pagination calculations (data is already paginated from DB)
+  const totalCustomerPages = Math.ceil(totalCustomers / itemsPerPage);
+  const totalTrafficPages = Math.ceil(totalTraffic / itemsPerPage);
 
   if (isLoading) {
     return (
@@ -424,10 +468,23 @@ const Dashboard = () => {
               Monitor your Telegram bot customers and traffic
             </p>
           </div>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Users className="h-5 w-5" />
-            <span className="text-2xl font-semibold">{customers.length}</span>
-            <span>Total Customers</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Users className="h-5 w-5" />
+              <span className="text-2xl font-semibold">{totalCustomers}</span>
+              <span>Total Customers</span>
+            </div>
+            {hasNewCustomers && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchCustomers(customersPage)}
+                className="animate-pulse"
+              >
+                <Bell className="h-4 w-4 mr-2" />
+                New Updates
+              </Button>
+            )}
           </div>
         </div>
 
@@ -437,7 +494,7 @@ const Dashboard = () => {
               <Users className="h-4 w-4 mr-2" />
               Customers
             </TabsTrigger>
-            <TabsTrigger value="traffic" onClick={() => fetchTrafficData()}>
+            <TabsTrigger value="traffic" onClick={() => !trafficDataCached && fetchTrafficData(trafficPage)}>
               <TrendingUp className="h-4 w-4 mr-2" />
               Customer Traffic
             </TabsTrigger>
@@ -456,7 +513,11 @@ const Dashboard = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {customers.length === 0 ? (
+                {isLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    Loading customers...
+                  </div>
+                ) : customers.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     No customers yet. Share your bot to get started!
                   </div>
@@ -473,9 +534,9 @@ const Dashboard = () => {
                           <TableHead>First Message</TableHead>
                           <TableHead>Actions</TableHead>
                         </TableRow>
-                       </TableHeader>
+                      </TableHeader>
                       <TableBody>
-                        {paginatedCustomers.map((customer) => (
+                        {customers.map((customer) => (
                           <TableRow key={customer.id}>
                             <TableCell className="font-medium">
                               {customer.first_name} {customer.last_name}
@@ -536,7 +597,7 @@ const Dashboard = () => {
                     </Table>
                   </div>
                 )}
-                {customers.length > itemsPerPage && (
+                {totalCustomers > itemsPerPage && (
                   <div className="mt-4 flex justify-center">
                     <Pagination>
                       <PaginationContent>
@@ -602,7 +663,7 @@ const Dashboard = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {paginatedTraffic.map((traffic) => (
+                        {trafficData.map((traffic) => (
                           <TableRow key={traffic.id}>
                             <TableCell>
                               <code className="text-xs bg-muted px-2 py-1 rounded">
@@ -744,7 +805,7 @@ const Dashboard = () => {
                     </Table>
                   </div>
                 )}
-                {trafficData.length > itemsPerPage && (
+                {totalTraffic > itemsPerPage && (
                   <div className="mt-4 flex justify-center">
                     <Pagination>
                       <PaginationContent>
