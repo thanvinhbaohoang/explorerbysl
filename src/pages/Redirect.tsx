@@ -210,26 +210,45 @@ const Redirect = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Redirect</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p>Please confirm the tracking information before redirecting to Telegram:</p>
-              <div className="mt-4 p-3 bg-muted rounded-md text-left">
-                <p className="text-sm">
-                  <strong>Facebook Click ID:</strong>{" "}
-                  <span className="font-mono">{debugInfo.fbclid || "(none)"}</span>
-                </p>
-                {Object.keys(debugInfo.utmParams).length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-sm font-semibold">UTM Parameters:</p>
-                    {Object.entries(debugInfo.utmParams).map(([key, value]) => (
-                      <p key={key} className="text-sm ml-2">
-                        <strong>{key}:</strong> <span className="font-mono">{value}</span>
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
+            <AlertDialogDescription>
+              Please confirm the tracking information before redirecting to Telegram:
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="mt-4 p-4 bg-muted rounded-md text-left space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground mb-1">Full URL:</p>
+              <p className="text-xs text-muted-foreground break-all font-mono">
+                {debugInfo.fullUrl || "Loading..."}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground mb-1">Facebook Click ID:</p>
+              <p className="text-sm text-muted-foreground font-mono">
+                {debugInfo.fbclid || "(none)"}
+              </p>
+            </div>
+            {Object.keys(debugInfo.utmParams).length > 0 && (
+              <div>
+                <p className="text-sm font-semibold text-foreground mb-2">UTM Parameters:</p>
+                <div className="space-y-1 ml-2">
+                  {Object.entries(debugInfo.utmParams).map(([key, value]) => (
+                    <div key={key} className="flex gap-2">
+                      <span className="text-sm text-muted-foreground font-semibold min-w-[140px]">
+                        {key}:
+                      </span>
+                      <span className="text-sm text-foreground font-mono">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <p className="text-sm font-semibold text-foreground mb-1">Referrer:</p>
+              <p className="text-xs text-muted-foreground break-all font-mono">
+                {document.referrer || "(none)"}
+              </p>
+            </div>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={handleCancelRedirect}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmRedirect}>
