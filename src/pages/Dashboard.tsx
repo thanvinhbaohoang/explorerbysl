@@ -174,15 +174,13 @@ const Dashboard = () => {
 
   // Initial fetch
   useEffect(() => {
-    fetchCustomers(customersPage);
+    fetchCustomers(1);
     fetchUnreadCounts();
   }, []);
 
   // Fetch when page changes
   useEffect(() => {
-    if (customersPage > 1) {
-      fetchCustomers(customersPage);
-    }
+    fetchCustomers(customersPage);
   }, [customersPage]);
 
   // Fetch traffic data with pagination
@@ -268,9 +266,8 @@ const Dashboard = () => {
 
   // Fetch traffic when page changes
   useEffect(() => {
-    if (trafficPage > 1) {
-      fetchTrafficData(trafficPage);
-    }
+    if (trafficDataCached && trafficPage === 1) return;
+    fetchTrafficData(trafficPage);
   }, [trafficPage]);
 
   // Send reply to customer
