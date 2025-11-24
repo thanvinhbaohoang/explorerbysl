@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/pagination";
 import { Users, Bell, MessageSquare, Send, TrendingUp, BarChart3 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { TableSkeleton } from "@/components/TableSkeleton";
 
 interface Customer {
   id: string;
@@ -172,16 +173,16 @@ const Dashboard = () => {
     }
   };
 
-  // Initial fetch
+  // Fetch when page changes (including initial mount)
   useEffect(() => {
-    fetchCustomers(1);
-    fetchUnreadCounts();
-  }, []);
-
-  // Fetch when page changes
-  useEffect(() => {
+    console.log("Fetching customers for page:", customersPage);
     fetchCustomers(customersPage);
   }, [customersPage]);
+
+  // Fetch unread counts on mount
+  useEffect(() => {
+    fetchUnreadCounts();
+  }, []);
 
   // Fetch traffic data with pagination
   const fetchTrafficData = async (page: number) => {
@@ -266,9 +267,11 @@ const Dashboard = () => {
 
   // Fetch traffic when page changes
   useEffect(() => {
-    if (trafficDataCached && trafficPage === 1) return;
-    fetchTrafficData(trafficPage);
-  }, [trafficPage]);
+    if (!trafficDataCached) {
+      console.log("Fetching traffic for page:", trafficPage);
+      fetchTrafficData(trafficPage);
+    }
+  }, [trafficPage, trafficDataCached]);
 
   // Send reply to customer
   const sendReply = async () => {
@@ -511,9 +514,7 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent>
                 {isLoading ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    Loading customers...
-                  </div>
+                  <TableSkeleton rows={10} columns={7} />
                 ) : customers.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     No customers yet. Share your bot to get started!
@@ -639,9 +640,7 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent>
                 {isLoadingTraffic ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    Loading traffic data...
-                  </div>
+                  <TableSkeleton rows={10} columns={6} />
                 ) : trafficData.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     No traffic data yet.
