@@ -58,6 +58,7 @@ export type Database = {
           created_at: string
           customer_id: string | null
           id: string
+          is_read: boolean | null
           message_text: string | null
           message_type: string | null
           photo_file_id: string | null
@@ -78,6 +79,7 @@ export type Database = {
           created_at?: string
           customer_id?: string | null
           id?: string
+          is_read?: boolean | null
           message_text?: string | null
           message_type?: string | null
           photo_file_id?: string | null
@@ -98,6 +100,7 @@ export type Database = {
           created_at?: string
           customer_id?: string | null
           id?: string
+          is_read?: boolean | null
           message_text?: string | null
           message_type?: string | null
           photo_file_id?: string | null
