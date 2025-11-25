@@ -153,13 +153,14 @@ const Customers = () => {
     if (!replyText.trim() || !selectedCustomer || isSending) return;
 
     setIsSending(true);
+    const messageToSend = replyText;
     try {
       const response = await supabase.functions.invoke("telegram-bot", {
         body: {
           action: "send_message",
           telegram_id: selectedCustomer.telegram_id,
           customer_id: selectedCustomer.id,
-          message_text: replyText,
+          message_text: messageToSend,
         },
       });
 
@@ -168,7 +169,10 @@ const Customers = () => {
       toast.success("Message sent successfully!");
       setReplyText("");
       
-      // Scroll to bottom after sending
+      // Reload messages to show the sent message
+      await loadMessages(selectedCustomer);
+      
+      // Scroll to bottom after reloading
       setTimeout(() => {
         const messagesContainer = document.getElementById('messages-container');
         if (messagesContainer) {
