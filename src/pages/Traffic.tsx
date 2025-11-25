@@ -55,14 +55,10 @@ const Traffic = () => {
   const [isLoadingTraffic, setIsLoadingTraffic] = useState(false);
   const [trafficPage, setTrafficPage] = useState(1);
   const [totalTraffic, setTotalTraffic] = useState(0);
-  const [trafficDataCached, setTrafficDataCached] = useState(false);
   const itemsPerPage = 10;
 
   // Fetch traffic data with pagination
   const fetchTrafficData = async (page: number) => {
-    // Don't refetch if already cached
-    if (trafficDataCached && page === trafficPage) return;
-    
     setIsLoadingTraffic(true);
     try {
       // Get total count
@@ -130,7 +126,6 @@ const Traffic = () => {
       );
 
       setTrafficData(trafficWithCustomers);
-      setTrafficDataCached(true);
     } catch (error: any) {
       console.error("Error fetching traffic data:", error);
       toast.error("Failed to load traffic data");
@@ -141,11 +136,9 @@ const Traffic = () => {
 
   // Fetch traffic when page changes
   useEffect(() => {
-    if (!trafficDataCached) {
-      console.log("Fetching traffic for page:", trafficPage);
-      fetchTrafficData(trafficPage);
-    }
-  }, [trafficPage, trafficDataCached]);
+    console.log("Fetching traffic for page:", trafficPage);
+    fetchTrafficData(trafficPage);
+  }, [trafficPage]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
