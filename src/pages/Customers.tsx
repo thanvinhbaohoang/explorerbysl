@@ -153,32 +153,23 @@ const Customers = () => {
     if (!replyText.trim() || !selectedCustomer || isSending) return;
 
     setIsSending(true);
-    const messageToSend = replyText;
+    setReplyText("");
     try {
       const response = await supabase.functions.invoke("telegram-bot", {
         body: {
           action: "send_message",
           telegram_id: selectedCustomer.telegram_id,
           customer_id: selectedCustomer.id,
-          message_text: messageToSend,
+          message_text: replyText,
         },
       });
 
       if (response.error) throw response.error;
 
       toast.success("Message sent successfully!");
-      setReplyText("");
       
-      // Reload messages to show the sent message
-      await loadMessages(selectedCustomer);
-      
-      // Scroll to bottom after reloading
-      setTimeout(() => {
-        const messagesContainer = document.getElementById('messages-container');
-        if (messagesContainer) {
-          messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-      }, 100);
+      // Real-time subscription will add the message automatically
+      // No need to reload all messages
     } catch (error: any) {
       console.error("Error sending message:", error);
       toast.error("Failed to send message");
