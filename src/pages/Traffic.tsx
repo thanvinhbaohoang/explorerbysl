@@ -235,14 +235,6 @@ const Traffic = () => {
   // Pagination calculations (data is already paginated from DB)
   const totalTrafficPages = Math.ceil(totalTraffic / itemsPerPage);
 
-  if (isLoadingTraffic && trafficPage === 1) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-muted-foreground">Loading traffic data...</div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-background p-8">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -287,10 +279,11 @@ const Traffic = () => {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-9"
+                    disabled={isLoadingTraffic}
                   />
                 </div>
 
-                <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                <Select value={sourceFilter} onValueChange={setSourceFilter} disabled={isLoadingTraffic}>
                   <SelectTrigger className="w-full sm:w-[180px]">
                     <SelectValue placeholder="Source" />
                   </SelectTrigger>
@@ -304,7 +297,7 @@ const Traffic = () => {
                   </SelectContent>
                 </Select>
 
-                <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+                <Select value={campaignFilter} onValueChange={setCampaignFilter} disabled={isLoadingTraffic}>
                   <SelectTrigger className="w-full sm:w-[180px]">
                     <SelectValue placeholder="Campaign" />
                   </SelectTrigger>
@@ -324,6 +317,7 @@ const Traffic = () => {
                     size="icon"
                     onClick={clearFilters}
                     title="Clear filters"
+                    disabled={isLoadingTraffic}
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -331,7 +325,7 @@ const Traffic = () => {
               </div>
 
               {/* Results info */}
-              {(searchTerm || sourceFilter || campaignFilter) && (
+              {!isLoadingTraffic && (searchTerm || sourceFilter || campaignFilter) && (
                 <p className="text-sm text-muted-foreground">
                   Showing {totalTraffic} filtered result{totalTraffic !== 1 ? 's' : ''}
                 </p>
