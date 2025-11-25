@@ -182,6 +182,7 @@ const Customers = () => {
 
     setMessages((prev) => [...prev, optimisticMessage]);
     setReplyText("");
+    setIsSending(true);
     
     // Scroll to bottom immediately
     setTimeout(() => {
@@ -191,7 +192,6 @@ const Customers = () => {
       }
     }, 50);
 
-    setIsSending(true);
     try {
       const response = await supabase.functions.invoke("telegram-bot", {
         body: {
@@ -212,6 +212,13 @@ const Customers = () => {
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
     } finally {
       setIsSending(false);
+      // Refocus the input after sending
+      setTimeout(() => {
+        const input = document.querySelector('input[placeholder="Type your reply..."]') as HTMLInputElement;
+        if (input) {
+          input.focus();
+        }
+      }, 100);
     }
   };
 
@@ -700,7 +707,7 @@ const Customers = () => {
                       sendReply();
                     }
                   }}
-                  disabled={isSending}
+                  autoFocus
                 />
                 <Button 
                   onClick={sendReply} 
