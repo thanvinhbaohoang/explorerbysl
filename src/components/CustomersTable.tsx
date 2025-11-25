@@ -92,15 +92,12 @@ export const CustomersTable = ({ onViewMessages, unreadCounts }: CustomersTableP
       });
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-customers?${params}`,
-        {
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-        }
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-customers?${params}`
       );
 
       if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Fetch customers error:", errorData);
         throw new Error("Failed to fetch customers");
       }
 

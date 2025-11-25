@@ -110,15 +110,12 @@ export const TrafficTable = () => {
       });
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-traffic?${params}`,
-        {
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-        }
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fetch-traffic?${params}`
       );
 
       if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Fetch traffic error:", errorData);
         throw new Error("Failed to fetch traffic data");
       }
 
