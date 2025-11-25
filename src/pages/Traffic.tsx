@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -60,9 +61,9 @@ interface TrafficData {
 }
 
 const Traffic = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [trafficData, setTrafficData] = useState<TrafficData[]>([]);
   const [isLoadingTraffic, setIsLoadingTraffic] = useState(false);
-  const [trafficPage, setTrafficPage] = useState(1);
   const [totalTraffic, setTotalTraffic] = useState(0);
   const itemsPerPage = 10;
 
@@ -72,6 +73,12 @@ const Traffic = () => {
   const [campaignFilter, setCampaignFilter] = useState<string>("");
   const [uniqueSources, setUniqueSources] = useState<string[]>([]);
   const [uniqueCampaigns, setUniqueCampaigns] = useState<string[]>([]);
+
+  // Cache for storing fetched data
+  const [dataCache, setDataCache] = useState<Record<string, { data: TrafficData[], total: number }>>({});
+
+  // Get current page from URL params, default to 1
+  const trafficPage = parseInt(searchParams.get("page") || "1", 10);
 
   // Fetch unique values for filters
   const fetchFilterOptions = async () => {
@@ -98,6 +105,16 @@ const Traffic = () => {
 
   // Fetch traffic data with pagination and filters
   const fetchTrafficData = async (page: number) => {
+    // Generate cache key based on filters and page
+    const cacheKey = `${page}-${searchTerm}-${sourceFilter}-${campaignFilter}`;
+    
+    // Check cache first
+    if (dataCache[cacheKey]) {
+      setTrafficData(dataCache[cacheKey].data);
+      setTotalTraffic(dataCache[cacheKey].total);
+      return;
+    }
+
     setIsLoadingTraffic(true);
     try {
       let userIdsToInclude: string[] = [];
@@ -211,6 +228,12 @@ const Traffic = () => {
       );
 
       setTrafficData(trafficWithCustomers);
+
+      // Store in cache
+      setDataCache(prev => ({
+        ...prev,
+        [cacheKey]: { data: trafficWithCustomers, total: count || 0 }
+      }));
     } catch (error: any) {
       console.error("Error fetching traffic data:", error);
       toast.error("Failed to load traffic data");
@@ -227,25 +250,31 @@ const Traffic = () => {
   // Debounced search effect
   useEffect(() => {
     const timer = setTimeout(() => {
-      setTrafficPage(1); // Reset to page 1 when search/filters change
+      // Reset to page 1 when search/filters change
+      setSearchParams({ page: "1" });
+      // Clear cache when filters change
+      setDataCache({});
       fetchTrafficData(1);
     }, 500);
 
     return () => clearTimeout(timer);
   }, [searchTerm, sourceFilter, campaignFilter]);
 
-  // Fetch traffic when page changes (without filters)
+  // Fetch traffic when page changes
   useEffect(() => {
-    if (trafficPage !== 1) {
-      fetchTrafficData(trafficPage);
-    }
+    fetchTrafficData(trafficPage);
   }, [trafficPage]);
 
   const clearFilters = () => {
     setSearchTerm("");
     setSourceFilter("");
     setCampaignFilter("");
-    setTrafficPage(1);
+    setSearchParams({ page: "1" });
+    setDataCache({});
+  };
+
+  const updatePage = (page: number) => {
+    setSearchParams({ page: page.toString() });
   };
 
   const activeFilterCount = [searchTerm, sourceFilter, campaignFilter].filter(Boolean).length;
@@ -523,14 +552,14 @@ const Traffic = () => {
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious
-                        onClick={() => setTrafficPage((prev) => Math.max(1, prev - 1))}
+                        onClick={() => updatePage(Math.max(1, trafficPage - 1))}
                         className={trafficPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
                       />
                     </PaginationItem>
                     {Array.from({ length: totalTrafficPages }, (_, i) => i + 1).map((page) => (
                       <PaginationItem key={page}>
                         <PaginationLink
-                          onClick={() => setTrafficPage(page)}
+                          onClick={() => updatePage(page)}
                           isActive={page === trafficPage}
                           className="cursor-pointer"
                         >
@@ -540,7 +569,7 @@ const Traffic = () => {
                     ))}
                     <PaginationItem>
                       <PaginationNext
-                        onClick={() => setTrafficPage((prev) => Math.min(totalTrafficPages, prev + 1))}
+                        onClick={() => updatePage(Math.min(totalTrafficPages, trafficPage + 1))}
                         className={trafficPage === totalTrafficPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
                       />
                     </PaginationItem>
