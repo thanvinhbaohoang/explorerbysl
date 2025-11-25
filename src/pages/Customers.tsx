@@ -270,40 +270,58 @@ const Customers = () => {
     };
   }, [customersPage]);
 
-  // Real-time subscription for ALL new customer messages
+  // Real-time subscription for ALL new messages (both customer and employee)
   useEffect(() => {
     const channel = supabase
-      .channel("all-customer-messages")
+      .channel("all-messages")
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "messages",
-          filter: "sender_type=eq.customer",
         },
         (payload) => {
           const newMessage = payload.new as Message;
-          console.log("New customer message received:", newMessage);
+          console.log("New message received:", newMessage);
           
-          // Update unread count
-          setUnreadCounts((prev) => ({
-            ...prev,
-            [newMessage.customer_id]: (prev[newMessage.customer_id] || 0) + 1,
-          }));
+          // Update unread count only for customer messages
+          if (newMessage.sender_type === "customer") {
+            setUnreadCounts((prev) => ({
+              ...prev,
+              [newMessage.customer_id]: (prev[newMessage.customer_id] || 0) + 1,
+            }));
+          }
 
-          // If this message is for the currently open dialog, show toast instead of auto-adding
-          if (selectedCustomer?.id === newMessage.customer_id) {
-            setHasNewMessages(true);
-            toast.info("New message received", {
-              description: "Click to refresh the conversation",
-              action: {
-                label: "Refresh",
-                onClick: () => loadMessages(selectedCustomer),
-              },
-            });
-          } else {
-            // Show toast notification for messages from other customers
+          // If this message is for the currently open dialog, auto-add it
+          if (selectedCustomer?.id === newMessage.customer_id && dialogOpen) {
+            setMessages((prev) => [...prev, newMessage]);
+            setHasNewMessages(false);
+            
+            // Mark as read if it's from customer
+            if (newMessage.sender_type === "customer") {
+              supabase
+                .from("messages")
+                .update({ is_read: true })
+                .eq("id", newMessage.id)
+                .then(() => {
+                  // Reset unread count for this customer
+                  setUnreadCounts((prev) => ({
+                    ...prev,
+                    [newMessage.customer_id]: Math.max(0, (prev[newMessage.customer_id] || 1) - 1),
+                  }));
+                });
+            }
+            
+            // Scroll to bottom
+            setTimeout(() => {
+              const messagesContainer = document.getElementById('messages-container');
+              if (messagesContainer) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+              }
+            }, 100);
+          } else if (newMessage.sender_type === "customer") {
+            // Show toast notification for customer messages from other customers
             const customer = customers.find((c) => c.id === newMessage.customer_id);
             if (customer) {
               toast.success("New message received", {
@@ -319,7 +337,7 @@ const Customers = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedCustomer, customers]);
+  }, [selectedCustomer, customers, dialogOpen]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
