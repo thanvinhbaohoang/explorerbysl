@@ -76,6 +76,7 @@ const Customers = () => {
   const [replyText, setReplyText] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [lastMessageSender, setLastMessageSender] = useState<Record<string, string>>({});
   const [customersPage, setCustomersPage] = useState(1);
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [hasNewCustomers, setHasNewCustomers] = useState(false);
@@ -87,6 +88,37 @@ const Customers = () => {
   const [messageMetaCache, setMessageMetaCache] = useState<Record<string, { offset: number; hasMore: boolean }>>({});
   const itemsPerPage = 10;
   const messagesPerPage = 10;
+
+  // Fetch last message sender for all customers
+  const fetchLastMessageSenders = async () => {
+    try {
+      const { data: customers } = await supabase
+        .from("customer")
+        .select("id");
+
+      if (!customers) return;
+
+      const senderMap: Record<string, string> = {};
+      
+      for (const customer of customers) {
+        const { data } = await supabase
+          .from("messages")
+          .select("sender_type")
+          .eq("customer_id", customer.id)
+          .order("timestamp", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (data) {
+          senderMap[customer.id] = data.sender_type;
+        }
+      }
+      
+      setLastMessageSender(senderMap);
+    } catch (err) {
+      console.error("Error fetching last message senders:", err);
+    }
+  };
 
   // Fetch unread counts for all customers
   const fetchUnreadCounts = async () => {
@@ -153,6 +185,7 @@ const Customers = () => {
   // Fetch unread counts on mount
   useEffect(() => {
     fetchUnreadCounts();
+    fetchLastMessageSenders();
   }, []);
 
   // Send reply to customer
@@ -209,6 +242,12 @@ const Customers = () => {
       });
 
       if (response.error) throw response.error;
+
+      // Update last message sender to employee
+      setLastMessageSender((prev) => ({
+        ...prev,
+        [selectedCustomer.id]: "employee",
+      }));
 
       // Real-time subscription will replace the optimistic message with the real one
     } catch (error: any) {
@@ -420,6 +459,12 @@ const Customers = () => {
           const newMessage = payload.new as Message;
           console.log("New message received:", newMessage);
           
+          // Update last message sender
+          setLastMessageSender((prev) => ({
+            ...prev,
+            [newMessage.customer_id]: newMessage.sender_type,
+          }));
+          
           // Update unread count only for customer messages
           if (newMessage.sender_type === "customer") {
             setUnreadCounts((prev) => ({
@@ -618,7 +663,7 @@ const Customers = () => {
                           >
                             <MessageSquare className="h-4 w-4 mr-2" />
                             Telegram
-                            {unreadCounts[customer.id] > 0 && (
+                            {lastMessageSender[customer.id] === "customer" && (
                               <span className="absolute -top-1 -right-1 h-3 w-3 bg-destructive rounded-full animate-pulse" />
                             )}
                           </Button>
