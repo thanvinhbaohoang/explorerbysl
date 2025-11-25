@@ -83,6 +83,8 @@ const Customers = () => {
   const [messageOffset, setMessageOffset] = useState(0);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false);
+  const [messagesCache, setMessagesCache] = useState<Record<string, Message[]>>({});
+  const [messageMetaCache, setMessageMetaCache] = useState<Record<string, { offset: number; hasMore: boolean }>>({});
   const itemsPerPage = 10;
   const messagesPerPage = 10;
 
@@ -227,9 +229,29 @@ const Customers = () => {
   };
 
   // Load messages for selected customer
-  const loadMessages = async (customer: Customer, offset = 0) => {
+  const loadMessages = async (customer: Customer, offset = 0, forceRefresh = false) => {
     setSelectedCustomer(customer);
     setDialogOpen(true);
+    
+    // Check cache first (only if not forcing refresh and offset is 0)
+    if (offset === 0 && !forceRefresh && messagesCache[customer.id]) {
+      setMessages(messagesCache[customer.id]);
+      const meta = messageMetaCache[customer.id];
+      if (meta) {
+        setMessageOffset(meta.offset);
+        setHasMoreMessages(meta.hasMore);
+      }
+      
+      // Scroll to bottom
+      setTimeout(() => {
+        const messagesContainer = document.getElementById('messages-container');
+        if (messagesContainer) {
+          messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+      }, 100);
+      
+      return;
+    }
     
     if (offset === 0) {
       setIsLoadingMessages(true);
@@ -264,7 +286,8 @@ const Customers = () => {
 
       const totalMessages = count || 0;
       const newOffset = offset + messagesPerPage;
-      setHasMoreMessages(newOffset < totalMessages);
+      const hasMore = newOffset < totalMessages;
+      setHasMoreMessages(hasMore);
       setMessageOffset(newOffset);
 
       // Fetch paginated messages (newest first, then reverse)
@@ -282,6 +305,16 @@ const Customers = () => {
       if (offset === 0) {
         setMessages(messagesData);
         
+        // Cache the messages and metadata
+        setMessagesCache((prev) => ({
+          ...prev,
+          [customer.id]: messagesData,
+        }));
+        setMessageMetaCache((prev) => ({
+          ...prev,
+          [customer.id]: { offset: newOffset, hasMore },
+        }));
+        
         // Scroll to bottom after loading
         setTimeout(() => {
           const messagesContainer = document.getElementById('messages-container');
@@ -294,7 +327,18 @@ const Customers = () => {
         const container = document.getElementById('messages-container');
         const oldScrollHeight = container?.scrollHeight || 0;
         
-        setMessages((prev) => [...messagesData, ...prev]);
+        const newMessages = [...messagesData, ...messages];
+        setMessages(newMessages);
+        
+        // Update cache
+        setMessagesCache((prev) => ({
+          ...prev,
+          [customer.id]: newMessages,
+        }));
+        setMessageMetaCache((prev) => ({
+          ...prev,
+          [customer.id]: { offset: newOffset, hasMore },
+        }));
         
         // Restore scroll position
         setTimeout(() => {
@@ -390,18 +434,26 @@ const Customers = () => {
             setMessages((prev) => {
               const hasPending = prev.some((msg) => msg.isPending && msg.sender_type === "employee");
               
+              let newMessages;
               if (hasPending && newMessage.sender_type === "employee") {
                 // Replace the first pending employee message
-                const newMessages = [...prev];
+                newMessages = [...prev];
                 const pendingIndex = newMessages.findIndex((msg) => msg.isPending && msg.sender_type === "employee");
                 if (pendingIndex !== -1) {
                   newMessages[pendingIndex] = newMessage;
-                  return newMessages;
                 }
+              } else {
+                // Otherwise just add the message (for customer messages or if no pending)
+                newMessages = [...prev, newMessage];
               }
               
-              // Otherwise just add the message (for customer messages or if no pending)
-              return [...prev, newMessage];
+              // Update cache
+              setMessagesCache((cache) => ({
+                ...cache,
+                [newMessage.customer_id]: newMessages,
+              }));
+              
+              return newMessages;
             });
             
             setHasNewMessages(false);
