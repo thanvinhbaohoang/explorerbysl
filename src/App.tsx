@@ -10,6 +10,7 @@ import Traffic from "./pages/Traffic";
 import AdsInsight from "./pages/AdsInsight";
 import AdDetail from "./pages/AdDetail";
 import Redirect from "./pages/Redirect";
+import Telegram from "./pages/Telegram";
 import Ad from "./pages/Ad";
 import NotFound from "./pages/NotFound";
 
@@ -24,6 +25,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/redirect" element={<Redirect />} />
+          <Route path="/telegram" element={<Telegram />} />
           <Route path="/ad/*" element={<Ad />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/customers" element={<Customers />} />
