@@ -63,6 +63,7 @@ interface Message {
   video_mime_type: string | null;
   sender_type: string;
   is_read: boolean;
+  isPending?: boolean; // For optimistic UI
 }
 
 const Customers = () => {
@@ -152,27 +153,63 @@ const Customers = () => {
   const sendReply = async () => {
     if (!replyText.trim() || !selectedCustomer || isSending) return;
 
-    setIsSending(true);
+    const messageToSend = replyText;
+    const tempId = `temp-${Date.now()}`;
+    
+    // Optimistically add message to UI
+    const optimisticMessage: Message = {
+      id: tempId,
+      customer_id: selectedCustomer.id,
+      telegram_id: selectedCustomer.telegram_id,
+      message_text: messageToSend,
+      message_type: "text",
+      timestamp: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      photo_file_id: null,
+      photo_url: null,
+      voice_file_id: null,
+      voice_duration: null,
+      voice_transcription: null,
+      voice_url: null,
+      video_file_id: null,
+      video_url: null,
+      video_duration: null,
+      video_mime_type: null,
+      sender_type: "employee",
+      is_read: true,
+      isPending: true,
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
     setReplyText("");
+    
+    // Scroll to bottom immediately
+    setTimeout(() => {
+      const messagesContainer = document.getElementById('messages-container');
+      if (messagesContainer) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+    }, 50);
+
+    setIsSending(true);
     try {
       const response = await supabase.functions.invoke("telegram-bot", {
         body: {
           action: "send_message",
           telegram_id: selectedCustomer.telegram_id,
           customer_id: selectedCustomer.id,
-          message_text: replyText,
+          message_text: messageToSend,
         },
       });
 
       if (response.error) throw response.error;
 
-      toast.success("Message sent successfully!");
-      
-      // Real-time subscription will add the message automatically
-      // No need to reload all messages
+      // Real-time subscription will replace the optimistic message with the real one
     } catch (error: any) {
       console.error("Error sending message:", error);
       toast.error("Failed to send message");
+      // Remove optimistic message on error
+      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
     } finally {
       setIsSending(false);
     }
@@ -284,9 +321,26 @@ const Customers = () => {
             }));
           }
 
-          // If this message is for the currently open dialog, auto-add it
+          // If this message is for the currently open dialog
           if (selectedCustomer?.id === newMessage.customer_id && dialogOpen) {
-            setMessages((prev) => [...prev, newMessage]);
+            // Replace pending message or add new message
+            setMessages((prev) => {
+              const hasPending = prev.some((msg) => msg.isPending && msg.sender_type === "employee");
+              
+              if (hasPending && newMessage.sender_type === "employee") {
+                // Replace the first pending employee message
+                const newMessages = [...prev];
+                const pendingIndex = newMessages.findIndex((msg) => msg.isPending && msg.sender_type === "employee");
+                if (pendingIndex !== -1) {
+                  newMessages[pendingIndex] = newMessage;
+                  return newMessages;
+                }
+              }
+              
+              // Otherwise just add the message (for customer messages or if no pending)
+              return [...prev, newMessage];
+            });
+            
             setHasNewMessages(false);
             
             // Mark as read if it's from customer
@@ -531,11 +585,11 @@ const Customers = () => {
                 {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`border rounded-lg p-4 space-y-3 ${
+                  className={`border rounded-lg p-4 space-y-3 transition-opacity ${
                     message.sender_type === 'employee' 
                       ? 'bg-primary/5 ml-8' 
                       : 'mr-8'
-                  }`}
+                  } ${message.isPending ? 'opacity-50' : 'opacity-100'}`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -543,7 +597,9 @@ const Customers = () => {
                         {message.sender_type === 'employee' ? 'You' : message.message_type}
                       </Badge>
                       {message.sender_type === 'employee' && (
-                        <span className="text-xs text-muted-foreground">Employee Reply</span>
+                        <span className="text-xs text-muted-foreground">
+                          {message.isPending ? 'Sending...' : 'Employee Reply'}
+                        </span>
                       )}
                     </div>
                     <span className="text-xs text-muted-foreground">
