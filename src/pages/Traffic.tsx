@@ -104,13 +104,19 @@ const Traffic = () => {
 
       // If searching, find matching customers first
       if (searchTerm) {
-        const searchPattern = `%${searchTerm}%`;
-        const { data: matchingCustomers } = await supabase
+        console.log("Searching for customers with term:", searchTerm);
+        const { data: matchingCustomers, error: customerError } = await supabase
           .from("customer")
           .select("id")
-          .or(`username.ilike.${searchPattern},first_name.ilike.${searchPattern},last_name.ilike.${searchPattern},telegram_id::text.ilike.${searchPattern}`);
+          .or(`username.ilike.%${searchTerm}%,first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%`);
         
-        userIdsToInclude = matchingCustomers?.map(c => c.id) || [];
+        if (customerError) {
+          console.error("Error searching customers:", customerError);
+        } else {
+          console.log("Found matching customers:", matchingCustomers);
+          userIdsToInclude = matchingCustomers?.map(c => c.id) || [];
+          console.log("User IDs to include:", userIdsToInclude);
+        }
       }
 
       // Build query with filters
