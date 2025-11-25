@@ -80,7 +80,11 @@ const Customers = () => {
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [hasNewCustomers, setHasNewCustomers] = useState(false);
   const [hasNewMessages, setHasNewMessages] = useState(false);
+  const [messageOffset, setMessageOffset] = useState(0);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false);
   const itemsPerPage = 10;
+  const messagesPerPage = 10;
 
   // Fetch unread counts for all customers
   const fetchUnreadCounts = async () => {
@@ -223,47 +227,99 @@ const Customers = () => {
   };
 
   // Load messages for selected customer
-  const loadMessages = async (customer: Customer) => {
+  const loadMessages = async (customer: Customer, offset = 0) => {
     setSelectedCustomer(customer);
     setDialogOpen(true);
-    setIsLoadingMessages(true);
+    
+    if (offset === 0) {
+      setIsLoadingMessages(true);
+      setMessages([]);
+      setMessageOffset(0);
+    } else {
+      setIsLoadingMoreMessages(true);
+    }
 
     try {
-      // Mark all unread messages as read for this customer
-      await supabase
+      // Mark all unread messages as read for this customer (only on initial load)
+      if (offset === 0) {
+        await supabase
+          .from("messages")
+          .update({ is_read: true })
+          .eq("customer_id", customer.id)
+          .eq("sender_type", "customer")
+          .eq("is_read", false);
+
+        // Reset unread count for this customer
+        setUnreadCounts((prev) => ({
+          ...prev,
+          [customer.id]: 0,
+        }));
+      }
+
+      // Get total count
+      const { count } = await supabase
         .from("messages")
-        .update({ is_read: true })
-        .eq("customer_id", customer.id)
-        .eq("sender_type", "customer")
-        .eq("is_read", false);
+        .select("*", { count: "exact", head: true })
+        .eq("customer_id", customer.id);
 
-      // Reset unread count for this customer
-      setUnreadCounts((prev) => ({
-        ...prev,
-        [customer.id]: 0,
-      }));
+      const totalMessages = count || 0;
+      const newOffset = offset + messagesPerPage;
+      setHasMoreMessages(newOffset < totalMessages);
+      setMessageOffset(newOffset);
 
+      // Fetch paginated messages (newest first, then reverse)
       const { data, error } = await supabase
         .from("messages")
         .select("*")
         .eq("customer_id", customer.id)
-        .order("timestamp", { ascending: true });
+        .order("timestamp", { ascending: false })
+        .range(offset, offset + messagesPerPage - 1);
 
       if (error) throw error;
-      setMessages(data || []);
       
-      // Scroll to bottom after loading
-      setTimeout(() => {
-        const messagesContainer = document.getElementById('messages-container');
-        if (messagesContainer) {
-          messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-      }, 100);
+      const messagesData = (data || []).reverse();
+      
+      if (offset === 0) {
+        setMessages(messagesData);
+        
+        // Scroll to bottom after loading
+        setTimeout(() => {
+          const messagesContainer = document.getElementById('messages-container');
+          if (messagesContainer) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+          }
+        }, 100);
+      } else {
+        // Prepend older messages and maintain scroll position
+        const container = document.getElementById('messages-container');
+        const oldScrollHeight = container?.scrollHeight || 0;
+        
+        setMessages((prev) => [...messagesData, ...prev]);
+        
+        // Restore scroll position
+        setTimeout(() => {
+          if (container) {
+            const newScrollHeight = container.scrollHeight;
+            container.scrollTop = newScrollHeight - oldScrollHeight;
+          }
+        }, 50);
+      }
     } catch (error: any) {
       console.error("Error fetching messages:", error);
       toast.error("Failed to load messages");
     } finally {
       setIsLoadingMessages(false);
+      setIsLoadingMoreMessages(false);
+    }
+  };
+
+  // Handle scroll to load more messages
+  const handleMessagesScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    
+    // Check if scrolled to top
+    if (container.scrollTop === 0 && hasMoreMessages && !isLoadingMoreMessages && selectedCustomer) {
+      loadMessages(selectedCustomer, messageOffset);
     }
   };
 
@@ -588,7 +644,23 @@ const Customers = () => {
               <div 
                 id="messages-container"
                 className="space-y-4 max-h-[400px] overflow-y-auto"
+                onScroll={handleMessagesScroll}
               >
+                {isLoadingMoreMessages && (
+                  <div className="text-center py-2 text-sm text-muted-foreground">
+                    Loading older messages...
+                  </div>
+                )}
+                {hasMoreMessages && !isLoadingMoreMessages && (
+                  <div className="text-center py-2">
+                    <button
+                      onClick={() => selectedCustomer && loadMessages(selectedCustomer, messageOffset)}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Scroll to top to load older messages
+                    </button>
+                  </div>
+                )}
                 {messages.map((message) => (
                 <div
                   key={message.id}
