@@ -619,12 +619,7 @@ const Customers = () => {
                             <MessageSquare className="h-4 w-4 mr-2" />
                             Telegram
                             {unreadCounts[customer.id] > 0 && (
-                              <Badge
-                                variant="destructive"
-                                className="ml-2 px-1.5 py-0 h-5 min-w-5 flex items-center justify-center"
-                              >
-                                {unreadCounts[customer.id]}
-                              </Badge>
+                              <span className="absolute -top-1 -right-1 h-3 w-3 bg-destructive rounded-full animate-pulse" />
                             )}
                           </Button>
                         </TableCell>
