@@ -11,6 +11,15 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Tooltip,
   TooltipContent,
@@ -25,7 +34,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, Search, X, Filter } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 
 interface TrafficData {
@@ -57,15 +66,71 @@ const Traffic = () => {
   const [totalTraffic, setTotalTraffic] = useState(0);
   const itemsPerPage = 10;
 
-  // Fetch traffic data with pagination
+  // Filter and search states
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<string>("");
+  const [campaignFilter, setCampaignFilter] = useState<string>("");
+  const [uniqueSources, setUniqueSources] = useState<string[]>([]);
+  const [uniqueCampaigns, setUniqueCampaigns] = useState<string[]>([]);
+
+  // Fetch unique values for filters
+  const fetchFilterOptions = async () => {
+    try {
+      const { data: sources } = await supabase
+        .from("telegram_leads")
+        .select("utm_source")
+        .not("utm_source", "is", null);
+
+      const { data: campaigns } = await supabase
+        .from("telegram_leads")
+        .select("utm_campaign")
+        .not("utm_campaign", "is", null);
+
+      const uniqueSourceValues = [...new Set(sources?.map(s => s.utm_source).filter(Boolean))] as string[];
+      const uniqueCampaignValues = [...new Set(campaigns?.map(c => c.utm_campaign).filter(Boolean))] as string[];
+
+      setUniqueSources(uniqueSourceValues);
+      setUniqueCampaigns(uniqueCampaignValues);
+    } catch (error) {
+      console.error("Error fetching filter options:", error);
+    }
+  };
+
+  // Fetch traffic data with pagination and filters
   const fetchTrafficData = async (page: number) => {
     setIsLoadingTraffic(true);
     try {
-      // Get total count
-      const { count, error: countError } = await supabase
+      // Build query with filters
+      let countQuery = supabase
         .from("telegram_leads")
         .select("*", { count: "exact", head: true });
 
+      let dataQuery = supabase
+        .from("telegram_leads")
+        .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, created_at, user_id");
+
+      // Apply global search
+      if (searchTerm) {
+        const searchPattern = `%${searchTerm}%`;
+        const searchCondition = `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern}`;
+        
+        countQuery = countQuery.or(searchCondition);
+        dataQuery = dataQuery.or(searchCondition);
+      }
+
+      // Apply specific filters
+      if (sourceFilter && sourceFilter !== "all") {
+        countQuery = countQuery.eq("utm_source", sourceFilter);
+        dataQuery = dataQuery.eq("utm_source", sourceFilter);
+      }
+
+      if (campaignFilter && campaignFilter !== "all") {
+        countQuery = countQuery.eq("utm_campaign", campaignFilter);
+        dataQuery = dataQuery.eq("utm_campaign", campaignFilter);
+      }
+
+      // Get filtered count
+      const { count, error: countError } = await countQuery;
       if (countError) throw countError;
       setTotalTraffic(count || 0);
 
@@ -73,9 +138,7 @@ const Traffic = () => {
       const from = (page - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
 
-      const { data: leads, error } = await supabase
-        .from("telegram_leads")
-        .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, created_at, user_id")
+      const { data: leads, error } = await dataQuery
         .order("created_at", { ascending: false })
         .range(from, to);
 
@@ -134,11 +197,36 @@ const Traffic = () => {
     }
   };
 
-  // Fetch traffic when page changes
+  // Fetch filter options on mount
   useEffect(() => {
-    console.log("Fetching traffic for page:", trafficPage);
-    fetchTrafficData(trafficPage);
+    fetchFilterOptions();
+  }, []);
+
+  // Debounced search effect
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTrafficPage(1); // Reset to page 1 when search/filters change
+      fetchTrafficData(1);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, sourceFilter, campaignFilter]);
+
+  // Fetch traffic when page changes (without filters)
+  useEffect(() => {
+    if (trafficPage !== 1) {
+      fetchTrafficData(trafficPage);
+    }
   }, [trafficPage]);
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setSourceFilter("");
+    setCampaignFilter("");
+    setTrafficPage(1);
+  };
+
+  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter].filter(Boolean).length;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
@@ -174,10 +262,81 @@ const Traffic = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Traffic Data</CardTitle>
-            <CardDescription>
-              Ad source tracking and customer acquisition information
-            </CardDescription>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Traffic Data</CardTitle>
+                  <CardDescription>
+                    Ad source tracking and customer acquisition information
+                  </CardDescription>
+                </div>
+                {activeFilterCount > 0 && (
+                  <Badge variant="secondary" className="gap-1">
+                    <Filter className="h-3 w-3" />
+                    {activeFilterCount} active
+                  </Badge>
+                )}
+              </div>
+              
+              {/* Search and Filters */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search across all fields..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+
+                <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="Source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Sources</SelectItem>
+                    {uniqueSources.map((source) => (
+                      <SelectItem key={source} value={source}>
+                        {source}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="Campaign" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Campaigns</SelectItem>
+                    {uniqueCampaigns.map((campaign) => (
+                      <SelectItem key={campaign} value={campaign}>
+                        {campaign}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {activeFilterCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={clearFilters}
+                    title="Clear filters"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+
+              {/* Results info */}
+              {(searchTerm || sourceFilter || campaignFilter) && (
+                <p className="text-sm text-muted-foreground">
+                  Showing {totalTraffic} filtered result{totalTraffic !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {isLoadingTraffic ? (
