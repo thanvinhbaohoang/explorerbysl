@@ -100,6 +100,19 @@ const Traffic = () => {
   const fetchTrafficData = async (page: number) => {
     setIsLoadingTraffic(true);
     try {
+      let userIdsToInclude: string[] = [];
+
+      // If searching, find matching customers first
+      if (searchTerm) {
+        const searchPattern = `%${searchTerm}%`;
+        const { data: matchingCustomers } = await supabase
+          .from("customer")
+          .select("id")
+          .or(`username.ilike.${searchPattern},first_name.ilike.${searchPattern},last_name.ilike.${searchPattern},telegram_id::text.ilike.${searchPattern}`);
+        
+        userIdsToInclude = matchingCustomers?.map(c => c.id) || [];
+      }
+
       // Build query with filters
       let countQuery = supabase
         .from("telegram_leads")
@@ -112,10 +125,18 @@ const Traffic = () => {
       // Apply global search
       if (searchTerm) {
         const searchPattern = `%${searchTerm}%`;
-        const searchCondition = `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern}`;
         
-        countQuery = countQuery.or(searchCondition);
-        dataQuery = dataQuery.or(searchCondition);
+        // Search in telegram_leads fields OR matching customer user_ids
+        if (userIdsToInclude.length > 0) {
+          const leadsSearchCondition = `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern},user_id.in.(${userIdsToInclude.join(',')})`;
+          countQuery = countQuery.or(leadsSearchCondition);
+          dataQuery = dataQuery.or(leadsSearchCondition);
+        } else {
+          // Only search telegram_leads fields if no matching customers
+          const leadsSearchCondition = `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern}`;
+          countQuery = countQuery.or(leadsSearchCondition);
+          dataQuery = dataQuery.or(leadsSearchCondition);
+        }
       }
 
       // Apply specific filters
