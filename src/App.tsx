@@ -12,6 +12,7 @@ import AdDetail from "./pages/AdDetail";
 import Redirect from "./pages/Redirect";
 import Telegram from "./pages/Telegram";
 import Ad from "./pages/Ad";
+import WebhookDebug from "./pages/WebhookDebug";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ const App = () => (
           <Route path="/traffic" element={<Traffic />} />
           <Route path="/ads-insight" element={<AdsInsight />} />
           <Route path="/ads-insight/:adId" element={<AdDetail />} />
+          <Route path="/webhook-debug" element={<WebhookDebug />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -228,12 +228,27 @@ async function handlePostback(senderId: string, postback: any) {
 }
 
 serve(async (req) => {
+  console.log(`[${new Date().toISOString()}] Incoming request: ${req.method} ${req.url}`);
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
   
   const url = new URL(req.url);
+  
+  // Health check endpoint
+  if (url.pathname.endsWith('/health')) {
+    console.log('Health check requested');
+    return new Response(JSON.stringify({ 
+      status: 'healthy', 
+      timestamp: new Date().toISOString(),
+      service: 'messenger-webhook'
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
   
   // Webhook verification (GET request from Facebook)
   if (req.method === 'GET') {
@@ -255,6 +270,10 @@ serve(async (req) => {
     const body = await req.text();
     const signature = req.headers.get('x-hub-signature-256');
     
+    console.log('POST request received');
+    console.log('Signature present:', !!signature);
+    console.log('Body length:', body.length);
+    
     // Verify signature
     if (signature) {
       const isValid = await verifySignature(body, signature);
@@ -262,9 +281,11 @@ serve(async (req) => {
         console.error('Invalid signature');
         return new Response('Forbidden', { status: 403, headers: corsHeaders });
       }
+      console.log('Signature verified successfully');
     }
     
     const data = JSON.parse(body);
+    console.log('Parsed webhook data:', JSON.stringify(data, null, 2));
     
     // Handle special action for sending messages from frontend
     const action = url.searchParams.get('action');
@@ -318,19 +339,27 @@ serve(async (req) => {
     
     // Process webhook events from Facebook
     if (data.object === 'page') {
+      console.log(`Processing ${data.entry.length} page entries`);
       for (const entry of data.entry) {
+        console.log(`Processing ${entry.messaging?.length || 0} messaging events`);
         for (const event of entry.messaging) {
           const senderId = event.sender.id;
+          console.log(`Event from sender ${senderId}:`, JSON.stringify(event, null, 2));
           
           if (event.message) {
+            console.log('Handling message event');
             await handleMessage(senderId, event.message);
           } else if (event.postback) {
+            console.log('Handling postback event');
             await handlePostback(senderId, event.postback);
           } else if (event.referral) {
+            console.log('Handling referral event');
             await handleReferral(senderId, event.referral);
           }
         }
       }
+    } else {
+      console.log('Received non-page webhook event:', data.object);
     }
     
     return new Response(JSON.stringify({ success: true }), {
