@@ -37,7 +37,7 @@ async function verifySignature(payload: string, signature: string): Promise<bool
 
 // Fetch user profile from Facebook
 async function getUserProfile(psid: string) {
-  const url = `https://graph.facebook.com/v18.0/${psid}?fields=first_name,last_name,profile_pic&access_token=${pageAccessToken}`;
+  const url = `https://graph.facebook.com/v18.0/${psid}?fields=first_name,last_name,profile_pic,locale,timezone&access_token=${pageAccessToken}`;
   const response = await fetch(url);
   
   if (!response.ok) {
@@ -91,6 +91,8 @@ async function handleMessage(senderId: string, message: any) {
         messenger_id: senderId,
         messenger_name: profile ? `${profile.first_name} ${profile.last_name}` : 'Unknown',
         messenger_profile_pic: profile?.profile_pic || null,
+        locale: profile?.locale || null,
+        timezone_offset: profile?.timezone || null,
         first_message_at: new Date().toISOString(),
       })
       .select()
@@ -188,6 +190,8 @@ async function handleReferral(senderId: string, referral: any) {
         messenger_id: senderId,
         messenger_name: profile ? `${profile.first_name} ${profile.last_name}` : 'Unknown',
         messenger_profile_pic: profile?.profile_pic || null,
+        locale: profile?.locale || null,
+        timezone_offset: profile?.timezone || null,
         first_message_at: new Date().toISOString(),
       })
       .select()
