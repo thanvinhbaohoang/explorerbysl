@@ -294,8 +294,8 @@ serve(async (req) => {
     console.log('Parsed webhook data:', JSON.stringify(data, null, 2));
     
     // Handle special action for sending messages from frontend
-    const action = url.searchParams.get('action');
-    if (action === 'send') {
+    // Frontend sends { psid, text } while Facebook sends { object: 'page', entry: [...] }
+    if (data.psid && data.text && !data.object) {
       const { psid, text } = data;
       
       if (!psid || !text) {
