@@ -144,6 +144,8 @@ async function handleMessage(senderId: string, message: any) {
   }
   
   // Save message to database
+  const timestamp = message.timestamp ? new Date(message.timestamp).toISOString() : new Date().toISOString();
+  
   const { error: messageError } = await supabase
     .from('messages')
     .insert({
@@ -162,7 +164,7 @@ async function handleMessage(senderId: string, message: any) {
       voice_duration: voiceDuration,
       sender_type: 'customer',
       is_read: false,
-      timestamp: new Date(message.timestamp).toISOString(),
+      timestamp,
     });
   
   if (messageError) {
