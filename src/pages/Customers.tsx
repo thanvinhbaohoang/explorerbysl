@@ -28,12 +28,12 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Users, Bell, MessageSquare, Send } from "lucide-react";
+import { Users, Bell, MessageSquare, Send, Facebook } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 
 interface Customer {
   id: string;
-  telegram_id: number;
+  telegram_id: number | null;
   username: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -41,12 +41,15 @@ interface Customer {
   is_premium: boolean;
   first_message_at: string;
   created_at: string;
+  messenger_id: string | null;
+  messenger_name: string | null;
+  messenger_profile_pic: string | null;
 }
 
 interface Message {
   id: string;
   customer_id: string;
-  telegram_id: number;
+  telegram_id: number | null;
   message_text: string | null;
   message_type: string;
   timestamp: string;
@@ -63,6 +66,8 @@ interface Message {
   video_mime_type: string | null;
   sender_type: string;
   is_read: boolean;
+  platform: string;
+  messenger_mid: string | null;
   isPending?: boolean; // For optimistic UI
 }
 
@@ -194,6 +199,7 @@ const Customers = () => {
 
     const messageToSend = replyText;
     const tempId = `temp-${Date.now()}`;
+    const platform = selectedCustomer.messenger_id ? 'messenger' : 'telegram';
     
     // Optimistically add message to UI
     const optimisticMessage: Message = {
@@ -216,6 +222,8 @@ const Customers = () => {
       video_mime_type: null,
       sender_type: "employee",
       is_read: true,
+      platform,
+      messenger_mid: null,
       isPending: true,
     };
 
@@ -232,14 +240,27 @@ const Customers = () => {
     }, 50);
 
     try {
-      const response = await supabase.functions.invoke("telegram-bot", {
-        body: {
-          action: "send_message",
-          telegram_id: selectedCustomer.telegram_id,
-          customer_id: selectedCustomer.id,
-          message_text: messageToSend,
-        },
-      });
+      let response;
+      
+      if (platform === 'messenger') {
+        // Send via Messenger webhook
+        response = await supabase.functions.invoke("messenger-webhook", {
+          body: {
+            psid: selectedCustomer.messenger_id,
+            text: messageToSend,
+          },
+        });
+      } else {
+        // Send via Telegram bot
+        response = await supabase.functions.invoke("telegram-bot", {
+          body: {
+            action: "send_message",
+            telegram_id: selectedCustomer.telegram_id,
+            customer_id: selectedCustomer.id,
+            message_text: messageToSend,
+          },
+        });
+      }
 
       if (response.error) throw response.error;
 
@@ -566,7 +587,7 @@ const Customers = () => {
           <div>
             <h1 className="text-4xl font-bold text-foreground">Customers</h1>
             <p className="text-muted-foreground mt-2">
-              Manage and chat with your Telegram bot customers
+              Manage and chat with your Telegram and Messenger customers
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -608,9 +629,9 @@ const Customers = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Platform</TableHead>
                       <TableHead>Name</TableHead>
-                      <TableHead>Username</TableHead>
-                      <TableHead>Telegram ID</TableHead>
+                      <TableHead>Username / ID</TableHead>
                       <TableHead>Language</TableHead>
                       <TableHead>Premium</TableHead>
                       <TableHead>First Message</TableHead>
@@ -618,58 +639,73 @@ const Customers = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {customers.map((customer) => (
-                      <TableRow key={customer.id}>
-                        <TableCell className="font-medium">
-                          {customer.first_name} {customer.last_name}
-                        </TableCell>
-                        <TableCell>
-                          {customer.username ? (
-                            <span className="text-muted-foreground">
-                              @{customer.username}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground italic">
-                              No username
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <code className="text-xs bg-muted px-2 py-1 rounded">
-                            {customer.telegram_id}
-                          </code>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {customer.language_code || "Unknown"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {customer.is_premium ? (
-                            <Badge variant="default">Premium</Badge>
-                          ) : (
-                            <Badge variant="secondary">Standard</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {formatDate(customer.first_message_at)}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => loadMessages(customer)}
-                            className="relative"
-                          >
-                            <MessageSquare className="h-4 w-4 mr-2" />
-                            Telegram
-                            {lastMessageSender[customer.id] === "customer" && (
-                              <span className="absolute -top-1 -right-1 h-3 w-3 bg-destructive rounded-full animate-pulse" />
+                    {customers.map((customer) => {
+                      const platform = customer.messenger_id ? 'messenger' : 'telegram';
+                      const displayName = customer.messenger_id 
+                        ? customer.messenger_name 
+                        : `${customer.first_name || ''} ${customer.last_name || ''}`.trim();
+                      
+                      return (
+                        <TableRow key={customer.id}>
+                          <TableCell>
+                            <Badge variant={platform === 'messenger' ? 'default' : 'secondary'}>
+                              {platform === 'messenger' ? (
+                                <><Facebook className="h-3 w-3 mr-1" /> Messenger</>
+                              ) : (
+                                <>Telegram</>
+                              )}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {displayName || 'Unknown'}
+                          </TableCell>
+                          <TableCell>
+                            {platform === 'messenger' ? (
+                              <code className="text-xs bg-muted px-2 py-1 rounded">
+                                {customer.messenger_id}
+                              </code>
+                            ) : customer.username ? (
+                              <span className="text-muted-foreground">
+                                @{customer.username}
+                              </span>
+                            ) : (
+                              <code className="text-xs bg-muted px-2 py-1 rounded">
+                                {customer.telegram_id}
+                              </code>
                             )}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {customer.language_code || "Unknown"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {customer.is_premium ? (
+                              <Badge variant="default">Premium</Badge>
+                            ) : (
+                              <Badge variant="secondary">Standard</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {formatDate(customer.first_message_at)}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => loadMessages(customer)}
+                              className="relative"
+                            >
+                              <MessageSquare className="h-4 w-4 mr-2" />
+                              Chat
+                              {lastMessageSender[customer.id] === "customer" && (
+                                <span className="absolute -top-1 -right-1 h-3 w-3 bg-destructive rounded-full animate-pulse" />
+                              )}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -713,13 +749,27 @@ const Customers = () => {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              Messages from {selectedCustomer?.first_name}{" "}
-              {selectedCustomer?.last_name}
+            <DialogTitle className="flex items-center gap-2">
+              <Badge variant={selectedCustomer?.messenger_id ? 'default' : 'secondary'}>
+                {selectedCustomer?.messenger_id ? (
+                  <><Facebook className="h-3 w-3 mr-1" /> Messenger</>
+                ) : (
+                  <>Telegram</>
+                )}
+              </Badge>
+              Messages from {selectedCustomer?.messenger_id 
+                ? selectedCustomer.messenger_name 
+                : `${selectedCustomer?.first_name || ''} ${selectedCustomer?.last_name || ''}`.trim()}
             </DialogTitle>
             <DialogDescription>
-              @{selectedCustomer?.username || "No username"} • Telegram ID:{" "}
-              {selectedCustomer?.telegram_id}
+              {selectedCustomer?.messenger_id ? (
+                <>PSID: {selectedCustomer.messenger_id}</>
+              ) : (
+                <>
+                  @{selectedCustomer?.username || "No username"} • Telegram ID:{" "}
+                  {selectedCustomer?.telegram_id}
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -882,7 +932,7 @@ const Customers = () => {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                Press Enter to send • This will be sent via Telegram bot
+                Press Enter to send • This will be sent via {selectedCustomer.messenger_id ? 'Messenger' : 'Telegram'}
               </p>
             </div>
           )}
