@@ -23,7 +23,10 @@ export type Database = {
           is_premium: boolean | null
           language_code: string | null
           last_name: string | null
-          telegram_id: number
+          messenger_id: string | null
+          messenger_name: string | null
+          messenger_profile_pic: string | null
+          telegram_id: number | null
           updated_at: string
           username: string | null
         }
@@ -35,7 +38,10 @@ export type Database = {
           is_premium?: boolean | null
           language_code?: string | null
           last_name?: string | null
-          telegram_id: number
+          messenger_id?: string | null
+          messenger_name?: string | null
+          messenger_profile_pic?: string | null
+          telegram_id?: number | null
           updated_at?: string
           username?: string | null
         }
@@ -47,7 +53,10 @@ export type Database = {
           is_premium?: boolean | null
           language_code?: string | null
           last_name?: string | null
-          telegram_id?: number
+          messenger_id?: string | null
+          messenger_name?: string | null
+          messenger_profile_pic?: string | null
+          telegram_id?: number | null
           updated_at?: string
           username?: string | null
         }
@@ -61,10 +70,12 @@ export type Database = {
           is_read: boolean | null
           message_text: string | null
           message_type: string | null
+          messenger_mid: string | null
           photo_file_id: string | null
           photo_url: string | null
+          platform: string
           sender_type: string | null
-          telegram_id: number
+          telegram_id: number | null
           timestamp: string
           video_duration: number | null
           video_file_id: string | null
@@ -82,10 +93,12 @@ export type Database = {
           is_read?: boolean | null
           message_text?: string | null
           message_type?: string | null
+          messenger_mid?: string | null
           photo_file_id?: string | null
           photo_url?: string | null
+          platform?: string
           sender_type?: string | null
-          telegram_id: number
+          telegram_id?: number | null
           timestamp?: string
           video_duration?: number | null
           video_file_id?: string | null
@@ -103,10 +116,12 @@ export type Database = {
           is_read?: boolean | null
           message_text?: string | null
           message_type?: string | null
+          messenger_mid?: string | null
           photo_file_id?: string | null
           photo_url?: string | null
+          platform?: string
           sender_type?: string | null
-          telegram_id?: number
+          telegram_id?: number | null
           timestamp?: string
           video_duration?: number | null
           video_file_id?: string | null
@@ -138,6 +153,9 @@ export type Database = {
           created_at: string | null
           facebook_click_id: string | null
           id: string
+          messenger_ad_context: Json | null
+          messenger_ref: string | null
+          platform: string
           referrer: string | null
           updated_at: string | null
           user_id: string | null
@@ -160,6 +178,9 @@ export type Database = {
           created_at?: string | null
           facebook_click_id?: string | null
           id?: string
+          messenger_ad_context?: Json | null
+          messenger_ref?: string | null
+          platform?: string
           referrer?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -182,6 +203,9 @@ export type Database = {
           created_at?: string | null
           facebook_click_id?: string | null
           id?: string
+          messenger_ad_context?: Json | null
+          messenger_ref?: string | null
+          platform?: string
           referrer?: string | null
           updated_at?: string | null
           user_id?: string | null
