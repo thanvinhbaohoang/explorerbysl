@@ -46,6 +46,13 @@ interface Customer {
   messenger_profile_pic: string | null;
   locale: string | null;
   timezone_offset: number | null;
+  lead_source?: {
+    messenger_ref?: string;
+    campaign_name?: string;
+    ad_name?: string;
+    adset_name?: string;
+    referrer?: string;
+  };
 }
 
 interface Message {
@@ -162,18 +169,37 @@ const Customers = () => {
       if (countError) throw countError;
       setTotalCustomers(count || 0);
 
-      // Fetch paginated data
+      // Fetch paginated data with lead source
       const from = (page - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
 
-      const { data, error } = await supabase
+      const { data: customersData, error } = await supabase
         .from("customer")
         .select("*")
         .order("created_at", { ascending: false })
         .range(from, to);
 
       if (error) throw error;
-      setCustomers(data || []);
+      
+      // Fetch lead sources for these customers
+      if (customersData && customersData.length > 0) {
+        const customerIds = customersData.map(c => c.id);
+        const { data: leadsData } = await supabase
+          .from("telegram_leads")
+          .select("user_id, messenger_ref, campaign_name, ad_name, adset_name, referrer")
+          .in("user_id", customerIds);
+        
+        // Merge lead source data with customers
+        const customersWithLeads = customersData.map(customer => ({
+          ...customer,
+          lead_source: leadsData?.find(lead => lead.user_id === customer.id)
+        }));
+        
+        setCustomers(customersWithLeads);
+      } else {
+        setCustomers(customersData || []);
+      }
+      
       setHasNewCustomers(false);
     } catch (error: any) {
       console.error("Error fetching customers:", error);
@@ -621,7 +647,7 @@ const Customers = () => {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <TableSkeleton rows={10} columns={7} />
+              <TableSkeleton rows={10} columns={8} />
             ) : customers.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 No customers yet. Share your bot to get started!
@@ -635,6 +661,7 @@ const Customers = () => {
                       <TableHead>Name</TableHead>
                       <TableHead>Username / ID</TableHead>
                       <TableHead>Language</TableHead>
+                      <TableHead>Source</TableHead>
                       <TableHead>Premium</TableHead>
                       <TableHead>First Message</TableHead>
                       <TableHead>Actions</TableHead>
@@ -682,6 +709,29 @@ const Customers = () => {
                                 ? (customer.locale || "Unknown")
                                 : (customer.language_code || "Unknown")}
                             </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {customer.lead_source ? (
+                              <div className="space-y-1">
+                                {customer.lead_source.campaign_name && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {customer.lead_source.campaign_name}
+                                  </Badge>
+                                )}
+                                {customer.lead_source.ad_name && (
+                                  <div className="text-xs text-muted-foreground">
+                                    {customer.lead_source.ad_name}
+                                  </div>
+                                )}
+                                {customer.lead_source.messenger_ref && (
+                                  <div className="text-xs text-muted-foreground">
+                                    Post: {customer.lead_source.messenger_ref}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Direct</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             {customer.is_premium ? (
@@ -775,6 +825,23 @@ const Customers = () => {
                   {selectedCustomer.timezone_offset !== null && (
                     <div className="text-xs">
                       Timezone: UTC{selectedCustomer.timezone_offset >= 0 ? '+' : ''}{selectedCustomer.timezone_offset}
+                    </div>
+                  )}
+                  {selectedCustomer.lead_source && (
+                    <div className="mt-2 pt-2 border-t space-y-1">
+                      <div className="text-xs font-semibold">Lead Source:</div>
+                      {selectedCustomer.lead_source.campaign_name && (
+                        <div className="text-xs">Campaign: {selectedCustomer.lead_source.campaign_name}</div>
+                      )}
+                      {selectedCustomer.lead_source.ad_name && (
+                        <div className="text-xs">Ad: {selectedCustomer.lead_source.ad_name}</div>
+                      )}
+                      {selectedCustomer.lead_source.messenger_ref && (
+                        <div className="text-xs">Post Ref: {selectedCustomer.lead_source.messenger_ref}</div>
+                      )}
+                      {selectedCustomer.lead_source.referrer && (
+                        <div className="text-xs">Source: {selectedCustomer.lead_source.referrer}</div>
+                      )}
                     </div>
                   )}
                 </div>
