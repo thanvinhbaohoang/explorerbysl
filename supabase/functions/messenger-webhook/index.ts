@@ -351,11 +351,62 @@ serve(async (req) => {
         console.log(`Processing ${entry.messaging?.length || 0} messaging events`);
         for (const event of entry.messaging) {
           const senderId = event.sender.id;
+          const recipientId = event.recipient.id;
           console.log(`Event from sender ${senderId}:`, JSON.stringify(event, null, 2));
           
-          // Skip echo messages from our own page
+          // Handle messages sent by the page (employee) through Messenger app
+          if (senderId === pageId && event.message) {
+            // Check if this is an echo of a message we already sent via our interface
+            const isEcho = event.message.is_echo === true;
+            
+            if (isEcho) {
+              // Check if we already have this message (sent from our interface)
+              const { data: existingMessage } = await supabase
+                .from('messages')
+                .select('id')
+                .eq('messenger_mid', event.message.mid)
+                .maybeSingle();
+              
+              if (existingMessage) {
+                console.log('Skipping echo - message already saved from interface');
+                continue;
+              }
+              
+              // This is a message sent directly through Messenger by employee
+              console.log('Employee message sent via Messenger app');
+              
+              // Get the recipient (customer) info
+              const { data: customer } = await supabase
+                .from('customer')
+                .select('*')
+                .eq('messenger_id', recipientId)
+                .maybeSingle();
+              
+              if (customer) {
+                const timestamp = event.message.timestamp ? new Date(event.message.timestamp).toISOString() : new Date().toISOString();
+                
+                await supabase
+                  .from('messages')
+                  .insert({
+                    customer_id: customer.id,
+                    messenger_mid: event.message.mid,
+                    platform: 'messenger',
+                    message_type: 'text',
+                    message_text: event.message.text || null,
+                    sender_type: 'employee',
+                    is_read: true,
+                    timestamp,
+                  });
+                
+                console.log('Saved employee message from Messenger app');
+              }
+            }
+            continue;
+          }
+          
+          // Skip other page-related events
           if (senderId === pageId) {
-            console.log('Skipping echo message from page itself');
+            console.log('Skipping other page event');
             continue;
           }
           
