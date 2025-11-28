@@ -11,6 +11,7 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const pageAccessToken = Deno.env.get('FACEBOOK_PAGE_ACCESS_TOKEN')!;
 const appSecret = Deno.env.get('FACEBOOK_APP_SECRET')!;
 const verifyToken = Deno.env.get('FACEBOOK_VERIFY_TOKEN')!;
+const pageId = '561589463698263'; // Facebook Page ID to filter echo messages
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -351,6 +352,12 @@ serve(async (req) => {
         for (const event of entry.messaging) {
           const senderId = event.sender.id;
           console.log(`Event from sender ${senderId}:`, JSON.stringify(event, null, 2));
+          
+          // Skip echo messages from our own page
+          if (senderId === pageId) {
+            console.log('Skipping echo message from page itself');
+            continue;
+          }
           
           if (event.message) {
             console.log('Handling message event');
