@@ -23,10 +23,12 @@ export type Database = {
           is_premium: boolean | null
           language_code: string | null
           last_name: string | null
+          locale: string | null
           messenger_id: string | null
           messenger_name: string | null
           messenger_profile_pic: string | null
           telegram_id: number | null
+          timezone_offset: number | null
           updated_at: string
           username: string | null
         }
@@ -38,10 +40,12 @@ export type Database = {
           is_premium?: boolean | null
           language_code?: string | null
           last_name?: string | null
+          locale?: string | null
           messenger_id?: string | null
           messenger_name?: string | null
           messenger_profile_pic?: string | null
           telegram_id?: number | null
+          timezone_offset?: number | null
           updated_at?: string
           username?: string | null
         }
@@ -53,10 +57,12 @@ export type Database = {
           is_premium?: boolean | null
           language_code?: string | null
           last_name?: string | null
+          locale?: string | null
           messenger_id?: string | null
           messenger_name?: string | null
           messenger_profile_pic?: string | null
           telegram_id?: number | null
+          timezone_offset?: number | null
           updated_at?: string
           username?: string | null
         }

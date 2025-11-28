@@ -44,6 +44,8 @@ interface Customer {
   messenger_id: string | null;
   messenger_name: string | null;
   messenger_profile_pic: string | null;
+  locale: string | null;
+  timezone_offset: number | null;
 }
 
 interface Message {
@@ -676,7 +678,9 @@ const Customers = () => {
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline">
-                              {customer.language_code || "Unknown"}
+                              {platform === 'messenger' 
+                                ? (customer.locale || "Unknown")
+                                : (customer.language_code || "Unknown")}
                             </Badge>
                           </TableCell>
                           <TableCell>
@@ -763,7 +767,17 @@ const Customers = () => {
             </DialogTitle>
             <DialogDescription>
               {selectedCustomer?.messenger_id ? (
-                <>PSID: {selectedCustomer.messenger_id}</>
+                <div className="space-y-1">
+                  <div>PSID: {selectedCustomer.messenger_id}</div>
+                  {selectedCustomer.locale && (
+                    <div className="text-xs">Locale: {selectedCustomer.locale}</div>
+                  )}
+                  {selectedCustomer.timezone_offset !== null && (
+                    <div className="text-xs">
+                      Timezone: UTC{selectedCustomer.timezone_offset >= 0 ? '+' : ''}{selectedCustomer.timezone_offset}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <>
                   @{selectedCustomer?.username || "No username"} • Telegram ID:{" "}
