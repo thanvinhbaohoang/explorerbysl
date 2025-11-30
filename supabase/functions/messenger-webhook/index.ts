@@ -63,8 +63,9 @@ async function sendMessage(psid: string, text: string) {
   });
   
   if (!response.ok) {
-    console.error("Failed to send message:", await response.text());
-    return null;
+    const errorText = await response.text();
+    console.error("Failed to send message:", errorText);
+    return { error: JSON.parse(errorText) };
   }
   
   return await response.json();
@@ -309,9 +310,14 @@ serve(async (req) => {
       // Send message
       const result = await sendMessage(psid, text);
       
-      if (!result) {
-        return new Response(JSON.stringify({ error: 'Failed to send message' }), {
-          status: 500,
+      if (result?.error) {
+        const fbError = result.error.error;
+        return new Response(JSON.stringify({ 
+          error: fbError.message,
+          code: fbError.code,
+          type: fbError.type
+        }), {
+          status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
