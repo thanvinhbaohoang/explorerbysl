@@ -307,11 +307,58 @@ serve(async (req) => {
         });
       }
       
+      // Check if message is within 24-hour window
+      const { data: customerRecord } = await supabase
+        .from('customer')
+        .select('id')
+        .eq('messenger_id', psid)
+        .single();
+      
+      if (customerRecord) {
+        // Get last customer message timestamp
+        const { data: lastMessage } = await supabase
+          .from('messages')
+          .select('timestamp')
+          .eq('customer_id', customerRecord.id)
+          .eq('sender_type', 'customer')
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (lastMessage) {
+          const hoursSinceLastMessage = (Date.now() - new Date(lastMessage.timestamp).getTime()) / (1000 * 60 * 60);
+          
+          if (hoursSinceLastMessage > 24) {
+            return new Response(JSON.stringify({ 
+              error: 'Cannot send message: 24-hour messaging window has expired. Customer last messaged ' + Math.floor(hoursSinceLastMessage) + ' hours ago.',
+              code: 'MESSAGING_WINDOW_EXPIRED',
+              hoursSinceLastMessage: Math.floor(hoursSinceLastMessage)
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+      }
+      
       // Send message
       const result = await sendMessage(psid, text);
       
       if (result?.error) {
         const fbError = result.error.error;
+        
+        // Handle 24-hour window error specifically
+        if (fbError.code === 10 && fbError.error_subcode === 2018278) {
+          return new Response(JSON.stringify({ 
+            error: 'Cannot send message: 24-hour messaging window has expired. Wait for customer to message first.',
+            code: 'MESSAGING_WINDOW_EXPIRED',
+            details: fbError.message
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
         return new Response(JSON.stringify({ 
           error: fbError.message,
           code: fbError.code,

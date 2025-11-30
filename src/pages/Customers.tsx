@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -28,8 +28,9 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Users, Bell, MessageSquare, Send, Facebook } from "lucide-react";
+import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface Customer {
   id: string;
@@ -102,6 +103,21 @@ const Customers = () => {
   const [messageMetaCache, setMessageMetaCache] = useState<Record<string, { offset: number; hasMore: boolean }>>({});
   const itemsPerPage = 10;
   const messagesPerPage = 10;
+
+  // Calculate if Messenger customer is outside 24-hour messaging window
+  const isOutsideMessagingWindow = useMemo(() => {
+    if (!selectedCustomer?.messenger_id || messages.length === 0) return false;
+    
+    // Find last customer message
+    const lastCustomerMessage = [...messages]
+      .reverse()
+      .find(msg => msg.sender_type === 'customer');
+    
+    if (!lastCustomerMessage) return false;
+    
+    const hoursSinceLastMessage = (Date.now() - new Date(lastCustomerMessage.timestamp).getTime()) / (1000 * 60 * 60);
+    return hoursSinceLastMessage > 24;
+  }, [selectedCustomer, messages]);
 
   // Fetch last message sender for all customers
   const fetchLastMessageSenders = async () => {
@@ -291,6 +307,11 @@ const Customers = () => {
       }
 
       if (response.error) throw response.error;
+      
+      // Check for specific error codes in response data
+      if (response.data?.error && response.data?.code === 'MESSAGING_WINDOW_EXPIRED') {
+        throw new Error(response.data.error);
+      }
 
       // Update last message sender to employee
       setLastMessageSender((prev) => ({
@@ -301,7 +322,16 @@ const Customers = () => {
       // Real-time subscription will replace the optimistic message with the real one
     } catch (error: any) {
       console.error("Error sending message:", error);
-      toast.error("Failed to send message");
+      
+      // Handle 24-hour window error specifically
+      if (error.message?.includes('24-hour messaging window')) {
+        toast.error("Cannot send message: The 24-hour messaging window has expired. Wait for the customer to message you first.", {
+          duration: 5000,
+        });
+      } else {
+        toast.error("Failed to send message");
+      }
+      
       // Remove optimistic message on error
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
     } finally {
@@ -991,6 +1021,16 @@ const Customers = () => {
           {/* Reply Input */}
           {selectedCustomer && (
             <div className="mt-4 pt-4 border-t">
+              {/* 24-hour window warning for Messenger */}
+              {selectedCustomer.messenger_id && isOutsideMessagingWindow && (
+                <Alert className="mb-3 border-amber-500/50 bg-amber-500/10">
+                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                  <AlertDescription className="text-sm text-amber-600 dark:text-amber-500">
+                    This customer hasn't messaged in over 24 hours. Facebook's messaging policy prevents sending messages outside this window. Wait for them to message first.
+                  </AlertDescription>
+                </Alert>
+              )}
+              
               <div className="flex gap-2">
                 <Input
                   placeholder="Type your reply..."
@@ -1003,10 +1043,11 @@ const Customers = () => {
                     }
                   }}
                   autoFocus
+                  disabled={selectedCustomer.messenger_id && isOutsideMessagingWindow}
                 />
                 <Button 
                   onClick={sendReply} 
-                  disabled={!replyText.trim() || isSending}
+                  disabled={!replyText.trim() || isSending || (selectedCustomer.messenger_id && isOutsideMessagingWindow)}
                   size="icon"
                 >
                   <Send className="h-4 w-4" />
