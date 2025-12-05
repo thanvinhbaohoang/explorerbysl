@@ -201,6 +201,64 @@ async function getFileUrl(fileId: string): Promise<string | null> {
   }
 }
 
+// Download file from Telegram and upload to Supabase Storage
+async function downloadAndStoreFile(fileId: string, fileType: 'photo' | 'voice' | 'video'): Promise<string | null> {
+  try {
+    // Get file path from Telegram
+    const response = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
+    const data = await response.json();
+    
+    if (!data.ok || !data.result.file_path) {
+      console.error("Failed to get file path from Telegram");
+      return null;
+    }
+    
+    const telegramFileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
+    
+    // Download the file
+    const fileResponse = await fetch(telegramFileUrl);
+    if (!fileResponse.ok) {
+      console.error("Failed to download file from Telegram");
+      return null;
+    }
+    
+    const fileBuffer = await fileResponse.arrayBuffer();
+    
+    // Determine file extension from file_path
+    const filePath = data.result.file_path;
+    const extension = filePath.split('.').pop() || (fileType === 'photo' ? 'jpg' : fileType === 'voice' ? 'ogg' : 'mp4');
+    
+    // Generate unique filename
+    const fileName = `telegram-${fileType}/${Date.now()}_${Math.random().toString(36).substring(7)}.${extension}`;
+    
+    // Upload to Supabase Storage
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('chat-attachments')
+      .upload(fileName, fileBuffer, {
+        contentType: fileType === 'photo' ? `image/${extension}` : fileType === 'voice' ? 'audio/ogg' : `video/${extension}`,
+        cacheControl: '3600',
+        upsert: false,
+      });
+    
+    if (uploadError) {
+      console.error("Failed to upload to storage:", uploadError);
+      // Fallback to temporary Telegram URL
+      return telegramFileUrl;
+    }
+    
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('chat-attachments')
+      .getPublicUrl(fileName);
+    
+    console.log("File stored permanently:", urlData.publicUrl);
+    return urlData.publicUrl;
+  } catch (error) {
+    console.error("Error downloading and storing file:", error);
+    return null;
+  }
+}
+
 // Save message to database
 async function saveMessage(message: any) {
   try {
@@ -225,9 +283,10 @@ async function saveMessage(message: any) {
         // Get the largest photo
         const largestPhoto = message.photo[message.photo.length - 1];
         photoFileId = largestPhoto.file_id;
-        photoUrl = await getFileUrl(photoFileId);
+        // Download and store permanently instead of using temporary URL
+        photoUrl = await downloadAndStoreFile(photoFileId, 'photo');
         messageText = message.caption || '[Photo]';
-        console.log("Photo captured:", { photoFileId, photoUrl, caption: message.caption });
+        console.log("Photo captured and stored:", { photoFileId, photoUrl, caption: message.caption });
       }
 
       // Handle voice messages
@@ -235,7 +294,8 @@ async function saveMessage(message: any) {
         messageType = 'voice';
         voiceFileId = message.voice.file_id;
         voiceDuration = message.voice.duration;
-        const voiceUrl = await getFileUrl(voiceFileId);
+        // Download and store permanently
+        const voiceUrl = await downloadAndStoreFile(voiceFileId, 'voice');
         messageText = '[Voice message]';
         
         // Save with voice URL
@@ -268,11 +328,12 @@ async function saveMessage(message: any) {
         messageType = 'video';
         const videoFileId = message.video.file_id;
         const videoDuration = message.video.duration;
-        const videoUrl = await getFileUrl(videoFileId);
+        // Download and store permanently
+        const videoUrl = await downloadAndStoreFile(videoFileId, 'video');
         const videoMimeType = message.video.mime_type || 'video/mp4';
         messageText = message.caption || '[Video]';
         
-        console.log("Video captured:", { videoFileId, videoUrl, duration: videoDuration });
+        console.log("Video captured and stored:", { videoFileId, videoUrl, duration: videoDuration });
         
         // Save with video URL
         const { error } = await supabase
@@ -303,10 +364,11 @@ async function saveMessage(message: any) {
         messageType = 'video';
         const videoFileId = message.video_note.file_id;
         const videoDuration = message.video_note.duration;
-        const videoUrl = await getFileUrl(videoFileId);
+        // Download and store permanently
+        const videoUrl = await downloadAndStoreFile(videoFileId, 'video');
         messageText = '[Video Note]';
         
-        console.log("Video note captured:", { videoFileId, videoUrl, duration: videoDuration });
+        console.log("Video note captured and stored:", { videoFileId, videoUrl, duration: videoDuration });
         
         // Save with video URL
         const { error } = await supabase
