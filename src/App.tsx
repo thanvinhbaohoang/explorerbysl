@@ -15,6 +15,7 @@ import Telegram from "./pages/Telegram";
 import Ad from "./pages/Ad";
 import WebhookDebug from "./pages/WebhookDebug";
 import MediaGallery from "./pages/MediaGallery";
+import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -38,6 +39,7 @@ const App = () => (
           <Route path="/ads-insight/:adId" element={<AdDetail />} />
           <Route path="/webhook-debug" element={<WebhookDebug />} />
           <Route path="/media-gallery" element={<MediaGallery />} />
+          <Route path="/auth" element={<Auth />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
