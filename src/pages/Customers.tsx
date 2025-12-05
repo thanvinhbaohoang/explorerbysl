@@ -488,6 +488,71 @@ const Customers = () => {
     }
   };
 
+  // Check for potential matching customers across platforms
+  const checkForLinkingSuggestion = async (newCustomer: Customer) => {
+    const newName = newCustomer.messenger_name || 
+      `${newCustomer.first_name || ""} ${newCustomer.last_name || ""}`.trim();
+    
+    if (!newName || newName === "Unknown") return;
+    
+    const newPlatform = newCustomer.messenger_id ? "messenger" : "telegram";
+    
+    try {
+      // Search for customers with similar names on the opposite platform
+      let query = supabase
+        .from("customer")
+        .select("id, first_name, last_name, messenger_name, messenger_id, telegram_id, linked_customer_id")
+        .neq("id", newCustomer.id)
+        .is("linked_customer_id", null);
+      
+      // Filter by opposite platform
+      if (newPlatform === "messenger") {
+        query = query.not("telegram_id", "is", null);
+      } else {
+        query = query.not("messenger_id", "is", null);
+      }
+      
+      const { data: potentialMatches } = await query;
+      
+      if (!potentialMatches) return;
+      
+      // Find matches with similar names (case-insensitive)
+      const normalizedNewName = newName.toLowerCase().trim();
+      const matches = potentialMatches.filter(customer => {
+        const existingName = customer.messenger_name || 
+          `${customer.first_name || ""} ${customer.last_name || ""}`.trim();
+        const normalizedExistingName = existingName.toLowerCase().trim();
+        
+        // Check for exact match or high similarity
+        return normalizedNewName === normalizedExistingName ||
+          (normalizedNewName.length > 3 && normalizedExistingName.includes(normalizedNewName)) ||
+          (normalizedExistingName.length > 3 && normalizedNewName.includes(normalizedExistingName));
+      });
+      
+      if (matches.length > 0) {
+        const match = matches[0];
+        const matchName = match.messenger_name || 
+          `${match.first_name || ""} ${match.last_name || ""}`.trim();
+        const matchPlatform = match.messenger_id ? "Messenger" : "Telegram";
+        
+        toast.info(
+          `Possible duplicate: "${newName}" might be the same as "${matchName}" on ${matchPlatform}`,
+          {
+            description: "Click to view and link these accounts",
+            icon: <Link className="h-4 w-4" />,
+            duration: 10000,
+            action: {
+              label: "View & Link",
+              onClick: () => navigate(`/customers/${newCustomer.id}`),
+            },
+          }
+        );
+      }
+    } catch (error) {
+      console.error("Error checking for linking suggestions:", error);
+    }
+  };
+
   // Real-time subscription for new customers - show toast notification
   useEffect(() => {
     const channel = supabase
@@ -499,7 +564,7 @@ const Customers = () => {
           schema: "public",
           table: "customer",
         },
-        (payload) => {
+        async (payload) => {
           const newCustomer = payload.new as Customer;
           console.log("New customer joined:", newCustomer);
           
@@ -507,7 +572,7 @@ const Customers = () => {
           
           // Show notification with refresh option
           toast.success(
-            `New customer: ${newCustomer.first_name || "Unknown"} ${newCustomer.last_name || ""}`,
+            `New customer: ${newCustomer.messenger_name || newCustomer.first_name || "Unknown"} ${newCustomer.last_name || ""}`,
             {
               description: "Click to refresh the customer list",
               icon: <Bell className="h-4 w-4" />,
@@ -517,6 +582,9 @@ const Customers = () => {
               },
             }
           );
+          
+          // Check for potential linking matches
+          await checkForLinkingSuggestion(newCustomer);
         }
       )
       .subscribe();
