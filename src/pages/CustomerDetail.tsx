@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { LinkCustomerDialog } from "@/components/LinkCustomerDialog";
 import { 
   ArrowLeft, 
   Facebook, 
@@ -18,7 +19,9 @@ import {
   Crown,
   Hash,
   MapPin,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Link,
+  Unlink
 } from "lucide-react";
 
 interface Customer {
@@ -37,6 +40,18 @@ interface Customer {
   messenger_profile_pic: string | null;
   locale: string | null;
   timezone_offset: number | null;
+  linked_customer_id: string | null;
+}
+
+interface LinkedCustomer {
+  id: string;
+  telegram_id: number | null;
+  first_name: string | null;
+  last_name: string | null;
+  username: string | null;
+  messenger_id: string | null;
+  messenger_name: string | null;
+  messenger_profile_pic: string | null;
 }
 
 interface LeadSource {
@@ -70,9 +85,11 @@ const CustomerDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [linkedCustomers, setLinkedCustomers] = useState<LinkedCustomer[]>([]);
   const [leadSource, setLeadSource] = useState<LeadSource | null>(null);
   const [messageStats, setMessageStats] = useState<MessageStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -99,6 +116,9 @@ const CustomerDetail = () => {
 
       setCustomer(customerData);
 
+      // Fetch linked customers (both directions)
+      await fetchLinkedCustomers(customerData);
+
       // Fetch lead source
       const { data: leadData } = await supabase
         .from("telegram_leads")
@@ -108,28 +128,92 @@ const CustomerDetail = () => {
 
       setLeadSource(leadData);
 
-      // Fetch message stats
-      const { data: messages } = await supabase
-        .from("messages")
-        .select("sender_type, timestamp")
-        .eq("customer_id", customerId);
-
-      if (messages) {
-        const stats: MessageStats = {
-          total: messages.length,
-          fromCustomer: messages.filter(m => m.sender_type === "customer").length,
-          fromEmployee: messages.filter(m => m.sender_type === "employee").length,
-          lastMessageAt: messages.length > 0 
-            ? messages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0].timestamp
-            : null,
-        };
-        setMessageStats(stats);
-      }
+      // Fetch message stats (including linked customers)
+      await fetchMessageStats(customerId, customerData.linked_customer_id);
     } catch (error) {
       console.error("Error fetching customer:", error);
       toast.error("Failed to load customer data");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchLinkedCustomers = async (customerData: Customer) => {
+    const linked: LinkedCustomer[] = [];
+    
+    // If this customer links to another (primary)
+    if (customerData.linked_customer_id) {
+      const { data: primary } = await supabase
+        .from("customer")
+        .select("id, telegram_id, first_name, last_name, username, messenger_id, messenger_name, messenger_profile_pic")
+        .eq("id", customerData.linked_customer_id)
+        .maybeSingle();
+      
+      if (primary) linked.push(primary);
+    }
+    
+    // Find customers that link to this one
+    const { data: linkedToThis } = await supabase
+      .from("customer")
+      .select("id, telegram_id, first_name, last_name, username, messenger_id, messenger_name, messenger_profile_pic")
+      .eq("linked_customer_id", customerData.id);
+    
+    if (linkedToThis) linked.push(...linkedToThis);
+    
+    setLinkedCustomers(linked);
+  };
+
+  const fetchMessageStats = async (customerId: string, linkedCustomerId: string | null) => {
+    // Get all customer IDs to include in stats (this + linked)
+    const customerIds = [customerId];
+    
+    if (linkedCustomerId) {
+      customerIds.push(linkedCustomerId);
+    }
+    
+    // Also check for customers that link to this one
+    const { data: linkedToThis } = await supabase
+      .from("customer")
+      .select("id")
+      .eq("linked_customer_id", customerId);
+    
+    if (linkedToThis) {
+      customerIds.push(...linkedToThis.map(c => c.id));
+    }
+
+    const { data: messages } = await supabase
+      .from("messages")
+      .select("sender_type, timestamp")
+      .in("customer_id", customerIds);
+
+    if (messages) {
+      const stats: MessageStats = {
+        total: messages.length,
+        fromCustomer: messages.filter(m => m.sender_type === "customer").length,
+        fromEmployee: messages.filter(m => m.sender_type === "employee").length,
+        lastMessageAt: messages.length > 0 
+          ? messages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0].timestamp
+          : null,
+      };
+      setMessageStats(stats);
+    }
+  };
+
+  const unlinkCustomer = async (linkedId: string) => {
+    try {
+      // Remove the link
+      const { error } = await supabase
+        .from("customer")
+        .update({ linked_customer_id: null })
+        .eq("id", linkedId);
+
+      if (error) throw error;
+
+      toast.success("Customer unlinked successfully");
+      if (id) fetchCustomerData(id);
+    } catch (error) {
+      console.error("Error unlinking customer:", error);
+      toast.error("Failed to unlink customer");
     }
   };
 
@@ -319,6 +403,86 @@ const CustomerDetail = () => {
           </Card>
         )}
 
+        {/* Linked Accounts */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Link className="h-5 w-5" />
+              Linked Accounts
+            </CardTitle>
+            <CardDescription>
+              Cross-platform accounts for the same customer
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {linkedCustomers.length === 0 ? (
+              <div className="text-center py-4">
+                <p className="text-muted-foreground mb-4">No linked accounts</p>
+                <Button onClick={() => setLinkDialogOpen(true)}>
+                  <Link className="h-4 w-4 mr-2" />
+                  Link Customer Account
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {linkedCustomers.map((linked) => {
+                  const linkedPlatform = linked.messenger_id ? "messenger" : "telegram";
+                  const linkedName = linked.messenger_name || 
+                    `${linked.first_name || ""} ${linked.last_name || ""}`.trim() || 
+                    linked.username || "Unknown";
+                  
+                  return (
+                    <div key={linked.id} className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                      <div className="flex items-center gap-3">
+                        {linked.messenger_profile_pic ? (
+                          <img
+                            src={linked.messenger_profile_pic}
+                            alt="Profile"
+                            className="h-10 w-10 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                            <User className="h-5 w-5 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div>
+                          <button 
+                            onClick={() => navigate(`/customers/${linked.id}`)}
+                            className="font-medium hover:underline hover:text-primary"
+                          >
+                            {linkedName}
+                          </button>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant={linkedPlatform === "messenger" ? "default" : "secondary"}>
+                              {linkedPlatform === "messenger" ? (
+                                <><Facebook className="h-3 w-3 mr-1" /> Messenger</>
+                              ) : (
+                                <><Send className="h-3 w-3 mr-1" /> Telegram</>
+                              )}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => unlinkCustomer(linked.id)}
+                      >
+                        <Unlink className="h-4 w-4 mr-1" />
+                        Unlink
+                      </Button>
+                    </div>
+                  );
+                })}
+                <Button variant="outline" onClick={() => setLinkDialogOpen(true)} className="w-full">
+                  <Link className="h-4 w-4 mr-2" />
+                  Link Another Account
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Actions */}
         <div className="flex gap-3">
           <Button onClick={() => navigate("/customers")} variant="outline">
@@ -327,6 +491,16 @@ const CustomerDetail = () => {
           </Button>
         </div>
       </div>
+
+      {/* Link Customer Dialog */}
+      {customer && (
+        <LinkCustomerDialog
+          open={linkDialogOpen}
+          onOpenChange={setLinkDialogOpen}
+          currentCustomer={customer}
+          onLinked={() => id && fetchCustomerData(id)}
+        />
+      )}
     </div>
   );
 };

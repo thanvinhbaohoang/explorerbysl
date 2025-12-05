@@ -23,6 +23,7 @@ export type Database = {
           is_premium: boolean | null
           language_code: string | null
           last_name: string | null
+          linked_customer_id: string | null
           locale: string | null
           messenger_id: string | null
           messenger_name: string | null
@@ -40,6 +41,7 @@ export type Database = {
           is_premium?: boolean | null
           language_code?: string | null
           last_name?: string | null
+          linked_customer_id?: string | null
           locale?: string | null
           messenger_id?: string | null
           messenger_name?: string | null
@@ -57,6 +59,7 @@ export type Database = {
           is_premium?: boolean | null
           language_code?: string | null
           last_name?: string | null
+          linked_customer_id?: string | null
           locale?: string | null
           messenger_id?: string | null
           messenger_name?: string | null
@@ -66,7 +69,15 @@ export type Database = {
           updated_at?: string
           username?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "customer_linked_customer_id_fkey"
+            columns: ["linked_customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       messages: {
         Row: {
