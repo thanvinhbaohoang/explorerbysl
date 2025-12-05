@@ -1251,8 +1251,8 @@ const Customers = () => {
 
       {/* Messages Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-3xl h-[80vh] flex flex-col overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Badge variant={selectedCustomer?.messenger_id ? 'default' : 'secondary'}>
                 {selectedCustomer?.messenger_id ? (
@@ -1308,7 +1308,7 @@ const Customers = () => {
 
           {/* Platform Toggle for Linked Accounts */}
           {linkedCustomerIds.length > 1 && (
-            <div className="flex flex-wrap items-center gap-2 py-2 border-b">
+            <div className="flex flex-wrap items-center gap-2 py-2 border-b flex-shrink-0">
               <span className="text-xs text-muted-foreground">Platform:</span>
               {Object.entries(linkedCustomersMap).map(([customerId, info]) => (
                 <Button
@@ -1329,7 +1329,8 @@ const Customers = () => {
             </div>
           )}
 
-          <div className="space-y-4">
+          {/* Scrollable Messages Area */}
+          <div className="flex-1 overflow-y-auto min-h-0">
             {isLoadingMessages ? (
               <div className="text-center py-8 text-muted-foreground">
                 Loading messages...
@@ -1341,7 +1342,7 @@ const Customers = () => {
             ) : (
               <div 
                 id="messages-container"
-                className="space-y-4 max-h-[400px] overflow-y-auto"
+                className="space-y-4"
                 onScroll={handleMessagesScroll}
               >
                 {isLoadingMoreMessages && (
@@ -1469,7 +1470,7 @@ const Customers = () => {
 
           {/* Reply Input */}
           {selectedCustomer && (
-            <div className="mt-4 pt-4 border-t">
+            <div className="flex-shrink-0 pt-4 border-t">
               {/* 24-hour window warning for Messenger */}
               {platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow && (
                 <Alert className="mb-3 border-amber-500/50 bg-amber-500/10">
