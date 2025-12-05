@@ -742,10 +742,28 @@ const Customers = () => {
     if (!audioPreviewRef.current) return;
     if (isPlayingPreview) {
       audioPreviewRef.current.pause();
+      if (playbackAnimationRef.current) {
+        cancelAnimationFrame(playbackAnimationRef.current);
+      }
     } else {
       audioPreviewRef.current.play();
+      updatePlaybackProgress();
     }
     setIsPlayingPreview(!isPlayingPreview);
+  };
+
+  // Smooth playback progress update
+  const playbackAnimationRef = useRef<number | null>(null);
+  const updatePlaybackProgress = () => {
+    if (audioPreviewRef.current) {
+      const audio = audioPreviewRef.current;
+      if (audio.duration) {
+        setPlaybackProgress((audio.currentTime / audio.duration) * 100);
+      }
+      if (!audio.paused && !audio.ended) {
+        playbackAnimationRef.current = requestAnimationFrame(updatePlaybackProgress);
+      }
+    }
   };
 
   // Send voice clip
@@ -1830,11 +1848,8 @@ const Customers = () => {
                       onEnded={() => {
                         setIsPlayingPreview(false);
                         setPlaybackProgress(0);
-                      }}
-                      onTimeUpdate={(e) => {
-                        const audio = e.currentTarget;
-                        if (audio.duration) {
-                          setPlaybackProgress((audio.currentTime / audio.duration) * 100);
+                        if (playbackAnimationRef.current) {
+                          cancelAnimationFrame(playbackAnimationRef.current);
                         }
                       }}
                       className="hidden"
