@@ -29,7 +29,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square } from "lucide-react";
+import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square, Play, Pause, Trash2 } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -121,6 +121,12 @@ const Customers = () => {
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [recordedAudio, setRecordedAudio] = useState<{ file: File; url: string } | null>(null);
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  const [audioLevels, setAudioLevels] = useState<number[]>([0, 0, 0, 0, 0]);
+  const animationFrameRef = useRef<number | null>(null);
   const itemsPerPage = 10;
   const messagesPerPage = 10;
 
@@ -620,17 +626,43 @@ const Customers = () => {
       const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       const chunks: Blob[] = [];
 
+      // Set up audio analysis for waveform
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyserNode = audioContext.createAnalyser();
+      analyserNode.fftSize = 32;
+      source.connect(analyserNode);
+      setAnalyser(analyserNode);
+
+      // Start animation loop for audio levels
+      const updateLevels = () => {
+        const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+        analyserNode.getByteFrequencyData(dataArray);
+        const levels = Array.from(dataArray.slice(0, 5)).map(v => v / 255);
+        setAudioLevels(levels);
+        animationFrameRef.current = requestAnimationFrame(updateLevels);
+      };
+      updateLevels();
+
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           chunks.push(e.data);
         }
       };
 
-      recorder.onstop = async () => {
+      recorder.onstop = () => {
         stream.getTracks().forEach(track => track.stop());
+        audioContext.close();
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
+        setAnalyser(null);
+        setAudioLevels([0, 0, 0, 0, 0]);
+        
         const audioBlob = new Blob(chunks, { type: 'audio/webm' });
         const audioFile = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
-        await sendVoiceClip(audioFile);
+        const audioUrl = URL.createObjectURL(audioBlob);
+        setRecordedAudio({ file: audioFile, url: audioUrl });
       };
 
       recorder.start();
@@ -649,7 +681,7 @@ const Customers = () => {
     }
   };
 
-  // Stop voice recording
+  // Stop voice recording (shows preview)
   const stopRecording = () => {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
@@ -660,7 +692,6 @@ const Customers = () => {
       clearInterval(recordingIntervalRef.current);
       recordingIntervalRef.current = null;
     }
-    setRecordingDuration(0);
   };
 
   // Cancel voice recording
@@ -674,11 +705,48 @@ const Customers = () => {
       clearInterval(recordingIntervalRef.current);
       recordingIntervalRef.current = null;
     }
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    setAnalyser(null);
+    setAudioLevels([0, 0, 0, 0, 0]);
     setRecordingDuration(0);
   };
 
+  // Discard recorded audio
+  const discardRecording = () => {
+    if (recordedAudio) {
+      URL.revokeObjectURL(recordedAudio.url);
+    }
+    setRecordedAudio(null);
+    setRecordingDuration(0);
+    setIsPlayingPreview(false);
+  };
+
+  // Send recorded audio
+  const sendRecordedAudio = async () => {
+    if (!recordedAudio) return;
+    const duration = recordingDuration;
+    await sendVoiceClip(recordedAudio.file, duration);
+    URL.revokeObjectURL(recordedAudio.url);
+    setRecordedAudio(null);
+    setRecordingDuration(0);
+    setIsPlayingPreview(false);
+  };
+
+  // Toggle preview playback
+  const togglePreviewPlayback = () => {
+    if (!audioPreviewRef.current) return;
+    if (isPlayingPreview) {
+      audioPreviewRef.current.pause();
+    } else {
+      audioPreviewRef.current.play();
+    }
+    setIsPlayingPreview(!isPlayingPreview);
+  };
+
   // Send voice clip
-  const sendVoiceClip = async (audioFile: File) => {
+  const sendVoiceClip = async (audioFile: File, duration?: number) => {
     const customerToReply = replyCustomer || selectedCustomer;
     if (!customerToReply) return;
 
@@ -697,7 +765,7 @@ const Customers = () => {
       photo_file_id: null,
       photo_url: null,
       voice_file_id: null,
-      voice_duration: recordingDuration,
+      voice_duration: duration || recordingDuration,
       voice_transcription: null,
       voice_url: null,
       video_file_id: null,
@@ -1583,27 +1651,33 @@ const Customers = () => {
                   {/* Voice message display */}
                   {message.message_type === 'voice' && (
                     <div className="space-y-2">
-                      <div className="flex items-center gap-3 p-3 bg-muted rounded-md">
-                        <MessageSquare className="h-5 w-5 text-muted-foreground" />
-                        <div className="flex-1">
+                      <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+                        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                          <Mic className="h-5 w-5 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium">Voice Message</div>
-                          <div className="text-xs text-muted-foreground">
-                            Duration: {message.voice_duration}s
-                          </div>
+                          {message.voice_duration && (
+                            <div className="text-xs text-muted-foreground">
+                              {formatDuration(message.voice_duration)}
+                            </div>
+                          )}
                         </div>
                       </div>
                       {message.voice_url && (
                         <audio 
                           controls 
-                          className="w-full"
+                          className="w-full h-10"
                           preload="metadata"
                         >
+                          <source src={message.voice_url} type="audio/webm" />
                           <source src={message.voice_url} type="audio/ogg" />
+                          <source src={message.voice_url} type="audio/mpeg" />
                           Your browser does not support the audio element.
                         </audio>
                       )}
                       {message.voice_transcription && (
-                        <div className="text-sm mt-2 p-2 bg-muted/50 rounded italic">
+                        <div className="text-sm p-2 bg-muted/50 rounded italic border-l-2 border-primary/30">
                           "{message.voice_transcription}"
                         </div>
                       )}
@@ -1711,12 +1785,22 @@ const Customers = () => {
               />
               
               <div className="flex gap-2">
-                {/* Recording UI */}
+                {/* Recording UI with waveform */}
                 {isRecording ? (
                   <>
                     <div className="flex-1 flex items-center gap-3 px-3 py-2 bg-destructive/10 rounded-md border border-destructive/20">
                       <div className="w-2 h-2 bg-destructive rounded-full animate-pulse" />
-                      <span className="text-sm font-medium text-destructive">Recording {formatDuration(recordingDuration)}</span>
+                      {/* Waveform animation */}
+                      <div className="flex items-center gap-1 h-6">
+                        {audioLevels.map((level, i) => (
+                          <div
+                            key={i}
+                            className="w-1 bg-destructive rounded-full transition-all duration-75"
+                            style={{ height: `${Math.max(4, level * 24)}px` }}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-sm font-medium text-destructive">{formatDuration(recordingDuration)}</span>
                     </div>
                     <Button 
                       variant="outline" 
@@ -1730,9 +1814,50 @@ const Customers = () => {
                       variant="default" 
                       size="icon"
                       onClick={stopRecording}
-                      title="Send voice"
+                      title="Stop recording"
                     >
-                      <Send className="h-4 w-4" />
+                      <Square className="h-4 w-4" />
+                    </Button>
+                  </>
+                ) : recordedAudio ? (
+                  /* Audio preview UI */
+                  <>
+                    <audio 
+                      ref={audioPreviewRef} 
+                      src={recordedAudio.url} 
+                      onEnded={() => setIsPlayingPreview(false)}
+                      className="hidden"
+                    />
+                    <div className="flex-1 flex items-center gap-3 px-3 py-2 bg-primary/10 rounded-md border border-primary/20">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={togglePreviewPlayback}
+                      >
+                        {isPlayingPreview ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                      </Button>
+                      <div className="flex-1 h-1 bg-primary/20 rounded-full overflow-hidden">
+                        <div className="h-full bg-primary rounded-full w-full" />
+                      </div>
+                      <span className="text-sm font-medium">{formatDuration(recordingDuration)}</span>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      onClick={discardRecording}
+                      title="Discard"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      variant="default" 
+                      size="icon"
+                      onClick={sendRecordedAudio}
+                      disabled={isUploadingFile}
+                      title="Send voice message"
+                    >
+                      {isUploadingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                     </Button>
                   </>
                 ) : (
