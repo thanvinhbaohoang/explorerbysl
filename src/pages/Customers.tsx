@@ -29,6 +29,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square, Play, Pause, Trash2 } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -38,6 +39,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { format } from "date-fns";
 
 interface Customer {
   id: string;
@@ -128,8 +130,16 @@ const Customers = () => {
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [audioLevels, setAudioLevels] = useState<number[]>([0, 0, 0, 0, 0]);
   const animationFrameRef = useRef<number | null>(null);
+  const [dialogViewMode, setDialogViewMode] = useState<'chat' | 'media'>('chat');
   const itemsPerPage = 10;
   const messagesPerPage = 10;
+
+  // Filter media messages (photos, videos, voice)
+  const mediaMessages = useMemo(() => {
+    return messages.filter(msg => 
+      msg.photo_url || msg.video_url || msg.voice_url
+    );
+  }, [messages]);
 
   // Filter messages by platform
   const filteredMessages = useMemo(() => {
@@ -1317,14 +1327,6 @@ const Customers = () => {
               <span className="text-2xl font-semibold">{totalCustomers}</span>
               <span>Total Customers</span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("/media-gallery")}
-            >
-              <Image className="h-4 w-4 mr-2" />
-              Media Gallery
-            </Button>
             {hasNewCustomers && (
               <Button
                 variant="outline"
@@ -1606,12 +1608,27 @@ const Customers = () => {
             </div>
           )}
 
-          {/* Scrollable Messages Area */}
-          <div 
-            id="messages-container"
-            className="flex-1 overflow-y-auto min-h-0"
-            onScroll={handleMessagesScroll}
-          >
+          {/* Chat/Media Tabs */}
+          <Tabs value={dialogViewMode} onValueChange={(v) => setDialogViewMode(v as 'chat' | 'media')} className="flex-1 flex flex-col min-h-0">
+            <TabsList className="flex-shrink-0 w-fit">
+              <TabsTrigger value="chat" className="gap-2">
+                <MessageSquare className="h-4 w-4" />
+                Chat
+              </TabsTrigger>
+              <TabsTrigger value="media" className="gap-2">
+                <Image className="h-4 w-4" />
+                Media ({mediaMessages.length})
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Chat Tab */}
+            <TabsContent value="chat" className="flex-1 flex flex-col min-h-0 mt-2">
+              {/* Scrollable Messages Area */}
+              <div 
+                id="messages-container"
+                className="flex-1 overflow-y-auto min-h-0"
+                onScroll={handleMessagesScroll}
+              >
             {isLoadingMessages ? (
               <div className="text-center py-8 text-muted-foreground">
                 Loading messages...
@@ -1977,6 +1994,60 @@ const Customers = () => {
               </p>
             </div>
           )}
+            </TabsContent>
+
+            {/* Media Tab */}
+            <TabsContent value="media" className="flex-1 overflow-y-auto min-h-0 mt-2">
+              {mediaMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <Image className="h-12 w-12 mb-3 opacity-50" />
+                  <p>No media shared yet</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 p-1">
+                  {mediaMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className="aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer hover:ring-2 hover:ring-primary transition-all relative group"
+                      onClick={() => {
+                        const url = msg.photo_url || msg.video_url || msg.voice_url;
+                        if (url) window.open(url, '_blank');
+                      }}
+                    >
+                      {msg.photo_url && (
+                        <img src={msg.photo_url} alt="Photo" className="w-full h-full object-cover" />
+                      )}
+                      {msg.video_url && (
+                        <div className="w-full h-full flex items-center justify-center bg-black/80">
+                          <Video className="h-8 w-8 text-white/80" />
+                        </div>
+                      )}
+                      {msg.voice_url && (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-green-500/20 to-green-600/20">
+                          <Mic className="h-8 w-8 text-green-500" />
+                          {msg.voice_duration && (
+                            <span className="text-xs text-muted-foreground mt-1">
+                              {Math.floor(msg.voice_duration / 60)}:{String(msg.voice_duration % 60).padStart(2, "0")}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {/* Overlay with date */}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end p-1">
+                        <span className="text-[10px] text-white/0 group-hover:text-white/90 transition-colors">
+                          {format(new Date(msg.timestamp), "MMM d")}
+                        </span>
+                      </div>
+                      {/* Sender badge */}
+                      {msg.sender_type === 'employee' && (
+                        <Badge className="absolute top-1 right-1 text-[10px] h-4 px-1">You</Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </div>
