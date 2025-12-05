@@ -1794,7 +1794,7 @@ const Customers = () => {
                     <div className="flex-1 flex items-center gap-3 px-3 py-2 bg-destructive/10 rounded-md border border-destructive/20">
                       <div className="w-2 h-2 bg-destructive rounded-full animate-pulse" />
                       {/* Waveform animation */}
-                      <div className="flex items-center gap-1 h-6">
+                      <div className="flex-1 flex items-center gap-1 h-6">
                         {audioLevels.map((level, i) => (
                           <div
                             key={i}
@@ -1803,7 +1803,14 @@ const Customers = () => {
                           />
                         ))}
                       </div>
-                      <span className="text-sm font-medium text-destructive">{formatDuration(recordingDuration)}</span>
+                      <span className="text-sm font-medium text-destructive tabular-nums">{formatDuration(recordingDuration)}</span>
+                      <button
+                        className="flex-shrink-0 w-8 h-8 rounded-full bg-destructive flex items-center justify-center hover:bg-destructive/90 transition-colors"
+                        onClick={stopRecording}
+                        title="Stop recording"
+                      >
+                        <Square className="h-4 w-4 text-destructive-foreground" />
+                      </button>
                     </div>
                     <Button 
                       variant="outline" 
@@ -1812,14 +1819,6 @@ const Customers = () => {
                       title="Cancel"
                     >
                       <X className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      variant="default" 
-                      size="icon"
-                      onClick={stopRecording}
-                      title="Stop recording"
-                    >
-                      <Square className="h-4 w-4" />
                     </Button>
                   </>
                 ) : recordedAudio ? (
