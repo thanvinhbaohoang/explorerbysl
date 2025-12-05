@@ -235,33 +235,62 @@ const Customers = () => {
     }
   };
 
-  // Fetch customers with pagination
+  // Build map of linked platforms for unified customer display
+  const [linkedPlatformsMap, setLinkedPlatformsMap] = useState<Record<string, { telegram: boolean; messenger: boolean; linkedIds: string[] }>>({});
+
+  // Fetch customers with pagination (unified view - hide secondary linked accounts)
   const fetchCustomers = async (page: number) => {
     setIsLoading(true);
     try {
-      // Get total count
+      // Get total count of PRIMARY customers only (those without linked_customer_id)
       const { count, error: countError } = await supabase
         .from("customer")
-        .select("*", { count: "exact", head: true });
+        .select("*", { count: "exact", head: true })
+        .is("linked_customer_id", null);
 
       if (countError) throw countError;
       setTotalCustomers(count || 0);
 
-      // Fetch paginated data with lead source
+      // Fetch paginated data - only PRIMARY customers
       const from = (page - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
 
       const { data: customersData, error } = await supabase
         .from("customer")
         .select("*")
+        .is("linked_customer_id", null)
         .order("created_at", { ascending: false })
         .range(from, to);
 
       if (error) throw error;
       
-      // Fetch lead sources for these customers
+      // Build linked platforms map
       if (customersData && customersData.length > 0) {
         const customerIds = customersData.map(c => c.id);
+        
+        // Fetch customers that link to these primary customers
+        const { data: linkedCustomers } = await supabase
+          .from("customer")
+          .select("id, linked_customer_id, telegram_id, messenger_id")
+          .in("linked_customer_id", customerIds);
+        
+        // Build the map
+        const platformsMap: Record<string, { telegram: boolean; messenger: boolean; linkedIds: string[] }> = {};
+        customersData.forEach(customer => {
+          const linkedToThis = linkedCustomers?.filter(lc => lc.linked_customer_id === customer.id) || [];
+          const allIds = [customer.id, ...linkedToThis.map(lc => lc.id)];
+          const hasTelegram = customer.telegram_id !== null || linkedToThis.some(lc => lc.telegram_id !== null);
+          const hasMessenger = customer.messenger_id !== null || linkedToThis.some(lc => lc.messenger_id !== null);
+          
+          platformsMap[customer.id] = {
+            telegram: hasTelegram,
+            messenger: hasMessenger,
+            linkedIds: allIds,
+          };
+        });
+        setLinkedPlatformsMap(platformsMap);
+        
+        // Fetch lead sources
         const { data: leadsData } = await supabase
           .from("telegram_leads")
           .select("user_id, messenger_ref, campaign_name, ad_name, adset_name, referrer")
@@ -276,6 +305,7 @@ const Customers = () => {
         setCustomers(customersWithLeads);
       } else {
         setCustomers(customersData || []);
+        setLinkedPlatformsMap({});
       }
       
       setHasNewCustomers(false);
@@ -1063,7 +1093,9 @@ const Customers = () => {
                   </TableHeader>
                   <TableBody>
                     {customers.map((customer) => {
-                      const platform = customer.messenger_id ? 'messenger' : 'telegram';
+                      const platforms = linkedPlatformsMap[customer.id];
+                      const hasBothPlatforms = platforms?.telegram && platforms?.messenger;
+                      const primaryPlatform = customer.messenger_id ? 'messenger' : 'telegram';
                       const displayName = customer.messenger_id 
                         ? customer.messenger_name 
                         : `${customer.first_name || ''} ${customer.last_name || ''}`.trim();
@@ -1071,13 +1103,26 @@ const Customers = () => {
                       return (
                         <TableRow key={customer.id}>
                           <TableCell>
-                            <Badge variant={platform === 'messenger' ? 'default' : 'secondary'}>
-                              {platform === 'messenger' ? (
-                                <><Facebook className="h-3 w-3 mr-1" /> Messenger</>
+                            <div className="flex flex-col gap-1">
+                              {hasBothPlatforms ? (
+                                <>
+                                  <Badge variant="secondary" className="w-fit">
+                                    <Send className="h-3 w-3 mr-1" /> Telegram
+                                  </Badge>
+                                  <Badge variant="default" className="w-fit">
+                                    <Facebook className="h-3 w-3 mr-1" /> Messenger
+                                  </Badge>
+                                </>
                               ) : (
-                                <>Telegram</>
+                                <Badge variant={primaryPlatform === 'messenger' ? 'default' : 'secondary'}>
+                                  {primaryPlatform === 'messenger' ? (
+                                    <><Facebook className="h-3 w-3 mr-1" /> Messenger</>
+                                  ) : (
+                                    <><Send className="h-3 w-3 mr-1" /> Telegram</>
+                                  )}
+                                </Badge>
                               )}
-                            </Badge>
+                            </div>
                           </TableCell>
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-2">
@@ -1087,16 +1132,10 @@ const Customers = () => {
                               >
                                 {displayName || 'Unknown'}
                               </button>
-                              {customer.linked_customer_id && (
-                                <Badge variant="outline" className="text-xs">
-                                  <Link className="h-3 w-3 mr-1" />
-                                  Linked
-                                </Badge>
-                              )}
                             </div>
                           </TableCell>
                           <TableCell>
-                            {platform === 'messenger' ? (
+                            {primaryPlatform === 'messenger' ? (
                               <code className="text-xs bg-muted px-2 py-1 rounded">
                                 {customer.messenger_id}
                               </code>
@@ -1112,7 +1151,7 @@ const Customers = () => {
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline">
-                              {platform === 'messenger' 
+                              {primaryPlatform === 'messenger' 
                                 ? (customer.locale || "Unknown")
                                 : (customer.language_code || "Unknown")}
                             </Badge>
@@ -1157,7 +1196,7 @@ const Customers = () => {
                               onClick={() => loadMessages(customer)}
                               className="relative"
                             >
-                              {platform === 'messenger' ? (
+                              {primaryPlatform === 'messenger' ? (
                                 <Facebook className="h-4 w-4 mr-2" />
                               ) : (
                                 <Send className="h-4 w-4 mr-2" />
