@@ -741,29 +741,16 @@ const Customers = () => {
   const togglePreviewPlayback = () => {
     if (!audioPreviewRef.current) return;
     if (isPlayingPreview) {
-      audioPreviewRef.current.pause();
-      if (playbackAnimationRef.current) {
-        cancelAnimationFrame(playbackAnimationRef.current);
-      }
-    } else {
-      audioPreviewRef.current.play();
-      updatePlaybackProgress();
-    }
-    setIsPlayingPreview(!isPlayingPreview);
-  };
-
-  // Smooth playback progress update
-  const playbackAnimationRef = useRef<number | null>(null);
-  const updatePlaybackProgress = () => {
-    if (audioPreviewRef.current) {
+      // Capture current progress when pausing
       const audio = audioPreviewRef.current;
       if (audio.duration) {
         setPlaybackProgress((audio.currentTime / audio.duration) * 100);
       }
-      if (!audio.paused && !audio.ended) {
-        playbackAnimationRef.current = requestAnimationFrame(updatePlaybackProgress);
-      }
+      audio.pause();
+    } else {
+      audioPreviewRef.current.play();
     }
+    setIsPlayingPreview(!isPlayingPreview);
   };
 
   // Send voice clip
@@ -1848,9 +1835,6 @@ const Customers = () => {
                       onEnded={() => {
                         setIsPlayingPreview(false);
                         setPlaybackProgress(0);
-                        if (playbackAnimationRef.current) {
-                          cancelAnimationFrame(playbackAnimationRef.current);
-                        }
                       }}
                       className="hidden"
                     />
@@ -1863,8 +1847,13 @@ const Customers = () => {
                       </button>
                       <div className="flex-1 h-1.5 bg-primary/20 rounded-full overflow-hidden">
                         <div 
-                          className="h-full bg-primary rounded-full transition-all duration-100"
-                          style={{ width: `${playbackProgress}%` }}
+                          className="h-full bg-primary rounded-full"
+                          style={{ 
+                            width: isPlayingPreview ? '100%' : `${playbackProgress}%`,
+                            transition: isPlayingPreview 
+                              ? `width ${(audioPreviewRef.current?.duration || recordingDuration) * (1 - playbackProgress / 100)}s linear` 
+                              : 'none'
+                          }}
                         />
                       </div>
                       <span className="text-sm font-medium tabular-nums">{formatDuration(recordingDuration)}</span>
