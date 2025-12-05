@@ -123,6 +123,7 @@ const Customers = () => {
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [recordedAudio, setRecordedAudio] = useState<{ file: File; url: string } | null>(null);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const [playbackProgress, setPlaybackProgress] = useState(0);
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [audioLevels, setAudioLevels] = useState<number[]>([0, 0, 0, 0, 0]);
@@ -721,6 +722,7 @@ const Customers = () => {
     setRecordedAudio(null);
     setRecordingDuration(0);
     setIsPlayingPreview(false);
+    setPlaybackProgress(0);
   };
 
   // Send recorded audio
@@ -732,6 +734,7 @@ const Customers = () => {
     setRecordedAudio(null);
     setRecordingDuration(0);
     setIsPlayingPreview(false);
+    setPlaybackProgress(0);
   };
 
   // Toggle preview playback
@@ -1825,22 +1828,32 @@ const Customers = () => {
                     <audio 
                       ref={audioPreviewRef} 
                       src={recordedAudio.url} 
-                      onEnded={() => setIsPlayingPreview(false)}
+                      onEnded={() => {
+                        setIsPlayingPreview(false);
+                        setPlaybackProgress(0);
+                      }}
+                      onTimeUpdate={(e) => {
+                        const audio = e.currentTarget;
+                        if (audio.duration) {
+                          setPlaybackProgress((audio.currentTime / audio.duration) * 100);
+                        }
+                      }}
                       className="hidden"
                     />
                     <div className="flex-1 flex items-center gap-3 px-3 py-2 bg-primary/10 rounded-md border border-primary/20">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
+                      <button
+                        className="flex-shrink-0 w-8 h-8 rounded-full bg-primary flex items-center justify-center hover:bg-primary/90 transition-colors"
                         onClick={togglePreviewPlayback}
                       >
-                        {isPlayingPreview ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                      </Button>
-                      <div className="flex-1 h-1 bg-primary/20 rounded-full overflow-hidden">
-                        <div className="h-full bg-primary rounded-full w-full" />
+                        {isPlayingPreview ? <Pause className="h-4 w-4 text-primary-foreground" /> : <Play className="h-4 w-4 text-primary-foreground ml-0.5" />}
+                      </button>
+                      <div className="flex-1 h-1.5 bg-primary/20 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-primary rounded-full transition-all duration-100"
+                          style={{ width: `${playbackProgress}%` }}
+                        />
                       </div>
-                      <span className="text-sm font-medium">{formatDuration(recordingDuration)}</span>
+                      <span className="text-sm font-medium tabular-nums">{formatDuration(recordingDuration)}</span>
                     </div>
                     <Button 
                       variant="outline" 
