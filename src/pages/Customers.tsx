@@ -613,9 +613,12 @@ const Customers = () => {
   const loadMessages = async (customer: Customer, offset = 0, forceRefresh = false) => {
     setSelectedCustomer(customer);
     setDialogOpen(true);
-    // Set initial platform filter to the customer's platform
-    const initialPlatform = customer.messenger_id ? 'messenger' : 'telegram';
-    setPlatformFilter(initialPlatform);
+    
+    // Only set initial platform filter on first load
+    if (offset === 0) {
+      const initialPlatform = customer.messenger_id ? 'messenger' : 'telegram';
+      setPlatformFilter(initialPlatform);
+    }
     
     // Fetch linked customer IDs first
     const allCustomerIds = [customer.id];
@@ -1330,7 +1333,11 @@ const Customers = () => {
           )}
 
           {/* Scrollable Messages Area */}
-          <div className="flex-1 overflow-y-auto min-h-0">
+          <div 
+            id="messages-container"
+            className="flex-1 overflow-y-auto min-h-0"
+            onScroll={handleMessagesScroll}
+          >
             {isLoadingMessages ? (
               <div className="text-center py-8 text-muted-foreground">
                 Loading messages...
@@ -1340,11 +1347,7 @@ const Customers = () => {
                 {platformFilter ? `No messages on ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}` : 'No messages yet'}
               </div>
             ) : (
-              <div 
-                id="messages-container"
-                className="space-y-4"
-                onScroll={handleMessagesScroll}
-              >
+              <div className="space-y-4 p-1">
                 {isLoadingMoreMessages && (
                   <div className="text-center py-2 text-sm text-muted-foreground">
                     Loading older messages...
