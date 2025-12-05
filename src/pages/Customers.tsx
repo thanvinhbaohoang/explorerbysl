@@ -105,7 +105,7 @@ const Customers = () => {
   const [messagesCache, setMessagesCache] = useState<Record<string, Message[]>>({});
   const [messageMetaCache, setMessageMetaCache] = useState<Record<string, { offset: number; hasMore: boolean }>>({});
   const [linkedCustomerIds, setLinkedCustomerIds] = useState<string[]>([]);
-  const [linkedCustomersMap, setLinkedCustomersMap] = useState<Record<string, { name: string; platform: string }>>({});
+  const [linkedCustomersMap, setLinkedCustomersMap] = useState<Record<string, { name: string; platform: string; telegram_id: number | null; messenger_id: string | null }>>({});
   const [platformFilter, setPlatformFilter] = useState<'telegram' | 'messenger' | null>(null);
   const itemsPerPage = 10;
   const messagesPerPage = 10;
@@ -137,12 +137,12 @@ const Customers = () => {
     const [customerId, info] = entry;
     if (customerId === selectedCustomer?.id) return selectedCustomer;
     
-    // Create a minimal customer object for reply purposes
+    // Create a customer object with the actual platform IDs
     return {
       ...selectedCustomer,
       id: customerId,
-      messenger_id: info.platform === 'messenger' ? customerId : null,
-      telegram_id: info.platform === 'telegram' ? Number(customerId) : null,
+      messenger_id: info.messenger_id,
+      telegram_id: info.telegram_id,
     } as Customer;
   }, [platformFilter, linkedCustomersMap, selectedCustomer, linkedCustomerIds]);
 
@@ -409,12 +409,14 @@ const Customers = () => {
     
     // Fetch linked customer IDs first
     const allCustomerIds = [customer.id];
-    const linkedMap: Record<string, { name: string; platform: string }> = {};
+    const linkedMap: Record<string, { name: string; platform: string; telegram_id: number | null; messenger_id: string | null }> = {};
     
     // Add current customer to map
     linkedMap[customer.id] = {
       name: customer.messenger_name || `${customer.first_name || ""} ${customer.last_name || ""}`.trim() || "Unknown",
-      platform: customer.messenger_id ? "messenger" : "telegram"
+      platform: customer.messenger_id ? "messenger" : "telegram",
+      telegram_id: customer.telegram_id,
+      messenger_id: customer.messenger_id
     };
     
     try {
@@ -423,14 +425,16 @@ const Customers = () => {
         allCustomerIds.push(customer.linked_customer_id);
         const { data: primary } = await supabase
           .from("customer")
-          .select("id, first_name, last_name, messenger_name, messenger_id")
+          .select("id, first_name, last_name, messenger_name, messenger_id, telegram_id")
           .eq("id", customer.linked_customer_id)
           .maybeSingle();
         
         if (primary) {
           linkedMap[primary.id] = {
             name: primary.messenger_name || `${primary.first_name || ""} ${primary.last_name || ""}`.trim() || "Unknown",
-            platform: primary.messenger_id ? "messenger" : "telegram"
+            platform: primary.messenger_id ? "messenger" : "telegram",
+            telegram_id: primary.telegram_id,
+            messenger_id: primary.messenger_id
           };
         }
       }
@@ -438,7 +442,7 @@ const Customers = () => {
       // Find customers that link to this one
       const { data: linkedToThis } = await supabase
         .from("customer")
-        .select("id, first_name, last_name, messenger_name, messenger_id")
+        .select("id, first_name, last_name, messenger_name, messenger_id, telegram_id")
         .eq("linked_customer_id", customer.id);
       
       if (linkedToThis) {
@@ -446,7 +450,9 @@ const Customers = () => {
           allCustomerIds.push(linked.id);
           linkedMap[linked.id] = {
             name: linked.messenger_name || `${linked.first_name || ""} ${linked.last_name || ""}`.trim() || "Unknown",
-            platform: linked.messenger_id ? "messenger" : "telegram"
+            platform: linked.messenger_id ? "messenger" : "telegram",
+            telegram_id: linked.telegram_id,
+            messenger_id: linked.messenger_id
           };
         });
       }
