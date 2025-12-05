@@ -29,9 +29,15 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link } from "lucide-react";
+import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2 } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface Customer {
   id: string;
@@ -107,6 +113,10 @@ const Customers = () => {
   const [linkedCustomerIds, setLinkedCustomerIds] = useState<string[]>([]);
   const [linkedCustomersMap, setLinkedCustomersMap] = useState<Record<string, { name: string; platform: string; telegram_id: number | null; messenger_id: string | null }>>({});
   const [platformFilter, setPlatformFilter] = useState<'telegram' | 'messenger' | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const fileInputRef = useState<HTMLInputElement | null>(null);
   const itemsPerPage = 10;
   const messagesPerPage = 10;
 
@@ -396,6 +406,173 @@ const Customers = () => {
           input.focus();
         }
       }, 100);
+    }
+  };
+
+  // Handle file selection
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (max 25MB for Telegram, 25MB for Messenger)
+    const maxSize = 25 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast.error("File is too large. Maximum size is 25MB.");
+      return;
+    }
+
+    setSelectedFile(file);
+
+    // Create preview for images and videos
+    if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => setFilePreview(e.target?.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setFilePreview(null);
+    }
+  };
+
+  // Clear selected file
+  const clearSelectedFile = () => {
+    setSelectedFile(null);
+    setFilePreview(null);
+  };
+
+  // Determine media type from file
+  const getMediaType = (file: File): 'photo' | 'video' | 'document' => {
+    if (file.type.startsWith('image/')) return 'photo';
+    if (file.type.startsWith('video/')) return 'video';
+    return 'document';
+  };
+
+  // Upload file to Supabase Storage and get public URL
+  const uploadFileToStorage = async (file: File): Promise<string> => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const filePath = `chat-media/${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from('chat-attachments')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (error) {
+      console.error("Storage upload error:", error);
+      throw new Error(`Failed to upload file: ${error.message}`);
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('chat-attachments')
+      .getPublicUrl(filePath);
+
+    return urlData.publicUrl;
+  };
+
+  // Send media file
+  const sendMedia = async () => {
+    const customerToReply = replyCustomer || selectedCustomer;
+    if (!selectedFile || !customerToReply || isUploadingFile) return;
+
+    const mediaType = getMediaType(selectedFile);
+    const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
+    const tempId = `temp-media-${Date.now()}`;
+    const caption = replyText.trim() || undefined;
+
+    // Optimistically add message to UI
+    const optimisticMessage: Message = {
+      id: tempId,
+      customer_id: customerToReply.id,
+      telegram_id: customerToReply.telegram_id,
+      message_text: caption || `[${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)}]`,
+      message_type: mediaType,
+      timestamp: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      photo_file_id: null,
+      photo_url: mediaType === 'photo' ? filePreview : null,
+      voice_file_id: null,
+      voice_duration: null,
+      voice_transcription: null,
+      voice_url: null,
+      video_file_id: null,
+      video_url: mediaType === 'video' ? filePreview : null,
+      video_duration: null,
+      video_mime_type: selectedFile.type,
+      sender_type: "employee",
+      is_read: true,
+      platform,
+      messenger_mid: null,
+      isPending: true,
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+    setIsUploadingFile(true);
+    clearSelectedFile();
+    setReplyText("");
+
+    // Scroll to bottom
+    setTimeout(() => {
+      const messagesContainer = document.getElementById('messages-container');
+      if (messagesContainer) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+    }, 50);
+
+    try {
+      // Upload to storage first
+      const mediaUrl = await uploadFileToStorage(selectedFile);
+      console.log("File uploaded to storage:", mediaUrl);
+
+      let response;
+      if (platform === 'messenger') {
+        response = await supabase.functions.invoke("messenger-webhook", {
+          body: {
+            psid: customerToReply.messenger_id,
+            media_url: mediaUrl,
+            media_type: mediaType,
+            caption,
+          },
+        });
+      } else {
+        response = await supabase.functions.invoke("telegram-bot", {
+          body: {
+            action: "send_media",
+            telegram_id: customerToReply.telegram_id,
+            customer_id: customerToReply.id,
+            media_url: mediaUrl,
+            media_type: mediaType,
+            caption,
+          },
+        });
+      }
+
+      if (response.error) throw response.error;
+
+      if (response.data?.error && response.data?.code === 'MESSAGING_WINDOW_EXPIRED') {
+        throw new Error(response.data.error);
+      }
+
+      setLastMessageSender((prev) => ({
+        ...prev,
+        [customerToReply.id]: "employee",
+      }));
+
+      toast.success("Media sent successfully");
+    } catch (error: any) {
+      console.error("Error sending media:", error);
+      
+      if (error.message?.includes('24-hour messaging window')) {
+        toast.error("Cannot send media: The 24-hour messaging window has expired.", { duration: 5000 });
+      } else {
+        toast.error("Failed to send media: " + error.message);
+      }
+      
+      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+    } finally {
+      setIsUploadingFile(false);
     }
   };
 
@@ -1259,32 +1436,118 @@ const Customers = () => {
                 </Alert>
               )}
               
+              {/* File Preview */}
+              {selectedFile && (
+                <div className="mb-3 p-3 border rounded-lg bg-muted/50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {getMediaType(selectedFile) === 'photo' && <Image className="h-4 w-4 text-muted-foreground" />}
+                      {getMediaType(selectedFile) === 'video' && <Video className="h-4 w-4 text-muted-foreground" />}
+                      {getMediaType(selectedFile) === 'document' && <Paperclip className="h-4 w-4 text-muted-foreground" />}
+                      <span className="text-sm truncate max-w-[200px]">{selectedFile.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                      </span>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={clearSelectedFile}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {filePreview && getMediaType(selectedFile) === 'photo' && (
+                    <img src={filePreview} alt="Preview" className="mt-2 max-h-32 rounded object-contain" />
+                  )}
+                  {filePreview && getMediaType(selectedFile) === 'video' && (
+                    <video src={filePreview} className="mt-2 max-h-32 rounded" controls />
+                  )}
+                </div>
+              )}
+              
+              {/* Hidden file inputs */}
+              <input
+                type="file"
+                id="image-upload"
+                className="hidden"
+                accept="image/*"
+                onChange={handleFileSelect}
+              />
+              <input
+                type="file"
+                id="video-upload"
+                className="hidden"
+                accept="video/*"
+                onChange={handleFileSelect}
+              />
+              <input
+                type="file"
+                id="file-upload"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+              
               <div className="flex gap-2">
+                {/* Attachment dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      disabled={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow || isUploadingFile}
+                    >
+                      <Paperclip className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => document.getElementById('image-upload')?.click()}>
+                      <Image className="h-4 w-4 mr-2" />
+                      Photo
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => document.getElementById('video-upload')?.click()}>
+                      <Video className="h-4 w-4 mr-2" />
+                      Video
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => document.getElementById('file-upload')?.click()}>
+                      <Paperclip className="h-4 w-4 mr-2" />
+                      File
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                
                 <Input
-                  placeholder={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow ? "Chat disabled - reply on Facebook Page" : "Type your reply..."}
+                  placeholder={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow ? "Chat disabled - reply on Facebook Page" : selectedFile ? "Add a caption (optional)..." : "Type your reply..."}
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
                   onKeyPress={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      sendReply();
+                      if (selectedFile) {
+                        sendMedia();
+                      } else {
+                        sendReply();
+                      }
                     }
                   }}
                   autoFocus
                   disabled={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow}
+                  className="flex-1"
                 />
                 <Button 
-                  onClick={sendReply} 
-                  disabled={!replyText.trim() || isSending || (platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow)}
+                  onClick={selectedFile ? sendMedia : sendReply} 
+                  disabled={((!replyText.trim() && !selectedFile) || isSending || isUploadingFile || (platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow))}
                   size="icon"
                 >
-                  <Send className="h-4 w-4" />
+                  {isUploadingFile ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 {platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow 
                   ? 'Messaging disabled due to 24-hour policy' 
-                  : `Press Enter to send • This will be sent via ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}`}
+                  : selectedFile 
+                    ? `Press Enter to send ${getMediaType(selectedFile)} via ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}`
+                    : `Press Enter to send • This will be sent via ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}`}
               </p>
             </div>
           )}
