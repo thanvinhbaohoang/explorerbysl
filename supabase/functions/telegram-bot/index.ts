@@ -497,6 +497,27 @@ async function sendDocument(chatId: number, documentUrl: string, caption?: strin
   return await response.json();
 }
 
+// Send audio/voice to Telegram
+async function sendAudio(chatId: number, audioUrl: string, caption?: string) {
+  const response = await fetch(`${TELEGRAM_API}/sendAudio`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      audio: audioUrl,
+      caption: caption,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error("Telegram API error (sendAudio):", error);
+    throw new Error(`Failed to send audio: ${error}`);
+  }
+
+  return await response.json();
+}
+
 // Handle incoming webhook
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -591,6 +612,9 @@ serve(async (req) => {
             await sendPhoto(telegram_id, media_url, caption);
           } else if (media_type === 'video') {
             await sendVideo(telegram_id, media_url, caption);
+          } else if (media_type === 'voice' || media_type === 'audio') {
+            await sendAudio(telegram_id, media_url, caption);
+            messageType = 'voice';
           } else {
             await sendDocument(telegram_id, media_url, caption);
             messageType = 'document';
@@ -610,6 +634,8 @@ serve(async (req) => {
             insertData.photo_url = media_url;
           } else if (media_type === 'video') {
             insertData.video_url = media_url;
+          } else if (media_type === 'voice' || media_type === 'audio') {
+            insertData.voice_url = media_url;
           }
           
           const { error: dbError } = await supabase
