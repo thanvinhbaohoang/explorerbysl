@@ -1317,6 +1317,14 @@ const Customers = () => {
               <span className="text-2xl font-semibold">{totalCustomers}</span>
               <span>Total Customers</span>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/media-gallery")}
+            >
+              <Image className="h-4 w-4 mr-2" />
+              Media Gallery
+            </Button>
             {hasNewCustomers && (
               <Button
                 variant="outline"
