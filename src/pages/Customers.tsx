@@ -914,8 +914,9 @@ const Customers = () => {
             }));
           }
 
-          // If this message is for the currently open dialog
-          if (selectedCustomer?.id === newMessage.customer_id && dialogOpen) {
+          // If this message is for the currently open dialog (including linked accounts)
+          const isForCurrentDialog = linkedCustomerIds.includes(newMessage.customer_id) && dialogOpen;
+          if (isForCurrentDialog) {
             // Replace pending message or add new message
             setMessages((prev) => {
               const hasPending = prev.some((msg) => msg.isPending && msg.sender_type === "employee");
@@ -933,10 +934,11 @@ const Customers = () => {
                 newMessages = [...prev, newMessage];
               }
               
-              // Update cache
+              // Update cache with correct key (sorted linked customer IDs)
+              const cacheKey = [...linkedCustomerIds].sort().join("-");
               setMessagesCache((cache) => ({
                 ...cache,
-                [newMessage.customer_id]: newMessages,
+                [cacheKey]: newMessages,
               }));
               
               return newMessages;
