@@ -780,7 +780,11 @@ const Customers = () => {
                               onClick={() => loadMessages(customer)}
                               className="relative"
                             >
-                              <MessageSquare className="h-4 w-4 mr-2" />
+                              {platform === 'messenger' ? (
+                                <Facebook className="h-4 w-4 mr-2" />
+                              ) : (
+                                <Send className="h-4 w-4 mr-2" />
+                              )}
                               Chat
                               {lastMessageSender[customer.id] === "customer" && (
                                 <span className="absolute -top-1 -right-1 h-3 w-3 bg-destructive rounded-full animate-pulse" />
