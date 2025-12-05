@@ -473,8 +473,13 @@ serve(async (req) => {
       
       // Map media_type to Facebook attachment type
       let fbAttachmentType = 'file';
+      let dbMediaType = media_type;
       if (media_type === 'photo') fbAttachmentType = 'image';
       else if (media_type === 'video') fbAttachmentType = 'video';
+      else if (media_type === 'audio' || media_type === 'voice') {
+        fbAttachmentType = 'audio';
+        dbMediaType = 'voice';
+      }
       
       // Send attachment
       const result = await sendAttachment(psid, fbAttachmentType, media_url);
@@ -515,8 +520,8 @@ serve(async (req) => {
           customer_id: customer.id,
           messenger_mid: result.message_id,
           platform: 'messenger',
-          message_type: media_type,
-          message_text: caption || `[${media_type.charAt(0).toUpperCase() + media_type.slice(1)}]`,
+          message_type: dbMediaType,
+          message_text: caption || `[${dbMediaType.charAt(0).toUpperCase() + dbMediaType.slice(1)}]`,
           sender_type: 'employee',
           is_read: true,
           timestamp: new Date().toISOString(),
@@ -524,6 +529,7 @@ serve(async (req) => {
         
         if (media_type === 'photo') insertData.photo_url = media_url;
         else if (media_type === 'video') insertData.video_url = media_url;
+        else if (media_type === 'audio' || media_type === 'voice') insertData.voice_url = media_url;
         
         await supabase.from('messages').insert(insertData);
       }
