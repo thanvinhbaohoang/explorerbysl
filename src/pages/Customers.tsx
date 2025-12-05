@@ -104,6 +104,8 @@ const Customers = () => {
   const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false);
   const [messagesCache, setMessagesCache] = useState<Record<string, Message[]>>({});
   const [messageMetaCache, setMessageMetaCache] = useState<Record<string, { offset: number; hasMore: boolean }>>({});
+  const [linkedCustomerIds, setLinkedCustomerIds] = useState<string[]>([]);
+  const [linkedCustomersMap, setLinkedCustomersMap] = useState<Record<string, { name: string; platform: string }>>({});
   const itemsPerPage = 10;
   const messagesPerPage = 10;
 
@@ -349,15 +351,66 @@ const Customers = () => {
     }
   };
 
-  // Load messages for selected customer
+  // Load messages for selected customer (including linked accounts)
   const loadMessages = async (customer: Customer, offset = 0, forceRefresh = false) => {
     setSelectedCustomer(customer);
     setDialogOpen(true);
     
+    // Fetch linked customer IDs first
+    const allCustomerIds = [customer.id];
+    const linkedMap: Record<string, { name: string; platform: string }> = {};
+    
+    // Add current customer to map
+    linkedMap[customer.id] = {
+      name: customer.messenger_name || `${customer.first_name || ""} ${customer.last_name || ""}`.trim() || "Unknown",
+      platform: customer.messenger_id ? "messenger" : "telegram"
+    };
+    
+    try {
+      // If this customer links to another (primary)
+      if (customer.linked_customer_id) {
+        allCustomerIds.push(customer.linked_customer_id);
+        const { data: primary } = await supabase
+          .from("customer")
+          .select("id, first_name, last_name, messenger_name, messenger_id")
+          .eq("id", customer.linked_customer_id)
+          .maybeSingle();
+        
+        if (primary) {
+          linkedMap[primary.id] = {
+            name: primary.messenger_name || `${primary.first_name || ""} ${primary.last_name || ""}`.trim() || "Unknown",
+            platform: primary.messenger_id ? "messenger" : "telegram"
+          };
+        }
+      }
+      
+      // Find customers that link to this one
+      const { data: linkedToThis } = await supabase
+        .from("customer")
+        .select("id, first_name, last_name, messenger_name, messenger_id")
+        .eq("linked_customer_id", customer.id);
+      
+      if (linkedToThis) {
+        linkedToThis.forEach(linked => {
+          allCustomerIds.push(linked.id);
+          linkedMap[linked.id] = {
+            name: linked.messenger_name || `${linked.first_name || ""} ${linked.last_name || ""}`.trim() || "Unknown",
+            platform: linked.messenger_id ? "messenger" : "telegram"
+          };
+        });
+      }
+    } catch (err) {
+      console.error("Error fetching linked customers:", err);
+    }
+    
+    setLinkedCustomerIds(allCustomerIds);
+    setLinkedCustomersMap(linkedMap);
+    
     // Check cache first (only if not forcing refresh and offset is 0)
-    if (offset === 0 && !forceRefresh && messagesCache[customer.id]) {
-      setMessages(messagesCache[customer.id]);
-      const meta = messageMetaCache[customer.id];
+    const cacheKey = allCustomerIds.sort().join("-");
+    if (offset === 0 && !forceRefresh && messagesCache[cacheKey]) {
+      setMessages(messagesCache[cacheKey]);
+      const meta = messageMetaCache[cacheKey];
       if (meta) {
         setMessageOffset(meta.offset);
         setHasMoreMessages(meta.hasMore);
@@ -383,27 +436,28 @@ const Customers = () => {
     }
 
     try {
-      // Mark all unread messages as read for this customer (only on initial load)
+      // Mark all unread messages as read for all linked customers (only on initial load)
       if (offset === 0) {
         await supabase
           .from("messages")
           .update({ is_read: true })
-          .eq("customer_id", customer.id)
+          .in("customer_id", allCustomerIds)
           .eq("sender_type", "customer")
           .eq("is_read", false);
 
-        // Reset unread count for this customer
-        setUnreadCounts((prev) => ({
-          ...prev,
-          [customer.id]: 0,
-        }));
+        // Reset unread count for all linked customers
+        setUnreadCounts((prev) => {
+          const updated = { ...prev };
+          allCustomerIds.forEach(id => { updated[id] = 0; });
+          return updated;
+        });
       }
 
-      // Get total count
+      // Get total count for all linked customers
       const { count } = await supabase
         .from("messages")
         .select("*", { count: "exact", head: true })
-        .eq("customer_id", customer.id);
+        .in("customer_id", allCustomerIds);
 
       const totalMessages = count || 0;
       const newOffset = offset + messagesPerPage;
@@ -411,11 +465,11 @@ const Customers = () => {
       setHasMoreMessages(hasMore);
       setMessageOffset(newOffset);
 
-      // Fetch paginated messages (newest first, then reverse)
+      // Fetch paginated messages from all linked customers (newest first, then reverse)
       const { data, error } = await supabase
         .from("messages")
         .select("*")
-        .eq("customer_id", customer.id)
+        .in("customer_id", allCustomerIds)
         .order("timestamp", { ascending: false })
         .range(offset, offset + messagesPerPage - 1);
 
@@ -429,11 +483,11 @@ const Customers = () => {
         // Cache the messages and metadata
         setMessagesCache((prev) => ({
           ...prev,
-          [customer.id]: messagesData,
+          [cacheKey]: messagesData,
         }));
         setMessageMetaCache((prev) => ({
           ...prev,
-          [customer.id]: { offset: newOffset, hasMore },
+          [cacheKey]: { offset: newOffset, hasMore },
         }));
         
         // Scroll to bottom after loading
@@ -454,11 +508,11 @@ const Customers = () => {
         // Update cache
         setMessagesCache((prev) => ({
           ...prev,
-          [customer.id]: newMessages,
+          [cacheKey]: newMessages,
         }));
         setMessageMetaCache((prev) => ({
           ...prev,
-          [customer.id]: { offset: newOffset, hasMore },
+          [cacheKey]: { offset: newOffset, hasMore },
         }));
         
         // Restore scroll position
@@ -934,6 +988,14 @@ const Customers = () => {
                 : `${selectedCustomer?.first_name || ''} ${selectedCustomer?.last_name || ''}`.trim()}
             </DialogTitle>
             <DialogDescription>
+              {linkedCustomerIds.length > 1 && (
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="outline" className="text-xs">
+                    <Link className="h-3 w-3 mr-1" />
+                    Combined view: {linkedCustomerIds.length} linked accounts
+                  </Badge>
+                </div>
+              )}
               {selectedCustomer?.messenger_id ? (
                 <div className="space-y-1">
                   <div>PSID: {selectedCustomer.messenger_id}</div>
@@ -1002,7 +1064,11 @@ const Customers = () => {
                     </button>
                   </div>
                 )}
-                {messages.map((message) => (
+                {messages.map((message) => {
+                  const msgPlatformInfo = linkedCustomersMap[message.customer_id];
+                  const showPlatformBadge = linkedCustomerIds.length > 1 && message.sender_type === 'customer';
+                  
+                  return (
                 <div
                   key={message.id}
                   className={`border rounded-lg p-4 space-y-3 transition-opacity ${
@@ -1016,6 +1082,15 @@ const Customers = () => {
                       <Badge variant={message.sender_type === 'employee' ? 'default' : 'outline'}>
                         {message.sender_type === 'employee' ? 'You' : message.message_type}
                       </Badge>
+                      {showPlatformBadge && msgPlatformInfo && (
+                        <Badge variant="secondary" className="text-xs">
+                          {msgPlatformInfo.platform === 'messenger' ? (
+                            <><Facebook className="h-3 w-3 mr-1" /> {msgPlatformInfo.name}</>
+                          ) : (
+                            <><Send className="h-3 w-3 mr-1" /> {msgPlatformInfo.name}</>
+                          )}
+                        </Badge>
+                      )}
                       {message.sender_type === 'employee' && (
                         <span className="text-xs text-muted-foreground">
                           {message.isPending ? 'Sending...' : 'Employee Reply'}
@@ -1101,7 +1176,8 @@ const Customers = () => {
                     </div>
                   )}
                 </div>
-              ))}
+                  );
+                })}
               </div>
             )}
           </div>
