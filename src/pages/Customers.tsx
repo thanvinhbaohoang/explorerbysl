@@ -106,13 +106,13 @@ const Customers = () => {
   const [messageMetaCache, setMessageMetaCache] = useState<Record<string, { offset: number; hasMore: boolean }>>({});
   const [linkedCustomerIds, setLinkedCustomerIds] = useState<string[]>([]);
   const [linkedCustomersMap, setLinkedCustomersMap] = useState<Record<string, { name: string; platform: string }>>({});
-  const [platformFilter, setPlatformFilter] = useState<'all' | 'telegram' | 'messenger'>('all');
+  const [platformFilter, setPlatformFilter] = useState<'telegram' | 'messenger' | null>(null);
   const itemsPerPage = 10;
   const messagesPerPage = 10;
 
   // Filter messages by platform
   const filteredMessages = useMemo(() => {
-    if (platformFilter === 'all' || linkedCustomerIds.length <= 1) {
+    if (!platformFilter || linkedCustomerIds.length <= 1) {
       return messages;
     }
     
@@ -126,7 +126,7 @@ const Customers = () => {
 
   // Get the customer to reply to based on filter
   const replyCustomer = useMemo(() => {
-    if (platformFilter === 'all' || linkedCustomerIds.length <= 1) {
+    if (!platformFilter || linkedCustomerIds.length <= 1) {
       return selectedCustomer;
     }
     // Find the customer ID for the selected platform
@@ -146,12 +146,21 @@ const Customers = () => {
     } as Customer;
   }, [platformFilter, linkedCustomersMap, selectedCustomer, linkedCustomerIds]);
 
-  // Calculate if Messenger customer is outside 24-hour messaging window
-  const isOutsideMessagingWindow = useMemo(() => {
-    if (!selectedCustomer?.messenger_id || messages.length === 0) return false;
+  // Check if the current platform filter is Messenger and outside 24-hour window
+  const isCurrentPlatformMessengerOutsideWindow = useMemo(() => {
+    const currentCustomer = replyCustomer || selectedCustomer;
+    if (!currentCustomer?.messenger_id || messages.length === 0) return false;
     
-    // Find last customer message
-    const lastCustomerMessage = [...messages]
+    // Get messages for the current platform only
+    const platformMessages = platformFilter 
+      ? messages.filter(msg => {
+          const info = linkedCustomersMap[msg.customer_id];
+          return info?.platform === platformFilter;
+        })
+      : messages;
+    
+    // Find last customer message for current platform
+    const lastCustomerMessage = [...platformMessages]
       .reverse()
       .find(msg => msg.sender_type === 'customer');
     
@@ -159,7 +168,8 @@ const Customers = () => {
     
     const hoursSinceLastMessage = (Date.now() - new Date(lastCustomerMessage.timestamp).getTime()) / (1000 * 60 * 60);
     return hoursSinceLastMessage > 24;
-  }, [selectedCustomer, messages]);
+  }, [replyCustomer, selectedCustomer, messages, platformFilter, linkedCustomersMap]);
+
 
   // Fetch last message sender for all customers
   const fetchLastMessageSenders = async () => {
@@ -393,7 +403,9 @@ const Customers = () => {
   const loadMessages = async (customer: Customer, offset = 0, forceRefresh = false) => {
     setSelectedCustomer(customer);
     setDialogOpen(true);
-    setPlatformFilter('all'); // Reset filter when opening new chat
+    // Set initial platform filter to the customer's platform
+    const initialPlatform = customer.messenger_id ? 'messenger' : 'telegram';
+    setPlatformFilter(initialPlatform);
     
     // Fetch linked customer IDs first
     const allCustomerIds = [customer.id];
@@ -1070,16 +1082,7 @@ const Customers = () => {
           {/* Platform Toggle for Linked Accounts */}
           {linkedCustomerIds.length > 1 && (
             <div className="flex flex-wrap items-center gap-2 py-2 border-b">
-              <span className="text-xs text-muted-foreground">View:</span>
-              <Button
-                variant={platformFilter === 'all' ? 'default' : 'outline'}
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setPlatformFilter('all')}
-              >
-                <Link className="h-3 w-3 mr-1" />
-                All ({linkedCustomerIds.length})
-              </Button>
+              <span className="text-xs text-muted-foreground">Platform:</span>
               {Object.entries(linkedCustomersMap).map(([customerId, info]) => (
                 <Button
                   key={customerId}
@@ -1106,7 +1109,7 @@ const Customers = () => {
               </div>
             ) : filteredMessages.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                {platformFilter !== 'all' ? `No messages on ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}` : 'No messages yet'}
+                {platformFilter ? `No messages on ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}` : 'No messages yet'}
               </div>
             ) : (
               <div 
@@ -1119,7 +1122,7 @@ const Customers = () => {
                     Loading older messages...
                   </div>
                 )}
-                {hasMoreMessages && !isLoadingMoreMessages && platformFilter === 'all' && (
+                {hasMoreMessages && !isLoadingMoreMessages && (
                   <div className="text-center py-2">
                     <button
                       onClick={() => selectedCustomer && loadMessages(selectedCustomer, messageOffset)}
@@ -1131,7 +1134,6 @@ const Customers = () => {
                 )}
                 {filteredMessages.map((message) => {
                   const msgPlatformInfo = linkedCustomersMap[message.customer_id];
-                  const showPlatformBadge = linkedCustomerIds.length > 1 && message.sender_type === 'customer' && platformFilter === 'all';
                   
                   return (
                 <div
@@ -1147,15 +1149,6 @@ const Customers = () => {
                       <Badge variant={message.sender_type === 'employee' ? 'default' : 'outline'}>
                         {message.sender_type === 'employee' ? 'You' : message.message_type}
                       </Badge>
-                      {showPlatformBadge && msgPlatformInfo && (
-                        <Badge variant="secondary" className="text-xs">
-                          {msgPlatformInfo.platform === 'messenger' ? (
-                            <><Facebook className="h-3 w-3 mr-1" /> {msgPlatformInfo.name}</>
-                          ) : (
-                            <><Send className="h-3 w-3 mr-1" /> {msgPlatformInfo.name}</>
-                          )}
-                        </Badge>
-                      )}
                       {message.sender_type === 'employee' && (
                         <span className="text-xs text-muted-foreground">
                           {message.isPending ? 'Sending...' : 'Employee Reply'}
@@ -1251,18 +1244,18 @@ const Customers = () => {
           {selectedCustomer && (
             <div className="mt-4 pt-4 border-t">
               {/* 24-hour window warning for Messenger */}
-              {selectedCustomer.messenger_id && isOutsideMessagingWindow && (
+              {platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow && (
                 <Alert className="mb-3 border-amber-500/50 bg-amber-500/10">
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                   <AlertDescription className="text-sm text-amber-600 dark:text-amber-500">
-                    This customer hasn't messaged in over 24 hours. Facebook's messaging policy prevents sending messages outside this window. Wait for them to message first.
+                    This customer hasn't messaged in over 24 hours. Facebook's messaging policy prevents sending messages outside this window. Please reply directly on your Facebook Page inbox.
                   </AlertDescription>
                 </Alert>
               )}
               
               <div className="flex gap-2">
                 <Input
-                  placeholder="Type your reply..."
+                  placeholder={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow ? "Chat disabled - reply on Facebook Page" : "Type your reply..."}
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
                   onKeyPress={(e) => {
@@ -1272,18 +1265,20 @@ const Customers = () => {
                     }
                   }}
                   autoFocus
-                  disabled={selectedCustomer.messenger_id && isOutsideMessagingWindow}
+                  disabled={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow}
                 />
                 <Button 
                   onClick={sendReply} 
-                  disabled={!replyText.trim() || isSending || (selectedCustomer.messenger_id && isOutsideMessagingWindow)}
+                  disabled={!replyText.trim() || isSending || (platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow)}
                   size="icon"
                 >
                   <Send className="h-4 w-4" />
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                Press Enter to send • This will be sent via {selectedCustomer.messenger_id ? 'Messenger' : 'Telegram'}
+                {platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow 
+                  ? 'Messaging disabled due to 24-hour policy' 
+                  : `Press Enter to send • This will be sent via ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}`}
               </p>
             </div>
           )}
