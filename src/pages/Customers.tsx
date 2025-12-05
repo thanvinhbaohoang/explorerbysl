@@ -555,6 +555,9 @@ const Customers = () => {
         throw new Error(response.data.error);
       }
 
+      // Remove optimistic message - real-time subscription will add the real one
+      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+
       setLastMessageSender((prev) => ({
         ...prev,
         [customerToReply.id]: "employee",
