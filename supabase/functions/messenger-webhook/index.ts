@@ -101,6 +101,69 @@ async function sendAttachment(psid: string, type: string, url: string) {
   return await response.json();
 }
 
+// Download file and store in Supabase Storage
+async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | 'video'): Promise<string | null> {
+  try {
+    console.log(`Downloading ${fileType} from:`, url);
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error(`Failed to download file: ${response.status}`);
+      return null;
+    }
+    
+    const blob = await response.blob();
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    
+    // Determine file extension based on content type
+    let extension = 'bin';
+    if (contentType.includes('jpeg') || contentType.includes('jpg')) extension = 'jpg';
+    else if (contentType.includes('png')) extension = 'png';
+    else if (contentType.includes('gif')) extension = 'gif';
+    else if (contentType.includes('webp')) extension = 'webp';
+    else if (contentType.includes('mp4')) extension = 'mp4';
+    else if (contentType.includes('webm')) extension = 'webm';
+    else if (contentType.includes('mpeg') || contentType.includes('mp3')) extension = 'mp3';
+    else if (contentType.includes('ogg')) extension = 'ogg';
+    else if (contentType.includes('wav')) extension = 'wav';
+    else if (contentType.includes('aac') || contentType.includes('m4a')) extension = 'm4a';
+    
+    // Create unique filename
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(7);
+    const folder = `messenger-${fileType}`;
+    const fileName = `${folder}/${timestamp}_${randomId}.${extension}`;
+    
+    console.log(`Uploading to storage: ${fileName}`);
+    
+    // Upload to Supabase Storage
+    const arrayBuffer = await blob.arrayBuffer();
+    const { error: uploadError } = await supabase.storage
+      .from('chat-attachments')
+      .upload(fileName, arrayBuffer, {
+        contentType,
+        upsert: false
+      });
+    
+    if (uploadError) {
+      console.error('Storage upload error:', uploadError);
+      return null;
+    }
+    
+    // Get public URL
+    const { data: publicUrlData } = supabase.storage
+      .from('chat-attachments')
+      .getPublicUrl(fileName);
+    
+    console.log(`File stored permanently at: ${publicUrlData.publicUrl}`);
+    return publicUrlData.publicUrl;
+    
+  } catch (error) {
+    console.error(`Error storing ${fileType}:`, error);
+    return null;
+  }
+}
+
 // Handle incoming messages
 async function handleMessage(senderId: string, message: any) {
   console.log(`Handling message from ${senderId}:`, message);
@@ -158,17 +221,26 @@ async function handleMessage(senderId: string, message: any) {
     
     if (attachment.type === 'image') {
       messageType = 'photo';
-      photoUrl = attachment.payload.url;
+      // Download and store permanently
+      const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo');
+      photoUrl = storedUrl || attachment.payload.url; // Fallback to original if storage fails
       photoFileId = attachment.payload.sticker_id || 'fb_image';
+      console.log(`Photo stored: ${photoUrl}`);
     } else if (attachment.type === 'video') {
       messageType = 'video';
-      videoUrl = attachment.payload.url;
+      // Download and store permanently
+      const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'video');
+      videoUrl = storedUrl || attachment.payload.url;
       videoFileId = 'fb_video';
       videoMimeType = 'video/mp4';
+      console.log(`Video stored: ${videoUrl}`);
     } else if (attachment.type === 'audio') {
       messageType = 'voice';
-      voiceUrl = attachment.payload.url;
+      // Download and store permanently
+      const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'voice');
+      voiceUrl = storedUrl || attachment.payload.url;
       voiceFileId = 'fb_audio';
+      console.log(`Voice stored: ${voiceUrl}`);
     } else if (attachment.type === 'file') {
       messageType = 'text';
       messageText = `[File: ${attachment.payload.url}]`;
