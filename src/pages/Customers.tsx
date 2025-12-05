@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -82,6 +83,7 @@ interface Message {
 }
 
 const Customers = () => {
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -716,7 +718,12 @@ const Customers = () => {
                             </Badge>
                           </TableCell>
                           <TableCell className="font-medium">
-                            {displayName || 'Unknown'}
+                            <button 
+                              onClick={() => navigate(`/customers/${customer.id}`)}
+                              className="hover:underline hover:text-primary text-left"
+                            >
+                              {displayName || 'Unknown'}
+                            </button>
                           </TableCell>
                           <TableCell>
                             {platform === 'messenger' ? (
