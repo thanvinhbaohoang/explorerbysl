@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -29,7 +29,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2 } from "lucide-react";
+import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -117,6 +117,10 @@ const Customers = () => {
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const fileInputRef = useState<HTMLInputElement | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const itemsPerPage = 10;
   const messagesPerPage = 10;
 
@@ -607,6 +611,180 @@ const Customers = () => {
     } finally {
       setIsUploadingFile(false);
     }
+  };
+
+  // Start voice recording
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        const audioFile = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
+        await sendVoiceClip(audioFile);
+      };
+
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      // Start duration counter
+      const interval = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+      recordingIntervalRef.current = interval;
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      toast.error('Could not access microphone');
+    }
+  };
+
+  // Stop voice recording
+  const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+    setIsRecording(false);
+    setMediaRecorder(null);
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+    setRecordingDuration(0);
+  };
+
+  // Cancel voice recording
+  const cancelRecording = () => {
+    if (mediaRecorder) {
+      mediaRecorder.stream.getTracks().forEach(track => track.stop());
+    }
+    setIsRecording(false);
+    setMediaRecorder(null);
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+    setRecordingDuration(0);
+  };
+
+  // Send voice clip
+  const sendVoiceClip = async (audioFile: File) => {
+    const customerToReply = replyCustomer || selectedCustomer;
+    if (!customerToReply) return;
+
+    const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
+    const tempId = `temp-voice-${Date.now()}`;
+
+    // Optimistically add message to UI
+    const optimisticMessage: Message = {
+      id: tempId,
+      customer_id: customerToReply.id,
+      telegram_id: customerToReply.telegram_id,
+      message_text: '[Voice message]',
+      message_type: 'voice',
+      timestamp: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      photo_file_id: null,
+      photo_url: null,
+      voice_file_id: null,
+      voice_duration: recordingDuration,
+      voice_transcription: null,
+      voice_url: null,
+      video_file_id: null,
+      video_url: null,
+      video_duration: null,
+      video_mime_type: null,
+      sender_type: "employee",
+      is_read: true,
+      platform,
+      messenger_mid: null,
+      isPending: true,
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+    setIsUploadingFile(true);
+
+    // Scroll to bottom
+    setTimeout(() => {
+      const messagesContainer = document.getElementById('messages-container');
+      if (messagesContainer) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+    }, 50);
+
+    try {
+      // Upload to storage first
+      const mediaUrl = await uploadFileToStorage(audioFile);
+      console.log("Voice clip uploaded to storage:", mediaUrl);
+
+      let response;
+      if (platform === 'messenger') {
+        // For Messenger, send as audio attachment
+        response = await supabase.functions.invoke("messenger-webhook", {
+          body: {
+            psid: customerToReply.messenger_id,
+            media_url: mediaUrl,
+            media_type: 'audio',
+          },
+        });
+      } else {
+        // For Telegram, send as voice
+        response = await supabase.functions.invoke("telegram-bot", {
+          body: {
+            action: "send_media",
+            telegram_id: customerToReply.telegram_id,
+            customer_id: customerToReply.id,
+            media_url: mediaUrl,
+            media_type: 'voice',
+          },
+        });
+      }
+
+      if (response.error) throw response.error;
+
+      if (response.data?.error && response.data?.code === 'MESSAGING_WINDOW_EXPIRED') {
+        throw new Error(response.data.error);
+      }
+
+      // Remove optimistic message - real-time subscription will add the real one
+      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+
+      setLastMessageSender((prev) => ({
+        ...prev,
+        [customerToReply.id]: "employee",
+      }));
+
+      toast.success("Voice message sent");
+    } catch (error: any) {
+      console.error("Error sending voice clip:", error);
+      
+      if (error.message?.includes('24-hour messaging window')) {
+        toast.error("Cannot send voice: The 24-hour messaging window has expired.", { duration: 5000 });
+      } else {
+        toast.error("Failed to send voice message: " + error.message);
+      }
+      
+      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+    } finally {
+      setIsUploadingFile(false);
+    }
+  };
+
+  // Format recording duration
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   // Load messages for selected customer (including linked accounts)
@@ -1533,62 +1711,101 @@ const Customers = () => {
               />
               
               <div className="flex gap-2">
-                {/* Attachment dropdown */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
+                {/* Recording UI */}
+                {isRecording ? (
+                  <>
+                    <div className="flex-1 flex items-center gap-3 px-3 py-2 bg-destructive/10 rounded-md border border-destructive/20">
+                      <div className="w-2 h-2 bg-destructive rounded-full animate-pulse" />
+                      <span className="text-sm font-medium text-destructive">Recording {formatDuration(recordingDuration)}</span>
+                    </div>
                     <Button 
                       variant="outline" 
                       size="icon"
-                      disabled={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow || isUploadingFile}
+                      onClick={cancelRecording}
+                      title="Cancel"
                     >
-                      <Paperclip className="h-4 w-4" />
+                      <X className="h-4 w-4" />
                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuItem onClick={() => document.getElementById('image-upload')?.click()}>
-                      <Image className="h-4 w-4 mr-2" />
-                      Photo
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => document.getElementById('video-upload')?.click()}>
-                      <Video className="h-4 w-4 mr-2" />
-                      Video
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => document.getElementById('file-upload')?.click()}>
-                      <Paperclip className="h-4 w-4 mr-2" />
-                      File
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                
-                <Input
-                  placeholder={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow ? "Chat disabled - reply on Facebook Page" : selectedFile ? "Add a caption (optional)..." : "Type your reply..."}
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      if (selectedFile) {
-                        sendMedia();
-                      } else {
-                        sendReply();
-                      }
-                    }
-                  }}
-                  autoFocus
-                  disabled={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow}
-                  className="flex-1"
-                />
-                <Button 
-                  onClick={selectedFile ? sendMedia : sendReply} 
-                  disabled={((!replyText.trim() && !selectedFile) || isSending || isUploadingFile || (platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow))}
-                  size="icon"
-                >
-                  {isUploadingFile ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </Button>
+                    <Button 
+                      variant="default" 
+                      size="icon"
+                      onClick={stopRecording}
+                      title="Send voice"
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    {/* Attachment dropdown */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button 
+                          variant="outline" 
+                          size="icon"
+                          disabled={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow || isUploadingFile}
+                        >
+                          <Paperclip className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuItem onClick={() => document.getElementById('image-upload')?.click()}>
+                          <Image className="h-4 w-4 mr-2" />
+                          Photo
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => document.getElementById('video-upload')?.click()}>
+                          <Video className="h-4 w-4 mr-2" />
+                          Video
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => document.getElementById('file-upload')?.click()}>
+                          <Paperclip className="h-4 w-4 mr-2" />
+                          File
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    
+                    {/* Voice recording button */}
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      onClick={startRecording}
+                      disabled={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow || isUploadingFile || !!selectedFile}
+                      title="Record voice message"
+                    >
+                      <Mic className="h-4 w-4" />
+                    </Button>
+                    
+                    <Input
+                      placeholder={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow ? "Chat disabled - reply on Facebook Page" : selectedFile ? "Add a caption (optional)..." : "Type your reply..."}
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          if (selectedFile) {
+                            sendMedia();
+                          } else {
+                            sendReply();
+                          }
+                        }
+                      }}
+                      autoFocus
+                      disabled={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow}
+                      className="flex-1"
+                    />
+                    <Button 
+                      onClick={selectedFile ? sendMedia : sendReply} 
+                      disabled={((!replyText.trim() && !selectedFile) || isSending || isUploadingFile || (platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow))}
+                      size="icon"
+                    >
+                      {isUploadingFile ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </>
+                )}
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 {platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow 
