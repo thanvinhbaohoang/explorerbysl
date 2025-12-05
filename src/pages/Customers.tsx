@@ -29,7 +29,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle } from "lucide-react";
+import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -48,6 +48,7 @@ interface Customer {
   messenger_profile_pic: string | null;
   locale: string | null;
   timezone_offset: number | null;
+  linked_customer_id: string | null;
   lead_source?: {
     messenger_ref?: string;
     campaign_name?: string;
@@ -718,12 +719,20 @@ const Customers = () => {
                             </Badge>
                           </TableCell>
                           <TableCell className="font-medium">
-                            <button 
-                              onClick={() => navigate(`/customers/${customer.id}`)}
-                              className="hover:underline hover:text-primary text-left"
-                            >
-                              {displayName || 'Unknown'}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button 
+                                onClick={() => navigate(`/customers/${customer.id}`)}
+                                className="hover:underline hover:text-primary text-left"
+                              >
+                                {displayName || 'Unknown'}
+                              </button>
+                              {customer.linked_customer_id && (
+                                <Badge variant="outline" className="text-xs">
+                                  <Link className="h-3 w-3 mr-1" />
+                                  Linked
+                                </Badge>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             {platform === 'messenger' ? (
