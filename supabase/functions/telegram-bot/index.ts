@@ -372,6 +372,69 @@ async function saveMessage(message: any) {
   }
 }
 
+// Send photo to Telegram
+async function sendPhoto(chatId: number, photoUrl: string, caption?: string) {
+  const response = await fetch(`${TELEGRAM_API}/sendPhoto`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      photo: photoUrl,
+      caption: caption,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error("Telegram API error (sendPhoto):", error);
+    throw new Error(`Failed to send photo: ${error}`);
+  }
+
+  return await response.json();
+}
+
+// Send video to Telegram
+async function sendVideo(chatId: number, videoUrl: string, caption?: string) {
+  const response = await fetch(`${TELEGRAM_API}/sendVideo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      video: videoUrl,
+      caption: caption,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error("Telegram API error (sendVideo):", error);
+    throw new Error(`Failed to send video: ${error}`);
+  }
+
+  return await response.json();
+}
+
+// Send document to Telegram
+async function sendDocument(chatId: number, documentUrl: string, caption?: string) {
+  const response = await fetch(`${TELEGRAM_API}/sendDocument`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      document: documentUrl,
+      caption: caption,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error("Telegram API error (sendDocument):", error);
+    throw new Error(`Failed to send document: ${error}`);
+  }
+
+  return await response.json();
+}
+
 // Handle incoming webhook
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -432,6 +495,81 @@ serve(async (req) => {
           );
         } catch (error: any) {
           console.error("Error sending message:", error);
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 500,
+            }
+          );
+        }
+      }
+      
+      // Handle send_media action from frontend
+      if (body.action === "send_media") {
+        const { telegram_id, customer_id, media_url, media_type, caption } = body;
+        
+        if (!telegram_id || !media_url || !media_type) {
+          return new Response(
+            JSON.stringify({ error: "Missing required fields for media" }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 400,
+            }
+          );
+        }
+
+        try {
+          console.log("Sending media to:", telegram_id, "Type:", media_type, "URL:", media_url);
+          
+          let messageType = media_type;
+          
+          // Send media based on type
+          if (media_type === 'photo') {
+            await sendPhoto(telegram_id, media_url, caption);
+          } else if (media_type === 'video') {
+            await sendVideo(telegram_id, media_url, caption);
+          } else {
+            await sendDocument(telegram_id, media_url, caption);
+            messageType = 'document';
+          }
+          
+          // Save to database
+          const insertData: any = {
+            customer_id,
+            telegram_id,
+            message_text: caption || `[${messageType.charAt(0).toUpperCase() + messageType.slice(1)}]`,
+            message_type: messageType,
+            sender_type: 'employee',
+            timestamp: new Date().toISOString(),
+          };
+          
+          if (media_type === 'photo') {
+            insertData.photo_url = media_url;
+          } else if (media_type === 'video') {
+            insertData.video_url = media_url;
+          }
+          
+          const { error: dbError } = await supabase
+            .from('messages')
+            .insert(insertData);
+
+          if (dbError) {
+            console.error("Error saving employee media message:", dbError);
+            throw dbError;
+          }
+
+          console.log("Media sent and saved successfully");
+          
+          return new Response(
+            JSON.stringify({ success: true }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 200,
+            }
+          );
+        } catch (error: any) {
+          console.error("Error sending media:", error);
           return new Response(
             JSON.stringify({ error: error.message }),
             {

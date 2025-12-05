@@ -71,6 +71,36 @@ async function sendMessage(psid: string, text: string) {
   return await response.json();
 }
 
+// Send media attachment via Facebook Send API
+async function sendAttachment(psid: string, type: string, url: string) {
+  const apiUrl = `https://graph.facebook.com/v18.0/me/messages?access_token=${pageAccessToken}`;
+  
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id: psid },
+      message: {
+        attachment: {
+          type: type, // 'image', 'video', 'file'
+          payload: {
+            url: url,
+            is_reusable: true
+          }
+        }
+      }
+    })
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Failed to send attachment:", errorText);
+    return { error: JSON.parse(errorText) };
+  }
+  
+  return await response.json();
+}
+
 // Handle incoming messages
 async function handleMessage(senderId: string, message: any) {
   console.log(`Handling message from ${senderId}:`, message);
@@ -390,6 +420,112 @@ serve(async (req) => {
             is_read: true,
             timestamp: new Date().toISOString(),
           });
+      }
+      
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    // Handle send_media action for attachments (images, videos, files)
+    if (data.psid && data.media_url && data.media_type && !data.object) {
+      const { psid, media_url, media_type, caption } = data;
+      
+      if (!psid || !media_url || !media_type) {
+        return new Response(JSON.stringify({ error: 'Missing psid, media_url, or media_type' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Check if message is within 24-hour window
+      const { data: customerRecord } = await supabase
+        .from('customer')
+        .select('id')
+        .eq('messenger_id', psid)
+        .single();
+      
+      if (customerRecord) {
+        const { data: lastMessage } = await supabase
+          .from('messages')
+          .select('timestamp')
+          .eq('customer_id', customerRecord.id)
+          .eq('sender_type', 'customer')
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (lastMessage) {
+          const hoursSinceLastMessage = (Date.now() - new Date(lastMessage.timestamp).getTime()) / (1000 * 60 * 60);
+          
+          if (hoursSinceLastMessage > 24) {
+            return new Response(JSON.stringify({ 
+              error: 'Cannot send media: 24-hour messaging window has expired.',
+              code: 'MESSAGING_WINDOW_EXPIRED',
+              hoursSinceLastMessage: Math.floor(hoursSinceLastMessage)
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+      }
+      
+      // Map media_type to Facebook attachment type
+      let fbAttachmentType = 'file';
+      if (media_type === 'photo') fbAttachmentType = 'image';
+      else if (media_type === 'video') fbAttachmentType = 'video';
+      
+      // Send attachment
+      const result = await sendAttachment(psid, fbAttachmentType, media_url);
+      
+      if (result?.error) {
+        const fbError = result.error.error;
+        
+        if (fbError.code === 10 && fbError.error_subcode === 2018278) {
+          return new Response(JSON.stringify({ 
+            error: 'Cannot send media: 24-hour messaging window has expired.',
+            code: 'MESSAGING_WINDOW_EXPIRED',
+            details: fbError.message
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
+        return new Response(JSON.stringify({ 
+          error: fbError.message,
+          code: fbError.code,
+          type: fbError.type
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Get customer and save message
+      const { data: customer } = await supabase
+        .from('customer')
+        .select('id')
+        .eq('messenger_id', psid)
+        .single();
+      
+      if (customer) {
+        const insertData: any = {
+          customer_id: customer.id,
+          messenger_mid: result.message_id,
+          platform: 'messenger',
+          message_type: media_type,
+          message_text: caption || `[${media_type.charAt(0).toUpperCase() + media_type.slice(1)}]`,
+          sender_type: 'employee',
+          is_read: true,
+          timestamp: new Date().toISOString(),
+        };
+        
+        if (media_type === 'photo') insertData.photo_url = media_url;
+        else if (media_type === 'video') insertData.video_url = media_url;
+        
+        await supabase.from('messages').insert(insertData);
       }
       
       return new Response(JSON.stringify({ success: true }), {
