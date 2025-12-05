@@ -985,7 +985,7 @@ const Customers = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedCustomer, customers, dialogOpen]);
+  }, [selectedCustomer, customers, dialogOpen, linkedCustomerIds]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
