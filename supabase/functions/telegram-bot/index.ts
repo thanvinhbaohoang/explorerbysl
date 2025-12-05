@@ -498,23 +498,66 @@ async function sendDocument(chatId: number, documentUrl: string, caption?: strin
 }
 
 // Send voice message to Telegram (voice note bubble)
+// Downloads the file and uploads as form-data for better format handling
 async function sendVoice(chatId: number, voiceUrl: string, caption?: string) {
-  const response = await fetch(`${TELEGRAM_API}/sendVoice`, {
+  try {
+    // Download the audio file first
+    console.log("Downloading voice file from:", voiceUrl);
+    const fileResponse = await fetch(voiceUrl);
+    if (!fileResponse.ok) {
+      throw new Error(`Failed to download voice file: ${fileResponse.status}`);
+    }
+    
+    const fileBlob = await fileResponse.blob();
+    console.log("Downloaded voice file, size:", fileBlob.size, "type:", fileBlob.type);
+    
+    // Create form data with the file
+    const formData = new FormData();
+    formData.append("chat_id", chatId.toString());
+    // Send as .ogg file to hint Telegram to treat it as voice
+    formData.append("voice", fileBlob, "voice.ogg");
+    if (caption) {
+      formData.append("caption", caption);
+    }
+    
+    const response = await fetch(`${TELEGRAM_API}/sendVoice`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("Telegram API error (sendVoice):", error);
+      // Fall back to sendAudio if voice format not supported
+      console.log("Falling back to sendAudio...");
+      return await sendAudioWithFile(chatId, fileBlob, caption);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Error in sendVoice:", error);
+    throw error;
+  }
+}
+
+// Send audio file to Telegram using form-data (fallback)
+async function sendAudioWithFile(chatId: number, fileBlob: Blob, caption?: string) {
+  const formData = new FormData();
+  formData.append("chat_id", chatId.toString());
+  formData.append("audio", fileBlob, "audio.mp3");
+  if (caption) {
+    formData.append("caption", caption);
+  }
+  
+  const response = await fetch(`${TELEGRAM_API}/sendAudio`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      voice: voiceUrl,
-      caption: caption,
-    }),
+    body: formData,
   });
 
   if (!response.ok) {
     const error = await response.text();
-    console.error("Telegram API error (sendVoice):", error);
-    // Fall back to sendAudio if voice format not supported
-    console.log("Falling back to sendAudio...");
-    return await sendAudio(chatId, voiceUrl, caption);
+    console.error("Telegram API error (sendAudio):", error);
+    throw new Error(`Failed to send audio: ${error}`);
   }
 
   return await response.json();
