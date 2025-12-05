@@ -106,8 +106,45 @@ const Customers = () => {
   const [messageMetaCache, setMessageMetaCache] = useState<Record<string, { offset: number; hasMore: boolean }>>({});
   const [linkedCustomerIds, setLinkedCustomerIds] = useState<string[]>([]);
   const [linkedCustomersMap, setLinkedCustomersMap] = useState<Record<string, { name: string; platform: string }>>({});
+  const [platformFilter, setPlatformFilter] = useState<'all' | 'telegram' | 'messenger'>('all');
   const itemsPerPage = 10;
   const messagesPerPage = 10;
+
+  // Filter messages by platform
+  const filteredMessages = useMemo(() => {
+    if (platformFilter === 'all' || linkedCustomerIds.length <= 1) {
+      return messages;
+    }
+    
+    // Get customer IDs for the selected platform
+    const filteredCustomerIds = Object.entries(linkedCustomersMap)
+      .filter(([_, info]) => info.platform === platformFilter)
+      .map(([customerId]) => customerId);
+    
+    return messages.filter(msg => filteredCustomerIds.includes(msg.customer_id));
+  }, [messages, platformFilter, linkedCustomersMap, linkedCustomerIds]);
+
+  // Get the customer to reply to based on filter
+  const replyCustomer = useMemo(() => {
+    if (platformFilter === 'all' || linkedCustomerIds.length <= 1) {
+      return selectedCustomer;
+    }
+    // Find the customer ID for the selected platform
+    const entry = Object.entries(linkedCustomersMap).find(([_, info]) => info.platform === platformFilter);
+    if (!entry) return selectedCustomer;
+    
+    // Return a modified customer object for the selected platform
+    const [customerId, info] = entry;
+    if (customerId === selectedCustomer?.id) return selectedCustomer;
+    
+    // Create a minimal customer object for reply purposes
+    return {
+      ...selectedCustomer,
+      id: customerId,
+      messenger_id: info.platform === 'messenger' ? customerId : null,
+      telegram_id: info.platform === 'telegram' ? Number(customerId) : null,
+    } as Customer;
+  }, [platformFilter, linkedCustomersMap, selectedCustomer, linkedCustomerIds]);
 
   // Calculate if Messenger customer is outside 24-hour messaging window
   const isOutsideMessagingWindow = useMemo(() => {
@@ -244,17 +281,18 @@ const Customers = () => {
 
   // Send reply to customer
   const sendReply = async () => {
-    if (!replyText.trim() || !selectedCustomer || isSending) return;
+    const customerToReply = replyCustomer || selectedCustomer;
+    if (!replyText.trim() || !customerToReply || isSending) return;
 
     const messageToSend = replyText;
     const tempId = `temp-${Date.now()}`;
-    const platform = selectedCustomer.messenger_id ? 'messenger' : 'telegram';
+    const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
     
     // Optimistically add message to UI
     const optimisticMessage: Message = {
       id: tempId,
-      customer_id: selectedCustomer.id,
-      telegram_id: selectedCustomer.telegram_id,
+      customer_id: customerToReply.id,
+      telegram_id: customerToReply.telegram_id,
       message_text: messageToSend,
       message_type: "text",
       timestamp: new Date().toISOString(),
@@ -295,7 +333,7 @@ const Customers = () => {
         // Send via Messenger webhook
         response = await supabase.functions.invoke("messenger-webhook", {
           body: {
-            psid: selectedCustomer.messenger_id,
+            psid: customerToReply.messenger_id,
             text: messageToSend,
           },
         });
@@ -304,8 +342,8 @@ const Customers = () => {
         response = await supabase.functions.invoke("telegram-bot", {
           body: {
             action: "send_message",
-            telegram_id: selectedCustomer.telegram_id,
-            customer_id: selectedCustomer.id,
+            telegram_id: customerToReply.telegram_id,
+            customer_id: customerToReply.id,
             message_text: messageToSend,
           },
         });
@@ -321,7 +359,7 @@ const Customers = () => {
       // Update last message sender to employee
       setLastMessageSender((prev) => ({
         ...prev,
-        [selectedCustomer.id]: "employee",
+        [customerToReply.id]: "employee",
       }));
 
       // Real-time subscription will replace the optimistic message with the real one
@@ -355,6 +393,7 @@ const Customers = () => {
   const loadMessages = async (customer: Customer, offset = 0, forceRefresh = false) => {
     setSelectedCustomer(customer);
     setDialogOpen(true);
+    setPlatformFilter('all'); // Reset filter when opening new chat
     
     // Fetch linked customer IDs first
     const allCustomerIds = [customer.id];
@@ -987,61 +1026,87 @@ const Customers = () => {
                 ? selectedCustomer.messenger_name 
                 : `${selectedCustomer?.first_name || ''} ${selectedCustomer?.last_name || ''}`.trim()}
             </DialogTitle>
-            <DialogDescription>
-              {linkedCustomerIds.length > 1 && (
-                <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="outline" className="text-xs">
-                    <Link className="h-3 w-3 mr-1" />
-                    Combined view: {linkedCustomerIds.length} linked accounts
-                  </Badge>
-                </div>
-              )}
-              {selectedCustomer?.messenger_id ? (
-                <div className="space-y-1">
-                  <div>PSID: {selectedCustomer.messenger_id}</div>
-                  {selectedCustomer.locale && (
-                    <div className="text-xs">Locale: {selectedCustomer.locale}</div>
-                  )}
-                  {selectedCustomer.timezone_offset !== null && (
-                    <div className="text-xs">
-                      Timezone: UTC{selectedCustomer.timezone_offset >= 0 ? '+' : ''}{selectedCustomer.timezone_offset}
-                    </div>
-                  )}
-                  {selectedCustomer.lead_source && (
-                    <div className="mt-2 pt-2 border-t space-y-1">
-                      <div className="text-xs font-semibold">Lead Source:</div>
-                      {selectedCustomer.lead_source.campaign_name && (
-                        <div className="text-xs">Campaign: {selectedCustomer.lead_source.campaign_name}</div>
-                      )}
-                      {selectedCustomer.lead_source.ad_name && (
-                        <div className="text-xs">Ad: {selectedCustomer.lead_source.ad_name}</div>
-                      )}
-                      {selectedCustomer.lead_source.messenger_ref && (
-                        <div className="text-xs">Post Ref: {selectedCustomer.lead_source.messenger_ref}</div>
-                      )}
-                      {selectedCustomer.lead_source.referrer && (
-                        <div className="text-xs">Source: {selectedCustomer.lead_source.referrer}</div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <>
-                  @{selectedCustomer?.username || "No username"} • Telegram ID:{" "}
-                  {selectedCustomer?.telegram_id}
-                </>
-              )}
+            <DialogDescription asChild>
+              <div>
+                {selectedCustomer?.messenger_id ? (
+                  <div className="space-y-1">
+                    <div>PSID: {selectedCustomer.messenger_id}</div>
+                    {selectedCustomer.locale && (
+                      <div className="text-xs">Locale: {selectedCustomer.locale}</div>
+                    )}
+                    {selectedCustomer.timezone_offset !== null && (
+                      <div className="text-xs">
+                        Timezone: UTC{selectedCustomer.timezone_offset >= 0 ? '+' : ''}{selectedCustomer.timezone_offset}
+                      </div>
+                    )}
+                    {selectedCustomer.lead_source && (
+                      <div className="mt-2 pt-2 border-t space-y-1">
+                        <div className="text-xs font-semibold">Lead Source:</div>
+                        {selectedCustomer.lead_source.campaign_name && (
+                          <div className="text-xs">Campaign: {selectedCustomer.lead_source.campaign_name}</div>
+                        )}
+                        {selectedCustomer.lead_source.ad_name && (
+                          <div className="text-xs">Ad: {selectedCustomer.lead_source.ad_name}</div>
+                        )}
+                        {selectedCustomer.lead_source.messenger_ref && (
+                          <div className="text-xs">Post Ref: {selectedCustomer.lead_source.messenger_ref}</div>
+                        )}
+                        {selectedCustomer.lead_source.referrer && (
+                          <div className="text-xs">Source: {selectedCustomer.lead_source.referrer}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span>
+                    @{selectedCustomer?.username || "No username"} • Telegram ID:{" "}
+                    {selectedCustomer?.telegram_id}
+                  </span>
+                )}
+              </div>
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 mt-4">
+          {/* Platform Toggle for Linked Accounts */}
+          {linkedCustomerIds.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2 py-2 border-b">
+              <span className="text-xs text-muted-foreground">View:</span>
+              <Button
+                variant={platformFilter === 'all' ? 'default' : 'outline'}
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setPlatformFilter('all')}
+              >
+                <Link className="h-3 w-3 mr-1" />
+                All ({linkedCustomerIds.length})
+              </Button>
+              {Object.entries(linkedCustomersMap).map(([customerId, info]) => (
+                <Button
+                  key={customerId}
+                  variant={platformFilter === info.platform ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setPlatformFilter(info.platform as 'telegram' | 'messenger')}
+                >
+                  {info.platform === 'messenger' ? (
+                    <Facebook className="h-3 w-3 mr-1" />
+                  ) : (
+                    <Send className="h-3 w-3 mr-1" />
+                  )}
+                  {info.name}
+                </Button>
+              ))}
+            </div>
+          )}
+
+          <div className="space-y-4">
             {isLoadingMessages ? (
               <div className="text-center py-8 text-muted-foreground">
                 Loading messages...
               </div>
-            ) : messages.length === 0 ? (
+            ) : filteredMessages.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No messages yet
+                {platformFilter !== 'all' ? `No messages on ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}` : 'No messages yet'}
               </div>
             ) : (
               <div 
@@ -1054,7 +1119,7 @@ const Customers = () => {
                     Loading older messages...
                   </div>
                 )}
-                {hasMoreMessages && !isLoadingMoreMessages && (
+                {hasMoreMessages && !isLoadingMoreMessages && platformFilter === 'all' && (
                   <div className="text-center py-2">
                     <button
                       onClick={() => selectedCustomer && loadMessages(selectedCustomer, messageOffset)}
@@ -1064,9 +1129,9 @@ const Customers = () => {
                     </button>
                   </div>
                 )}
-                {messages.map((message) => {
+                {filteredMessages.map((message) => {
                   const msgPlatformInfo = linkedCustomersMap[message.customer_id];
-                  const showPlatformBadge = linkedCustomerIds.length > 1 && message.sender_type === 'customer';
+                  const showPlatformBadge = linkedCustomerIds.length > 1 && message.sender_type === 'customer' && platformFilter === 'all';
                   
                   return (
                 <div
