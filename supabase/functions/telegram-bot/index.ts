@@ -497,7 +497,30 @@ async function sendDocument(chatId: number, documentUrl: string, caption?: strin
   return await response.json();
 }
 
-// Send audio/voice to Telegram
+// Send voice message to Telegram (voice note bubble)
+async function sendVoice(chatId: number, voiceUrl: string, caption?: string) {
+  const response = await fetch(`${TELEGRAM_API}/sendVoice`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      voice: voiceUrl,
+      caption: caption,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error("Telegram API error (sendVoice):", error);
+    // Fall back to sendAudio if voice format not supported
+    console.log("Falling back to sendAudio...");
+    return await sendAudio(chatId, voiceUrl, caption);
+  }
+
+  return await response.json();
+}
+
+// Send audio file to Telegram (audio file, not voice bubble)
 async function sendAudio(chatId: number, audioUrl: string, caption?: string) {
   const response = await fetch(`${TELEGRAM_API}/sendAudio`, {
     method: "POST",
@@ -613,7 +636,7 @@ serve(async (req) => {
           } else if (media_type === 'video') {
             await sendVideo(telegram_id, media_url, caption);
           } else if (media_type === 'voice' || media_type === 'audio') {
-            await sendAudio(telegram_id, media_url, caption);
+            await sendVoice(telegram_id, media_url, caption);
             messageType = 'voice';
           } else {
             await sendDocument(telegram_id, media_url, caption);

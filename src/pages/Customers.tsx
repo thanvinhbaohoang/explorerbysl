@@ -624,7 +624,19 @@ const Customers = () => {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      
+      // Try OGG format first (preferred for Telegram), fall back to webm
+      let mimeType = 'audio/webm';
+      let fileExt = 'webm';
+      if (MediaRecorder.isTypeSupported('audio/ogg')) {
+        mimeType = 'audio/ogg';
+        fileExt = 'ogg';
+      } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+        mimeType = 'audio/ogg;codecs=opus';
+        fileExt = 'ogg';
+      }
+      
+      const recorder = new MediaRecorder(stream, { mimeType });
       const chunks: Blob[] = [];
 
       // Set up audio analysis for waveform
@@ -660,8 +672,8 @@ const Customers = () => {
         setAnalyser(null);
         setAudioLevels([0, 0, 0, 0, 0]);
         
-        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-        const audioFile = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
+        const audioBlob = new Blob(chunks, { type: mimeType });
+        const audioFile = new File([audioBlob], `voice_${Date.now()}.${fileExt}`, { type: mimeType });
         const audioUrl = URL.createObjectURL(audioBlob);
         setRecordedAudio({ file: audioFile, url: audioUrl });
       };
