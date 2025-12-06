@@ -1,19 +1,44 @@
 import { ReactNode } from "react";
+import { Link, useLocation } from "react-router-dom";
 import UserNav from "@/components/UserNav";
 import { useAuth } from "@/contexts/AuthContext";
+import { cn } from "@/lib/utils";
 
 interface AppLayoutProps {
   children: ReactNode;
 }
 
+const navLinks = [
+  { href: "/customers", label: "Customers" },
+  { href: "/traffic", label: "Traffic" },
+  { href: "/ads-insight", label: "Ads Insight" },
+];
+
 const AppLayout = ({ children }: AppLayoutProps) => {
   const { user } = useAuth();
+  const location = useLocation();
 
   return (
     <div className="min-h-screen bg-background">
       {user && (
         <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <div className="container flex h-14 items-center justify-end px-4 md:px-8">
+          <div className="container flex h-14 items-center justify-between px-4 md:px-8">
+            <nav className="flex items-center gap-6">
+              {navLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  to={link.href}
+                  className={cn(
+                    "text-sm font-medium transition-colors hover:text-primary",
+                    location.pathname === link.href
+                      ? "text-foreground"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
             <UserNav />
           </div>
         </header>
