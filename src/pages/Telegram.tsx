@@ -7,11 +7,13 @@ const Telegram = () => {
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [capturedData, setCapturedData] = useState<any>(null);
+  const [leadId, setLeadId] = useState<string | null>(null);
 
   useEffect(() => {
     const captureAndRedirect = async () => {
       try {
         // Capture all URL parameters
+        const productRef = searchParams.get("p"); // e.g., korean-visa-2
         const fbclid = searchParams.get("fbclid");
         const utmSource = searchParams.get("utm_source");
         const utmMedium = searchParams.get("utm_medium");
@@ -34,20 +36,24 @@ const Telegram = () => {
           utm_ad_id: utmAdId,
           utm_campaign_id: utmCampaignId,
           referrer: referrer || null,
+          messenger_ref: productRef, // Store the product reference
         };
 
         setCapturedData(data);
 
-        // Save to Supabase telegram_leads table
-        const { error } = await supabase
+        // Save to Supabase telegram_leads table and get the ID
+        const { data: insertedData, error } = await supabase
           .from("telegram_leads")
-          .insert(data);
+          .insert(data)
+          .select('id')
+          .single();
 
         if (error) {
           console.error("Error saving to telegram_leads:", error);
           toast.error("Failed to save tracking data");
         } else {
-          console.log("Successfully saved to telegram_leads");
+          console.log("Successfully saved to telegram_leads with id:", insertedData.id);
+          setLeadId(insertedData.id);
           toast.success("Tracking data captured!");
         }
 
@@ -63,8 +69,12 @@ const Telegram = () => {
   }, [searchParams]);
 
   const handleRedirect = () => {
-    // Redirect to your Telegram bot
-    window.location.href = "https://t.me/newshowcasebot";
+    // Redirect to Telegram bot with the lead ID as the start parameter
+    // This allows the bot to link the customer to the lead record
+    const telegramUrl = leadId 
+      ? `https://t.me/newshowcasebot?start=${leadId}`
+      : "https://t.me/newshowcasebot";
+    window.location.href = telegramUrl;
   };
 
   return (
