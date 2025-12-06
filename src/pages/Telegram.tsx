@@ -43,10 +43,9 @@ const Telegram = () => {
           .select('id')
           .single();
 
-        // Redirect immediately with lead ID as start parameter
-        const leadId = insertedData?.id;
-        const telegramUrl = leadId 
-          ? `https://t.me/${BOT_USERNAME}?start=${leadId}`
+        // Redirect immediately with product ref as start parameter
+        const telegramUrl = productRef 
+          ? `https://t.me/${BOT_USERNAME}?start=${productRef}`
           : `https://t.me/${BOT_USERNAME}`;
         
         window.location.href = telegramUrl;
