@@ -598,7 +598,7 @@ serve(async (req) => {
       
       // Check if this is a send message request from frontend
       if (body.action === "send_message") {
-        const { telegram_id, customer_id, message_text } = body;
+        const { telegram_id, customer_id, message_text, sent_by_name } = body;
         
         if (!telegram_id || !message_text) {
           return new Response(
@@ -625,6 +625,7 @@ serve(async (req) => {
               message_text,
               message_type: 'text',
               sender_type: 'employee',
+              sent_by_name: sent_by_name || null,
               timestamp: new Date().toISOString(),
             });
 
@@ -656,7 +657,7 @@ serve(async (req) => {
       
       // Handle send_media action from frontend
       if (body.action === "send_media") {
-        const { telegram_id, customer_id, media_url, media_type, caption } = body;
+        const { telegram_id, customer_id, media_url, media_type, caption, sent_by_name } = body;
         
         if (!telegram_id || !media_url || !media_type) {
           return new Response(
@@ -693,6 +694,7 @@ serve(async (req) => {
             message_text: caption || `[${messageType.charAt(0).toUpperCase() + messageType.slice(1)}]`,
             message_type: messageType,
             sender_type: 'employee',
+            sent_by_name: sent_by_name || null,
             timestamp: new Date().toISOString(),
           };
           

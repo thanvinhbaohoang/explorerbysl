@@ -398,9 +398,9 @@ serve(async (req) => {
     console.log('Parsed webhook data:', JSON.stringify(data, null, 2));
     
     // Handle special action for sending messages from frontend
-    // Frontend sends { psid, text } while Facebook sends { object: 'page', entry: [...] }
+    // Frontend sends { psid, text, sent_by_name } while Facebook sends { object: 'page', entry: [...] }
     if (data.psid && data.text && !data.object) {
-      const { psid, text } = data;
+      const { psid, text, sent_by_name } = data;
       
       if (!psid || !text) {
         return new Response(JSON.stringify({ error: 'Missing psid or text' }), {
@@ -489,6 +489,7 @@ serve(async (req) => {
             message_type: 'text',
             message_text: text,
             sender_type: 'employee',
+            sent_by_name: sent_by_name || null,
             is_read: true,
             timestamp: new Date().toISOString(),
           });
@@ -501,7 +502,7 @@ serve(async (req) => {
     
     // Handle send_media action for attachments (images, videos, files)
     if (data.psid && data.media_url && data.media_type && !data.object) {
-      const { psid, media_url, media_type, caption } = data;
+      const { psid, media_url, media_type, caption, sent_by_name } = data;
       
       if (!psid || !media_url || !media_type) {
         return new Response(JSON.stringify({ error: 'Missing psid, media_url, or media_type' }), {
@@ -595,6 +596,7 @@ serve(async (req) => {
           message_type: dbMediaType,
           message_text: caption || `[${dbMediaType.charAt(0).toUpperCase() + dbMediaType.slice(1)}]`,
           sender_type: 'employee',
+          sent_by_name: sent_by_name || null,
           is_read: true,
           timestamp: new Date().toISOString(),
         };
