@@ -38,7 +38,7 @@ const App = () => (
               
               {/* Protected routes */}
               <Route path="/redirect" element={<ProtectedRoute><Redirect /></ProtectedRoute>} />
-              <Route path="/telegram" element={<ProtectedRoute><Telegram /></ProtectedRoute>} />
+              <Route path="/telegram" element={<Telegram />} />
               <Route path="/ad/*" element={<ProtectedRoute><Ad /></ProtectedRoute>} />
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
