@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import {
   Table,
@@ -86,11 +87,13 @@ interface Message {
   is_read: boolean;
   platform: string;
   messenger_mid: string | null;
+  sent_by_name: string | null;
   isPending?: boolean; // For optimistic UI
 }
 
 const Customers = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -356,6 +359,9 @@ const Customers = () => {
     const tempId = `temp-${Date.now()}`;
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
     
+    // Get employee display name from user email
+    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    
     // Optimistically add message to UI
     const optimisticMessage: Message = {
       id: tempId,
@@ -379,6 +385,7 @@ const Customers = () => {
       is_read: true,
       platform,
       messenger_mid: null,
+      sent_by_name: employeeName,
       isPending: true,
     };
 
@@ -396,6 +403,7 @@ const Customers = () => {
 
     try {
       let response;
+      const employeeName = user?.email?.split('@')[0] || 'Employee';
       
       if (platform === 'messenger') {
         // Send via Messenger webhook
@@ -403,6 +411,7 @@ const Customers = () => {
           body: {
             psid: customerToReply.messenger_id,
             text: messageToSend,
+            sent_by_name: employeeName,
           },
         });
       } else {
@@ -413,6 +422,7 @@ const Customers = () => {
             telegram_id: customerToReply.telegram_id,
             customer_id: customerToReply.id,
             message_text: messageToSend,
+            sent_by_name: employeeName,
           },
         });
       }
@@ -535,6 +545,7 @@ const Customers = () => {
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
     const tempId = `temp-media-${Date.now()}`;
     const caption = replyText.trim() || undefined;
+    const employeeName = user?.email?.split('@')[0] || 'Employee';
 
     // Optimistically add message to UI
     const optimisticMessage: Message = {
@@ -559,6 +570,7 @@ const Customers = () => {
       is_read: true,
       platform,
       messenger_mid: null,
+      sent_by_name: employeeName,
       isPending: true,
     };
 
@@ -581,6 +593,8 @@ const Customers = () => {
       console.log("File uploaded to storage:", mediaUrl);
 
       let response;
+      const employeeName = user?.email?.split('@')[0] || 'Employee';
+      
       if (platform === 'messenger') {
         response = await supabase.functions.invoke("messenger-webhook", {
           body: {
@@ -588,6 +602,7 @@ const Customers = () => {
             media_url: mediaUrl,
             media_type: mediaType,
             caption,
+            sent_by_name: employeeName,
           },
         });
       } else {
@@ -599,6 +614,7 @@ const Customers = () => {
             media_url: mediaUrl,
             media_type: mediaType,
             caption,
+            sent_by_name: employeeName,
           },
         });
       }
@@ -790,6 +806,7 @@ const Customers = () => {
 
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
     const tempId = `temp-voice-${Date.now()}`;
+    const employeeName = user?.email?.split('@')[0] || 'Employee';
 
     // Optimistically add message to UI
     const optimisticMessage: Message = {
@@ -814,6 +831,7 @@ const Customers = () => {
       is_read: true,
       platform,
       messenger_mid: null,
+      sent_by_name: employeeName,
       isPending: true,
     };
 
@@ -834,6 +852,8 @@ const Customers = () => {
       console.log("Voice clip uploaded to storage:", mediaUrl);
 
       let response;
+      const employeeName = user?.email?.split('@')[0] || 'Employee';
+      
       if (platform === 'messenger') {
         // For Messenger, send as audio attachment
         response = await supabase.functions.invoke("messenger-webhook", {
@@ -841,6 +861,7 @@ const Customers = () => {
             psid: customerToReply.messenger_id,
             media_url: mediaUrl,
             media_type: 'audio',
+            sent_by_name: employeeName,
           },
         });
       } else {
@@ -852,6 +873,7 @@ const Customers = () => {
             customer_id: customerToReply.id,
             media_url: mediaUrl,
             media_type: 'voice',
+            sent_by_name: employeeName,
           },
         });
       }
@@ -1670,6 +1692,12 @@ const Customers = () => {
                 {filteredMessages.map((message) => {
                   const msgPlatformInfo = linkedCustomersMap[message.customer_id];
                   
+                  // Get customer info for display
+                  const customerName = selectedCustomer?.messenger_id 
+                    ? selectedCustomer.messenger_name 
+                    : `${selectedCustomer?.first_name || ''} ${selectedCustomer?.last_name || ''}`.trim() || 'Customer';
+                  const customerProfilePic = selectedCustomer?.messenger_profile_pic;
+                  
                   return (
                 <div
                   key={message.id}
@@ -1681,13 +1709,30 @@ const Customers = () => {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Badge variant={message.sender_type === 'employee' ? 'default' : 'outline'}>
-                        {message.sender_type === 'employee' ? 'You' : message.message_type}
-                      </Badge>
-                      {message.sender_type === 'employee' && (
-                        <span className="text-xs text-muted-foreground">
-                          {message.isPending ? 'Sending...' : 'Employee Reply'}
-                        </span>
+                      {message.sender_type === 'employee' ? (
+                        <>
+                          <Badge variant="default">
+                            {message.sent_by_name || 'Employee'}
+                          </Badge>
+                          {message.isPending && (
+                            <span className="text-xs text-muted-foreground">Sending...</span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {customerProfilePic ? (
+                            <img 
+                              src={customerProfilePic} 
+                              alt={customerName}
+                              className="w-6 h-6 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center">
+                              <Users className="h-3 w-3 text-muted-foreground" />
+                            </div>
+                          )}
+                          <span className="text-sm font-medium">{customerName}</span>
+                        </>
                       )}
                     </div>
                     <span className="text-xs text-muted-foreground">
