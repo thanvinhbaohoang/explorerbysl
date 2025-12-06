@@ -128,6 +128,8 @@ const Customers = () => {
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [audioLevels, setAudioLevels] = useState<number[]>([0, 0, 0, 0, 0]);
   const animationFrameRef = useRef<number | null>(null);
+  // Track customers where messaging window has expired (from API error)
+  const [expiredWindowCustomers, setExpiredWindowCustomers] = useState<Set<string>>(new Set());
   const itemsPerPage = 10;
   const messagesPerPage = 10;
 
@@ -170,7 +172,12 @@ const Customers = () => {
   // Check if the current platform filter is Messenger and outside 24-hour window
   const isCurrentPlatformMessengerOutsideWindow = useMemo(() => {
     const currentCustomer = replyCustomer || selectedCustomer;
-    if (!currentCustomer?.messenger_id || messages.length === 0) return false;
+    if (!currentCustomer?.messenger_id) return false;
+    
+    // Check if this customer has been flagged as expired from API error
+    if (expiredWindowCustomers.has(currentCustomer.id)) return true;
+    
+    if (messages.length === 0) return false;
     
     // Get messages for the current platform only
     const platformMessages = platformFilter 
@@ -189,7 +196,7 @@ const Customers = () => {
     
     const hoursSinceLastMessage = (Date.now() - new Date(lastCustomerMessage.timestamp).getTime()) / (1000 * 60 * 60);
     return hoursSinceLastMessage > 24;
-  }, [replyCustomer, selectedCustomer, messages, platformFilter, linkedCustomersMap]);
+  }, [replyCustomer, selectedCustomer, messages, platformFilter, linkedCustomersMap, expiredWindowCustomers]);
 
 
   // Fetch last message sender for all customers
@@ -428,9 +435,15 @@ const Customers = () => {
       console.error("Error sending message:", error);
       
       // Handle 24-hour window error specifically
-      if (error.message?.includes('24-hour messaging window')) {
+      const isWindowExpired = error.message?.includes('24-hour messaging window') || 
+                              error.message?.includes('MESSAGING_WINDOW_EXPIRED') ||
+                              error.code === 'MESSAGING_WINDOW_EXPIRED';
+      
+      if (isWindowExpired && customerToReply) {
+        // Add to expired customers set to disable input
+        setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
         toast.error("Cannot send message: The 24-hour messaging window has expired. Wait for the customer to message you first.", {
-          duration: 5000,
+          duration: 8000,
         });
       } else {
         toast.error("Failed to send message");
@@ -608,8 +621,13 @@ const Customers = () => {
     } catch (error: any) {
       console.error("Error sending media:", error);
       
-      if (error.message?.includes('24-hour messaging window')) {
-        toast.error("Cannot send media: The 24-hour messaging window has expired.", { duration: 5000 });
+      const isWindowExpired = error.message?.includes('24-hour messaging window') || 
+                              error.message?.includes('MESSAGING_WINDOW_EXPIRED') ||
+                              error.code === 'MESSAGING_WINDOW_EXPIRED';
+      
+      if (isWindowExpired && customerToReply) {
+        setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
+        toast.error("Cannot send media: The 24-hour messaging window has expired.", { duration: 8000 });
       } else {
         toast.error("Failed to send media: " + error.message);
       }
@@ -856,8 +874,13 @@ const Customers = () => {
     } catch (error: any) {
       console.error("Error sending voice clip:", error);
       
-      if (error.message?.includes('24-hour messaging window')) {
-        toast.error("Cannot send voice: The 24-hour messaging window has expired.", { duration: 5000 });
+      const isWindowExpired = error.message?.includes('24-hour messaging window') || 
+                              error.message?.includes('MESSAGING_WINDOW_EXPIRED') ||
+                              error.code === 'MESSAGING_WINDOW_EXPIRED';
+      
+      if (isWindowExpired && customerToReply) {
+        setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
+        toast.error("Cannot send voice: The 24-hour messaging window has expired.", { duration: 8000 });
       } else {
         toast.error("Failed to send voice message: " + error.message);
       }
@@ -1211,6 +1234,13 @@ const Customers = () => {
               ...prev,
               [newMessage.customer_id]: (prev[newMessage.customer_id] || 0) + 1,
             }));
+            
+            // Clear expired window flag when customer sends a new message
+            setExpiredWindowCustomers(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(newMessage.customer_id);
+              return newSet;
+            });
           }
 
           // If this message is for the currently open dialog (including linked accounts)
