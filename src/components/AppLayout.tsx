@@ -12,6 +12,7 @@ const navLinks = [
   { href: "/customers", label: "Customers" },
   { href: "/traffic", label: "Traffic" },
   { href: "/ads-insight", label: "Ads Insight" },
+  { href: "/monday-import", label: "Import" },
 ];
 
 const AppLayout = ({ children }: AppLayoutProps) => {
