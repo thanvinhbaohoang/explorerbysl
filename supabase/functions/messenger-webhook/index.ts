@@ -165,10 +165,12 @@ async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | '
 }
 
 // Handle incoming messages
-async function handleMessage(senderId: string, message: any) {
+async function handleMessage(senderId: string, message: any, hasReferral: boolean = false) {
   console.log(`Handling message from ${senderId}:`, message);
+  console.log(`Has referral data: ${hasReferral}`);
   
   let customer: any = null;
+  let isNewCustomer = false;
   
   try {
     // Get or create customer
@@ -187,6 +189,7 @@ async function handleMessage(senderId: string, message: any) {
     console.log(`Customer lookup result:`, customer ? `Found: ${customer.id}` : 'Not found');
     
     if (!customer) {
+      isNewCustomer = true;
       console.log(`Creating new customer for messenger_id: ${senderId}`);
       
       // Fetch profile from Facebook
@@ -218,8 +221,11 @@ async function handleMessage(senderId: string, message: any) {
       
       customer = newCustomer;
       console.log(`Customer created successfully: ${customer.id}`);
-      
-      // Create lead entry for new Messenger customers (direct message without referral)
+    }
+    
+    // Create lead entry for new customers OR if there's no referral (referral handler creates its own lead)
+    // Only create a "direct_message" lead if this is a new customer without referral data
+    if (isNewCustomer && !hasReferral) {
       console.log(`Creating lead entry for new Messenger customer: ${customer.id}`);
       const { error: leadError } = await supabase
         .from('telegram_leads')
@@ -725,12 +731,13 @@ serve(async (req) => {
           
           if (event.message) {
             console.log('Handling message event');
+            const hasReferral = !!event.message.referral;
             // Check if message has referral data (from clicking "Send Message" on a post/ad)
-            if (event.message.referral) {
+            if (hasReferral) {
               console.log('Message contains referral data, handling referral first');
               await handleReferral(senderId, event.message.referral);
             }
-            await handleMessage(senderId, event.message);
+            await handleMessage(senderId, event.message, hasReferral);
           } else if (event.postback) {
             console.log('Handling postback event');
             await handlePostback(senderId, event.postback);
