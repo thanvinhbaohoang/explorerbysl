@@ -466,28 +466,29 @@ const CustomerDetail = () => {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <InfoItem label="Platform" value={leadSource.platform} />
+                      {leadSource.messenger_ref && <InfoItem label="Post Tag" value={leadSource.messenger_ref} />}
                       {leadSource.campaign_name && <InfoItem label="Campaign" value={leadSource.campaign_name} />}
                       {leadSource.campaign_id && <InfoItem label="Campaign ID" value={leadSource.campaign_id} />}
                       {leadSource.adset_name && <InfoItem label="Ad Set" value={leadSource.adset_name} />}
                       {leadSource.adset_id && <InfoItem label="Ad Set ID" value={leadSource.adset_id} />}
                       {leadSource.ad_name && <InfoItem label="Ad" value={leadSource.ad_name} />}
                       {leadSource.ad_id && <InfoItem label="Ad ID" value={leadSource.ad_id} />}
-                      {leadSource.messenger_ref && <InfoItem label="Messenger Ref" value={leadSource.messenger_ref} />}
                       {leadSource.referrer && <InfoItem label="Referrer" value={leadSource.referrer} />}
                       {leadSource.facebook_click_id && <InfoItem label="Facebook Click ID" value={leadSource.facebook_click_id} />}
                     </div>
 
-                    {(leadSource.utm_source || leadSource.utm_medium || leadSource.utm_campaign) && (
+                    {/* UTM Parameters - always show section if any UTM param exists */}
+                    {(leadSource.utm_source || leadSource.utm_medium || leadSource.utm_campaign || leadSource.utm_content || leadSource.utm_term) && (
                       <>
                         <Separator className="my-4" />
                         <div>
                           <h4 className="font-semibold mb-3">UTM Parameters</h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {leadSource.utm_source && <InfoItem label="Source" value={leadSource.utm_source} />}
-                            {leadSource.utm_medium && <InfoItem label="Medium" value={leadSource.utm_medium} />}
-                            {leadSource.utm_campaign && <InfoItem label="Campaign" value={leadSource.utm_campaign} />}
-                            {leadSource.utm_content && <InfoItem label="Content" value={leadSource.utm_content} />}
-                            {leadSource.utm_term && <InfoItem label="Term" value={leadSource.utm_term} />}
+                            <InfoItem label="Source" value={leadSource.utm_source || "—"} />
+                            <InfoItem label="Medium" value={leadSource.utm_medium || "—"} />
+                            <InfoItem label="Campaign" value={leadSource.utm_campaign || "—"} />
+                            <InfoItem label="Content" value={leadSource.utm_content || "—"} />
+                            <InfoItem label="Term" value={leadSource.utm_term || "—"} />
                           </div>
                         </div>
                       </>
