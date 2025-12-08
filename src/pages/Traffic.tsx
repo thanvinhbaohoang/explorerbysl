@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { format } from "date-fns";
 import {
   Table,
   TableBody,
@@ -14,6 +15,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -35,8 +42,9 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { TrendingUp, Search, X, Filter, UserPlus, User } from "lucide-react";
+import { TrendingUp, Search, X, Filter, UserPlus, User, CalendarIcon } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
+import { cn } from "@/lib/utils";
 
 interface MessengerAdContext {
   ad_id?: string;
@@ -89,6 +97,13 @@ const Traffic = () => {
   const [uniqueSources, setUniqueSources] = useState<string[]>([]);
   const [uniqueCampaigns, setUniqueCampaigns] = useState<string[]>([]);
 
+  // Date range filter
+  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
+  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+  
+  // Customer status filter
+  const [customerStatusFilter, setCustomerStatusFilter] = useState<string>("");
+
   // Cache for storing fetched data
   const [dataCache, setDataCache] = useState<Record<string, { data: TrafficData[], total: number }>>({});
 
@@ -121,7 +136,9 @@ const Traffic = () => {
   // Fetch traffic data with pagination and filters
   const fetchTrafficData = async (page: number) => {
     // Generate cache key based on filters and page
-    const cacheKey = `${page}-${searchTerm}-${sourceFilter}-${campaignFilter}`;
+    const startDateStr = startDate ? format(startDate, 'yyyy-MM-dd') : '';
+    const endDateStr = endDate ? format(endDate, 'yyyy-MM-dd') : '';
+    const cacheKey = `${page}-${searchTerm}-${sourceFilter}-${campaignFilter}-${startDateStr}-${endDateStr}-${customerStatusFilter}`;
     
     // Check cache first
     if (dataCache[cacheKey]) {
@@ -134,12 +151,12 @@ const Traffic = () => {
     try {
       let userIdsToInclude: string[] = [];
 
-      // If searching, find matching customers first
+      // If searching for customer names, find matching customers first
       if (searchTerm) {
         const { data: matchingCustomers, error: customerError } = await supabase
           .from("customer")
           .select("id")
-          .or(`username.ilike.%${searchTerm}%,first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%`);
+          .or(`username.ilike.%${searchTerm}%,first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%,messenger_name.ilike.%${searchTerm}%`);
         
         if (!customerError) {
           userIdsToInclude = matchingCustomers?.map(c => c.id) || [];
@@ -181,6 +198,22 @@ const Traffic = () => {
       if (campaignFilter && campaignFilter !== "all") {
         countQuery = countQuery.eq("utm_campaign", campaignFilter);
         dataQuery = dataQuery.eq("utm_campaign", campaignFilter);
+      }
+
+      // Apply date range filter
+      if (startDate) {
+        const startDateStr = format(startDate, 'yyyy-MM-dd');
+        countQuery = countQuery.gte("created_at", startDateStr);
+        dataQuery = dataQuery.gte("created_at", startDateStr);
+      }
+      
+      if (endDate) {
+        // Add one day to include the end date fully
+        const endDatePlusOne = new Date(endDate);
+        endDatePlusOne.setDate(endDatePlusOne.getDate() + 1);
+        const endDateStr = format(endDatePlusOne, 'yyyy-MM-dd');
+        countQuery = countQuery.lt("created_at", endDateStr);
+        dataQuery = dataQuery.lt("created_at", endDateStr);
       }
 
       // Get filtered count
@@ -287,7 +320,7 @@ const Traffic = () => {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [searchTerm, sourceFilter, campaignFilter]);
+  }, [searchTerm, sourceFilter, campaignFilter, startDate, endDate]);
 
   // Fetch traffic when page changes
   useEffect(() => {
@@ -298,6 +331,9 @@ const Traffic = () => {
     setSearchTerm("");
     setSourceFilter("");
     setCampaignFilter("");
+    setStartDate(undefined);
+    setEndDate(undefined);
+    setCustomerStatusFilter("");
     setSearchParams({ page: "1" });
     setDataCache({});
   };
@@ -306,11 +342,54 @@ const Traffic = () => {
     setSearchParams({ page: page.toString() });
   };
 
-  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter].filter(Boolean).length;
+  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
 
-  const formatDate = (dateString: string) => {
+  const formatDisplayDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
   };
+
+  // Client-side filtering for customer status and text search on displayed data
+  const filteredTrafficData = useMemo(() => {
+    let filtered = trafficData;
+    
+    // Filter by customer status
+    if (customerStatusFilter === "new") {
+      filtered = filtered.filter(t => t.isNewCustomer);
+    } else if (customerStatusFilter === "existing") {
+      filtered = filtered.filter(t => t.customer && !t.isNewCustomer);
+    }
+    
+    // Client-side text search for dates and status (since DB can't search formatted dates)
+    if (searchTerm) {
+      const lowerSearch = searchTerm.toLowerCase();
+      filtered = filtered.filter(traffic => {
+        // Check formatted date
+        const formattedDate = formatDisplayDate(traffic.created_at).toLowerCase();
+        if (formattedDate.includes(lowerSearch)) return true;
+        
+        // Check customer name
+        const customerName = traffic.customer
+          ? (traffic.customer.first_name || traffic.customer.last_name)
+            ? `${traffic.customer.first_name || ''} ${traffic.customer.last_name || ''}`.trim()
+            : traffic.customer.messenger_name || ''
+          : '';
+        if (customerName.toLowerCase().includes(lowerSearch)) return true;
+        
+        // Check status
+        const status = traffic.isNewCustomer ? 'new' : 'existing';
+        if (status.includes(lowerSearch)) return true;
+        
+        // Check ad source fields
+        if (traffic.messenger_ref?.toLowerCase().includes(lowerSearch)) return true;
+        if (traffic.utm_source?.toLowerCase().includes(lowerSearch)) return true;
+        if (traffic.utm_campaign?.toLowerCase().includes(lowerSearch)) return true;
+        
+        return false;
+      });
+    }
+    
+    return filtered;
+  }, [trafficData, customerStatusFilter, searchTerm]);
 
   // Pagination calculations (data is already paginated from DB)
   const totalTrafficPages = Math.ceil(totalTraffic / itemsPerPage);
@@ -351,63 +430,130 @@ const Traffic = () => {
               </div>
               
               {/* Search and Filters */}
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search across all fields..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9"
-                    disabled={isLoadingTraffic}
-                  />
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search customer, date, status, source..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-9"
+                      disabled={isLoadingTraffic}
+                    />
+                  </div>
+
+                  <Select value={customerStatusFilter} onValueChange={setCustomerStatusFilter} disabled={isLoadingTraffic}>
+                    <SelectTrigger className="w-full sm:w-[150px]">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="new">New Customers</SelectItem>
+                      <SelectItem value="existing">Existing Customers</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={sourceFilter} onValueChange={setSourceFilter} disabled={isLoadingTraffic}>
+                    <SelectTrigger className="w-full sm:w-[150px]">
+                      <SelectValue placeholder="Source" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Sources</SelectItem>
+                      {uniqueSources.map((source) => (
+                        <SelectItem key={source} value={source}>
+                          {source}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={campaignFilter} onValueChange={setCampaignFilter} disabled={isLoadingTraffic}>
+                    <SelectTrigger className="w-full sm:w-[150px]">
+                      <SelectValue placeholder="Campaign" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Campaigns</SelectItem>
+                      {uniqueCampaigns.map((campaign) => (
+                        <SelectItem key={campaign} value={campaign}>
+                          {campaign}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <Select value={sourceFilter} onValueChange={setSourceFilter} disabled={isLoadingTraffic}>
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue placeholder="Source" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Sources</SelectItem>
-                    {uniqueSources.map((source) => (
-                      <SelectItem key={source} value={source}>
-                        {source}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* Date Range Filters */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full sm:w-[180px] justify-start text-left font-normal",
+                          !startDate && "text-muted-foreground"
+                        )}
+                        disabled={isLoadingTraffic}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {startDate ? format(startDate, "PPP") : "Start date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={startDate}
+                        onSelect={setStartDate}
+                        initialFocus
+                        className={cn("p-3 pointer-events-auto")}
+                      />
+                    </PopoverContent>
+                  </Popover>
 
-                <Select value={campaignFilter} onValueChange={setCampaignFilter} disabled={isLoadingTraffic}>
-                  <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue placeholder="Campaign" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Campaigns</SelectItem>
-                    {uniqueCampaigns.map((campaign) => (
-                      <SelectItem key={campaign} value={campaign}>
-                        {campaign}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full sm:w-[180px] justify-start text-left font-normal",
+                          !endDate && "text-muted-foreground"
+                        )}
+                        disabled={isLoadingTraffic}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {endDate ? format(endDate, "PPP") : "End date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={endDate}
+                        onSelect={setEndDate}
+                        initialFocus
+                        className={cn("p-3 pointer-events-auto")}
+                      />
+                    </PopoverContent>
+                  </Popover>
 
-                {activeFilterCount > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={clearFilters}
-                    title="Clear filters"
-                    disabled={isLoadingTraffic}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
+                  {activeFilterCount > 0 && (
+                    <Button
+                      variant="ghost"
+                      onClick={clearFilters}
+                      title="Clear filters"
+                      disabled={isLoadingTraffic}
+                      className="gap-2"
+                    >
+                      <X className="h-4 w-4" />
+                      Clear filters
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {/* Results info */}
-              {!isLoadingTraffic && (searchTerm || sourceFilter || campaignFilter) && (
+              {!isLoadingTraffic && activeFilterCount > 0 && (
                 <p className="text-sm text-muted-foreground">
-                  Showing {totalTraffic} filtered result{totalTraffic !== 1 ? 's' : ''}
+                  Showing {filteredTrafficData.length} filtered result{filteredTrafficData.length !== 1 ? 's' : ''}
                 </p>
               )}
             </div>
@@ -431,7 +577,7 @@ const Traffic = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {trafficData.map((traffic) => {
+                    {filteredTrafficData.map((traffic) => {
                       // Get customer display name - prefer first/last name, fallback to messenger_name
                       const customerName = traffic.customer
                         ? (traffic.customer.first_name || traffic.customer.last_name)
@@ -633,7 +779,7 @@ const Traffic = () => {
                           </TooltipProvider>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
-                          {formatDate(traffic.created_at)}
+                          {formatDisplayDate(traffic.created_at)}
                         </TableCell>
                       </TableRow>
                       );
