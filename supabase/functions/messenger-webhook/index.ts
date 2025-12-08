@@ -168,54 +168,81 @@ async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | '
 async function handleMessage(senderId: string, message: any) {
   console.log(`Handling message from ${senderId}:`, message);
   
-  // Get or create customer
-  let { data: customer, error: customerError } = await supabase
-    .from('customer')
-    .select('*')
-    .eq('messenger_id', senderId)
-    .maybeSingle();
+  let customer: any = null;
   
-  let isNewCustomer = false;
-  
-  if (!customer) {
-    isNewCustomer = true;
-    // Fetch profile from Facebook
-    const profile = await getUserProfile(senderId);
-    
-    // Create new customer
-    const { data: newCustomer, error: insertError } = await supabase
+  try {
+    // Get or create customer
+    console.log(`Looking up customer with messenger_id: ${senderId}`);
+    const { data: existingCustomer, error: customerError } = await supabase
       .from('customer')
-      .insert({
+      .select('*')
+      .eq('messenger_id', senderId)
+      .maybeSingle();
+    
+    if (customerError) {
+      console.error("Error looking up customer:", customerError);
+    }
+    
+    customer = existingCustomer;
+    console.log(`Customer lookup result:`, customer ? `Found: ${customer.id}` : 'Not found');
+    
+    if (!customer) {
+      console.log(`Creating new customer for messenger_id: ${senderId}`);
+      
+      // Fetch profile from Facebook
+      console.log(`Fetching Facebook profile for ${senderId}`);
+      const profile = await getUserProfile(senderId);
+      console.log(`Profile fetch result:`, profile ? 'Success' : 'Failed');
+      
+      // Create new customer
+      const customerData = {
         messenger_id: senderId,
         messenger_name: profile ? `${profile.first_name} ${profile.last_name}` : 'Unknown',
         messenger_profile_pic: profile?.profile_pic || null,
         locale: profile?.locale || null,
         timezone_offset: profile?.timezone || null,
         first_message_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-    
-    if (insertError) {
-      console.error("Error creating customer:", insertError);
-      return;
+      };
+      console.log(`Inserting customer:`, customerData);
+      
+      const { data: newCustomer, error: insertError } = await supabase
+        .from('customer')
+        .insert(customerData)
+        .select()
+        .single();
+      
+      if (insertError) {
+        console.error("Error creating customer:", insertError);
+        return;
+      }
+      
+      customer = newCustomer;
+      console.log(`Customer created successfully: ${customer.id}`);
+      
+      // Create lead entry for new Messenger customers (direct message without referral)
+      console.log(`Creating lead entry for new Messenger customer: ${customer.id}`);
+      const { error: leadError } = await supabase
+        .from('telegram_leads')
+        .insert({
+          user_id: customer.id,
+          platform: 'messenger',
+          messenger_ref: 'direct_message',
+        });
+      
+      if (leadError) {
+        console.error("Error creating lead for new customer:", leadError);
+      } else {
+        console.log(`Lead created successfully for customer: ${customer.id}`);
+      }
     }
-    
-    customer = newCustomer;
-    
-    // Create lead entry for new Messenger customers (direct message without referral)
-    console.log(`Creating lead entry for new Messenger customer: ${customer.id}`);
-    const { error: leadError } = await supabase
-      .from('telegram_leads')
-      .insert({
-        user_id: customer.id,
-        platform: 'messenger',
-        messenger_ref: 'direct_message',
-      });
-    
-    if (leadError) {
-      console.error("Error creating lead for new customer:", leadError);
-    }
+  } catch (err) {
+    console.error("Unexpected error in handleMessage:", err);
+    return;
+  }
+  
+  if (!customer) {
+    console.error("No customer available, cannot save message");
+    return;
   }
   
   // Determine message type and content
