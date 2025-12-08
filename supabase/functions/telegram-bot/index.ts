@@ -113,21 +113,58 @@ async function handleStart(message: any) {
     console.error("Database error:", dbError);
   }
 
-  // If token exists, link to telegram_leads with customer_id
+  // If token exists (lead UUID), link to telegram_leads with customer_id
   if (token && customerId) {
     try {
-      const { error: updateError } = await supabase
-        .from('telegram_leads')
-        .update({
-          user_id: customerId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', token);
+      // Check if token is a valid UUID (lead ID) or a messenger_ref
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token);
+      
+      if (isUuid) {
+        // Token is a UUID - match by lead ID
+        const { error: updateError } = await supabase
+          .from('telegram_leads')
+          .update({
+            user_id: customerId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', token);
 
-      if (updateError) {
-        console.error("Error updating telegram_leads:", updateError);
+        if (updateError) {
+          console.error("Error updating telegram_leads by id:", updateError);
+        } else {
+          console.log("Successfully linked customer to telegram_leads by id:", token);
+        }
       } else {
-        console.log("Successfully linked customer to telegram_leads token:", token);
+        // Token is a messenger_ref (e.g., "korean-visa-2") - match by messenger_ref
+        // Find the most recent lead with this ref that doesn't have a user_id yet
+        const { data: leadData, error: findError } = await supabase
+          .from('telegram_leads')
+          .select('id')
+          .eq('messenger_ref', token)
+          .is('user_id', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (findError) {
+          console.error("Error finding telegram_lead by ref:", findError);
+        } else if (leadData) {
+          const { error: updateError } = await supabase
+            .from('telegram_leads')
+            .update({
+              user_id: customerId,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', leadData.id);
+
+          if (updateError) {
+            console.error("Error updating telegram_leads by ref:", updateError);
+          } else {
+            console.log("Successfully linked customer to telegram_leads by messenger_ref:", token);
+          }
+        } else {
+          console.log("No unlinked telegram_lead found with messenger_ref:", token);
+        }
       }
     } catch (linkError) {
       console.error("Error linking to telegram_leads:", linkError);
