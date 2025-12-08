@@ -732,7 +732,7 @@ const Traffic = () => {
                         <TableCell className="font-medium">
                           {traffic.customer ? (
                             <Link 
-                              to={`/customer/${traffic.customer.id}`}
+                              to={`/customers/${traffic.customer.id}`}
                               className="text-primary hover:underline"
                             >
                               {customerName}
