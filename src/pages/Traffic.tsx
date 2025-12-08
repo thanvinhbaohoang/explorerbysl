@@ -42,7 +42,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { TrendingUp, Search, X, Filter, UserPlus, User, CalendarIcon } from "lucide-react";
+import { TrendingUp, Search, X, Filter, UserPlus, User, CalendarIcon, MessageCircle, Send, Hash, Link as LinkIcon, Megaphone } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { cn } from "@/lib/utils";
 
@@ -69,6 +69,7 @@ interface TrafficData {
   referrer: string | null;
   messenger_ref: string | null;
   messenger_ad_context: MessengerAdContext | null;
+  platform: string;
   created_at: string;
   customer: {
     id: string;
@@ -94,8 +95,11 @@ const Traffic = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [sourceFilter, setSourceFilter] = useState<string>("");
   const [campaignFilter, setCampaignFilter] = useState<string>("");
+  const [platformFilter, setPlatformFilter] = useState<string>("");
+  const [postTagFilter, setPostTagFilter] = useState<string>("");
   const [uniqueSources, setUniqueSources] = useState<string[]>([]);
   const [uniqueCampaigns, setUniqueCampaigns] = useState<string[]>([]);
+  const [uniquePostTags, setUniquePostTags] = useState<string[]>([]);
 
   // Date range filter
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
@@ -123,11 +127,19 @@ const Traffic = () => {
         .select("utm_campaign")
         .not("utm_campaign", "is", null);
 
+      const { data: postTags } = await supabase
+        .from("telegram_leads")
+        .select("messenger_ref")
+        .not("messenger_ref", "is", null)
+        .neq("messenger_ref", "direct_message");
+
       const uniqueSourceValues = [...new Set(sources?.map(s => s.utm_source).filter(Boolean))] as string[];
       const uniqueCampaignValues = [...new Set(campaigns?.map(c => c.utm_campaign).filter(Boolean))] as string[];
+      const uniquePostTagValues = [...new Set(postTags?.map(p => p.messenger_ref).filter(Boolean))] as string[];
 
       setUniqueSources(uniqueSourceValues);
       setUniqueCampaigns(uniqueCampaignValues);
+      setUniquePostTags(uniquePostTagValues);
     } catch (error) {
       console.error("Error fetching filter options:", error);
     }
@@ -138,7 +150,7 @@ const Traffic = () => {
     // Generate cache key based on filters and page
     const startDateStr = startDate ? format(startDate, 'yyyy-MM-dd') : '';
     const endDateStr = endDate ? format(endDate, 'yyyy-MM-dd') : '';
-    const cacheKey = `${page}-${searchTerm}-${sourceFilter}-${campaignFilter}-${startDateStr}-${endDateStr}-${customerStatusFilter}`;
+    const cacheKey = `${page}-${searchTerm}-${sourceFilter}-${campaignFilter}-${platformFilter}-${postTagFilter}-${startDateStr}-${endDateStr}-${customerStatusFilter}`;
     
     // Check cache first
     if (dataCache[cacheKey]) {
@@ -170,7 +182,7 @@ const Traffic = () => {
 
       let dataQuery = supabase
         .from("telegram_leads")
-        .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, messenger_ref, messenger_ad_context, created_at, user_id");
+        .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, messenger_ref, messenger_ad_context, platform, created_at, user_id");
 
       // Apply global search
       if (searchTerm) {
@@ -178,12 +190,12 @@ const Traffic = () => {
         
         // Search in telegram_leads fields OR matching customer user_ids
         if (userIdsToInclude.length > 0) {
-          const leadsSearchCondition = `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern},user_id.in.(${userIdsToInclude.join(',')})`;
+          const leadsSearchCondition = `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern},messenger_ref.ilike.${searchPattern},user_id.in.(${userIdsToInclude.join(',')})`;
           countQuery = countQuery.or(leadsSearchCondition);
           dataQuery = dataQuery.or(leadsSearchCondition);
         } else {
           // Only search telegram_leads fields if no matching customers
-          const leadsSearchCondition = `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern}`;
+          const leadsSearchCondition = `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern},messenger_ref.ilike.${searchPattern}`;
           countQuery = countQuery.or(leadsSearchCondition);
           dataQuery = dataQuery.or(leadsSearchCondition);
         }
@@ -198,6 +210,16 @@ const Traffic = () => {
       if (campaignFilter && campaignFilter !== "all") {
         countQuery = countQuery.eq("utm_campaign", campaignFilter);
         dataQuery = dataQuery.eq("utm_campaign", campaignFilter);
+      }
+
+      if (platformFilter && platformFilter !== "all") {
+        countQuery = countQuery.eq("platform", platformFilter);
+        dataQuery = dataQuery.eq("platform", platformFilter);
+      }
+
+      if (postTagFilter && postTagFilter !== "all") {
+        countQuery = countQuery.eq("messenger_ref", postTagFilter);
+        dataQuery = dataQuery.eq("messenger_ref", postTagFilter);
       }
 
       // Apply date range filter
@@ -263,6 +285,7 @@ const Traffic = () => {
               referrer: lead.referrer,
               messenger_ref: lead.messenger_ref,
               messenger_ad_context: lead.messenger_ad_context as MessengerAdContext | null,
+              platform: lead.platform,
               created_at: lead.created_at,
               customer,
               isNewCustomer,
@@ -282,6 +305,7 @@ const Traffic = () => {
             referrer: lead.referrer,
             messenger_ref: lead.messenger_ref,
             messenger_ad_context: lead.messenger_ad_context as MessengerAdContext | null,
+            platform: lead.platform,
             created_at: lead.created_at,
             customer: null,
             isNewCustomer: false,
@@ -320,7 +344,7 @@ const Traffic = () => {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [searchTerm, sourceFilter, campaignFilter, startDate, endDate]);
+  }, [searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, startDate, endDate]);
 
   // Fetch traffic when page changes
   useEffect(() => {
@@ -331,6 +355,8 @@ const Traffic = () => {
     setSearchTerm("");
     setSourceFilter("");
     setCampaignFilter("");
+    setPlatformFilter("");
+    setPostTagFilter("");
     setStartDate(undefined);
     setEndDate(undefined);
     setCustomerStatusFilter("");
@@ -342,10 +368,70 @@ const Traffic = () => {
     setSearchParams({ page: page.toString() });
   };
 
-  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
+  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
 
   const formatDisplayDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
+  };
+
+  // Get platform display info
+  const getPlatformInfo = (platform: string) => {
+    if (platform === 'messenger') {
+      return {
+        icon: MessageCircle,
+        label: 'Messenger',
+        color: 'text-blue-500',
+        bgColor: 'bg-blue-500/10',
+      };
+    }
+    return {
+      icon: Send,
+      label: 'Telegram',
+      color: 'text-sky-500',
+      bgColor: 'bg-sky-500/10',
+    };
+  };
+
+  // Get traffic source info
+  const getTrafficSourceInfo = (traffic: TrafficData) => {
+    if (traffic.messenger_ad_context) {
+      return {
+        type: 'Facebook Ad',
+        icon: Megaphone,
+        value: traffic.messenger_ad_context.ad_title || 'Facebook Ad',
+        variant: 'default' as const,
+      };
+    }
+    if (traffic.messenger_ref && traffic.messenger_ref !== 'direct_message') {
+      return {
+        type: 'Post Tag',
+        icon: Hash,
+        value: traffic.messenger_ref,
+        variant: 'outline' as const,
+      };
+    }
+    if (traffic.utm_source) {
+      return {
+        type: 'UTM',
+        icon: LinkIcon,
+        value: traffic.utm_source,
+        variant: 'secondary' as const,
+      };
+    }
+    if (traffic.facebook_click_id) {
+      return {
+        type: 'FB Click',
+        icon: Megaphone,
+        value: 'Facebook Click',
+        variant: 'default' as const,
+      };
+    }
+    return {
+      type: 'Direct',
+      icon: MessageCircle,
+      value: 'Direct Message',
+      variant: 'secondary' as const,
+    };
   };
 
   // Client-side filtering for customer status and text search on displayed data
@@ -383,6 +469,7 @@ const Traffic = () => {
         if (traffic.messenger_ref?.toLowerCase().includes(lowerSearch)) return true;
         if (traffic.utm_source?.toLowerCase().includes(lowerSearch)) return true;
         if (traffic.utm_campaign?.toLowerCase().includes(lowerSearch)) return true;
+        if (traffic.platform?.toLowerCase().includes(lowerSearch)) return true;
         
         return false;
       });
@@ -401,7 +488,7 @@ const Traffic = () => {
           <div>
             <h1 className="text-4xl font-bold text-foreground">Customer Traffic</h1>
             <p className="text-muted-foreground mt-2">
-              Track ad source and customer acquisition data
+              Track traffic sources and customer acquisition data
             </p>
           </div>
           <div className="flex items-center gap-2 text-muted-foreground">
@@ -418,7 +505,7 @@ const Traffic = () => {
                 <div>
                   <CardTitle>Traffic Data</CardTitle>
                   <CardDescription>
-                    Ad source tracking and customer acquisition information
+                    Traffic source tracking and customer acquisition information
                   </CardDescription>
                 </div>
                 {activeFilterCount > 0 && (
@@ -429,13 +516,13 @@ const Traffic = () => {
                 )}
               </div>
               
-              {/* Search and Filters */}
+              {/* Search and Filters - Row 1 */}
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row gap-3">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search customer, date, status, source..."
+                      placeholder="Search customer, source, tag..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-9"
@@ -454,9 +541,50 @@ const Traffic = () => {
                     </SelectContent>
                   </Select>
 
+                  <Select value={platformFilter} onValueChange={setPlatformFilter} disabled={isLoadingTraffic}>
+                    <SelectTrigger className="w-full sm:w-[150px]">
+                      <SelectValue placeholder="Platform" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Platforms</SelectItem>
+                      <SelectItem value="messenger">
+                        <div className="flex items-center gap-2">
+                          <MessageCircle className="h-4 w-4 text-blue-500" />
+                          Messenger
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="telegram">
+                        <div className="flex items-center gap-2">
+                          <Send className="h-4 w-4 text-sky-500" />
+                          Telegram
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Filters - Row 2 */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Select value={postTagFilter} onValueChange={setPostTagFilter} disabled={isLoadingTraffic}>
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                      <SelectValue placeholder="Post Tag" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Post Tags</SelectItem>
+                      {uniquePostTags.map((tag) => (
+                        <SelectItem key={tag} value={tag}>
+                          <div className="flex items-center gap-2">
+                            <Hash className="h-3 w-3" />
+                            {tag}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
                   <Select value={sourceFilter} onValueChange={setSourceFilter} disabled={isLoadingTraffic}>
                     <SelectTrigger className="w-full sm:w-[150px]">
-                      <SelectValue placeholder="Source" />
+                      <SelectValue placeholder="UTM Source" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Sources</SelectItem>
@@ -483,7 +611,7 @@ const Traffic = () => {
                   </Select>
                 </div>
 
-                {/* Date Range Filters */}
+                {/* Date Range Filters - Row 3 */}
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Popover>
                     <PopoverTrigger asChild>
@@ -570,9 +698,10 @@ const Traffic = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Platform</TableHead>
                       <TableHead>Customer</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Ad Source</TableHead>
+                      <TableHead>Traffic Source</TableHead>
                       <TableHead>Created At</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -585,8 +714,21 @@ const Traffic = () => {
                           : traffic.customer.messenger_name || 'Unknown'
                         : null;
 
+                      const platformInfo = getPlatformInfo(traffic.platform);
+                      const PlatformIcon = platformInfo.icon;
+                      const sourceInfo = getTrafficSourceInfo(traffic);
+                      const SourceIcon = sourceInfo.icon;
+
                       return (
                       <TableRow key={traffic.id}>
+                        <TableCell>
+                          <div className={cn("flex items-center gap-2 px-2 py-1 rounded-md w-fit", platformInfo.bgColor)}>
+                            <PlatformIcon className={cn("h-4 w-4", platformInfo.color)} />
+                            <span className={cn("text-sm font-medium", platformInfo.color)}>
+                              {platformInfo.label}
+                            </span>
+                          </div>
+                        </TableCell>
                         <TableCell className="font-medium">
                           {traffic.customer ? (
                             <Link 
@@ -621,27 +763,21 @@ const Traffic = () => {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <div className="cursor-help">
-                                  {traffic.messenger_ref ? (
-                                    <Badge variant="outline" className="font-mono">
-                                      {traffic.messenger_ref}
-                                    </Badge>
-                                  ) : traffic.facebook_click_id ? (
-                                    <Badge variant="default">
-                                      FB Click
-                                    </Badge>
-                                  ) : traffic.utm_source ? (
-                                    <Badge variant="default" className="capitalize">
-                                      {traffic.utm_source}
-                                    </Badge>
-                                  ) : (
-                                    <Badge variant="secondary">Direct</Badge>
-                                  )}
+                                  <Badge variant={sourceInfo.variant} className="gap-1 font-normal">
+                                    <SourceIcon className="h-3 w-3" />
+                                    <span className="text-xs text-muted-foreground mr-1">{sourceInfo.type}:</span>
+                                    <span className="font-medium truncate max-w-[120px]">{sourceInfo.value}</span>
+                                  </Badge>
                                 </div>
                               </TooltipTrigger>
                               <TooltipContent className="max-w-md p-4" side="right">
                                 <div className="space-y-2 text-sm">
                                   <div className="font-semibold text-foreground border-b pb-2">
                                     Tracking Information
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold">Platform:</span>
+                                    <span className="ml-2 text-muted-foreground capitalize">{traffic.platform}</span>
                                   </div>
                                   {traffic.messenger_ref && (
                                     <div>
