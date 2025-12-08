@@ -175,7 +175,10 @@ async function handleMessage(senderId: string, message: any) {
     .eq('messenger_id', senderId)
     .maybeSingle();
   
+  let isNewCustomer = false;
+  
   if (!customer) {
+    isNewCustomer = true;
     // Fetch profile from Facebook
     const profile = await getUserProfile(senderId);
     
@@ -199,6 +202,20 @@ async function handleMessage(senderId: string, message: any) {
     }
     
     customer = newCustomer;
+    
+    // Create lead entry for new Messenger customers (direct message without referral)
+    console.log(`Creating lead entry for new Messenger customer: ${customer.id}`);
+    const { error: leadError } = await supabase
+      .from('telegram_leads')
+      .insert({
+        user_id: customer.id,
+        platform: 'messenger',
+        messenger_ref: 'direct_message',
+      });
+    
+    if (leadError) {
+      console.error("Error creating lead for new customer:", leadError);
+    }
   }
   
   // Determine message type and content
