@@ -50,6 +50,7 @@ interface TrafficData {
   utm_ad_id: string | null;
   utm_campaign_id: string | null;
   referrer: string | null;
+  messenger_ref: string | null;
   created_at: string;
   customer: {
     id: string;
@@ -138,7 +139,7 @@ const Traffic = () => {
 
       let dataQuery = supabase
         .from("telegram_leads")
-        .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, created_at, user_id");
+        .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, messenger_ref, created_at, user_id");
 
       // Apply global search
       if (searchTerm) {
@@ -205,6 +206,7 @@ const Traffic = () => {
               utm_ad_id: lead.utm_ad_id,
               utm_campaign_id: lead.utm_campaign_id,
               referrer: lead.referrer,
+              messenger_ref: lead.messenger_ref,
               created_at: lead.created_at,
               customer,
             };
@@ -221,6 +223,7 @@ const Traffic = () => {
             utm_ad_id: lead.utm_ad_id,
             utm_campaign_id: lead.utm_campaign_id,
             referrer: lead.referrer,
+            messenger_ref: lead.messenger_ref,
             created_at: lead.created_at,
             customer: null,
           };
@@ -416,9 +419,13 @@ const Traffic = () => {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <div className="cursor-help">
-                                  {traffic.facebook_click_id ? (
+                                  {traffic.messenger_ref ? (
+                                    <Badge variant="outline" className="font-mono">
+                                      {traffic.messenger_ref}
+                                    </Badge>
+                                  ) : traffic.facebook_click_id ? (
                                     <Badge variant="default">
-                                      FB: {traffic.facebook_click_id.slice(0, 12)}...
+                                      FB Click
                                     </Badge>
                                   ) : traffic.utm_source ? (
                                     <Badge variant="default" className="capitalize">
@@ -434,6 +441,12 @@ const Traffic = () => {
                                   <div className="font-semibold text-foreground border-b pb-2">
                                     Tracking Information
                                   </div>
+                                  {traffic.messenger_ref && (
+                                    <div>
+                                      <span className="font-semibold">Post Tag:</span>
+                                      <span className="ml-2 text-muted-foreground font-mono">{traffic.messenger_ref}</span>
+                                    </div>
+                                  )}
                                   {traffic.facebook_click_id && (
                                     <div>
                                       <span className="font-semibold">Facebook Click ID:</span>
@@ -498,7 +511,8 @@ const Traffic = () => {
                                       </div>
                                     </div>
                                   )}
-                                  {!traffic.facebook_click_id && 
+                                  {!traffic.messenger_ref &&
+                                   !traffic.facebook_click_id && 
                                    !traffic.utm_source && 
                                    !traffic.utm_medium && 
                                    !traffic.utm_campaign && 
