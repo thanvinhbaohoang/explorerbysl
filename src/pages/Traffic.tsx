@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -35,7 +35,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { TrendingUp, Search, X, Filter } from "lucide-react";
+import { TrendingUp, Search, X, Filter, UserPlus, User } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 
 interface MessengerAdContext {
@@ -64,11 +64,15 @@ interface TrafficData {
   created_at: string;
   customer: {
     id: string;
-    telegram_id: number;
+    telegram_id: number | null;
     username: string | null;
     first_name: string | null;
     last_name: string | null;
+    messenger_id: string | null;
+    messenger_name: string | null;
+    first_message_at: string | null;
   } | null;
+  isNewCustomer: boolean;
 }
 
 const Traffic = () => {
@@ -200,9 +204,17 @@ const Traffic = () => {
           if (lead.user_id) {
             const { data: customer } = await supabase
               .from("customer")
-              .select("id, telegram_id, username, first_name, last_name")
+              .select("id, telegram_id, username, first_name, last_name, messenger_id, messenger_name, first_message_at")
               .eq("id", lead.user_id)
               .maybeSingle();
+
+            // Check if customer was new at the time of this lead
+            const leadCreatedAt = new Date(lead.created_at || '');
+            const customerFirstMessage = customer?.first_message_at ? new Date(customer.first_message_at) : null;
+            // Customer is "new" if their first message was within 1 minute of lead creation
+            const isNewCustomer = customerFirstMessage 
+              ? Math.abs(leadCreatedAt.getTime() - customerFirstMessage.getTime()) < 60000
+              : false;
 
             return {
               id: lead.id,
@@ -220,6 +232,7 @@ const Traffic = () => {
               messenger_ad_context: lead.messenger_ad_context as MessengerAdContext | null,
               created_at: lead.created_at,
               customer,
+              isNewCustomer,
             };
           }
           return {
@@ -238,6 +251,7 @@ const Traffic = () => {
             messenger_ad_context: lead.messenger_ad_context as MessengerAdContext | null,
             created_at: lead.created_at,
             customer: null,
+            isNewCustomer: false,
           };
         })
       );
@@ -410,21 +424,51 @@ const Traffic = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Token ID</TableHead>
-                      <TableHead>Ad Source</TableHead>
                       <TableHead>Customer</TableHead>
-                      <TableHead>Telegram ID</TableHead>
-                      <TableHead>Username</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Ad Source</TableHead>
                       <TableHead>Created At</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {trafficData.map((traffic) => (
+                    {trafficData.map((traffic) => {
+                      // Get customer display name - prefer first/last name, fallback to messenger_name
+                      const customerName = traffic.customer
+                        ? (traffic.customer.first_name || traffic.customer.last_name)
+                          ? `${traffic.customer.first_name || ''} ${traffic.customer.last_name || ''}`.trim()
+                          : traffic.customer.messenger_name || 'Unknown'
+                        : null;
+
+                      return (
                       <TableRow key={traffic.id}>
+                        <TableCell className="font-medium">
+                          {traffic.customer ? (
+                            <Link 
+                              to={`/customer/${traffic.customer.id}`}
+                              className="text-primary hover:underline"
+                            >
+                              {customerName}
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground italic">Not linked</span>
+                          )}
+                        </TableCell>
                         <TableCell>
-                          <code className="text-xs bg-muted px-2 py-1 rounded">
-                            {traffic.id.slice(0, 8)}...
-                          </code>
+                          {traffic.customer ? (
+                            traffic.isNewCustomer ? (
+                              <Badge variant="default" className="gap-1">
+                                <UserPlus className="h-3 w-3" />
+                                New
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="gap-1">
+                                <User className="h-3 w-3" />
+                                Existing
+                              </Badge>
+                            )
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <TooltipProvider>
@@ -588,36 +632,12 @@ const Traffic = () => {
                             </Tooltip>
                           </TooltipProvider>
                         </TableCell>
-                        <TableCell className="font-medium">
-                          {traffic.customer ? (
-                            `${traffic.customer.first_name || ''} ${traffic.customer.last_name || ''}`
-                          ) : (
-                            <span className="text-muted-foreground italic">Not linked</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {traffic.customer ? (
-                            <code className="text-xs bg-muted px-2 py-1 rounded">
-                              {traffic.customer.telegram_id}
-                            </code>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {traffic.customer?.username ? (
-                            <span className="text-muted-foreground">
-                              @{traffic.customer.username}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
                           {formatDate(traffic.created_at)}
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
