@@ -725,6 +725,11 @@ serve(async (req) => {
           
           if (event.message) {
             console.log('Handling message event');
+            // Check if message has referral data (from clicking "Send Message" on a post/ad)
+            if (event.message.referral) {
+              console.log('Message contains referral data, handling referral first');
+              await handleReferral(senderId, event.message.referral);
+            }
             await handleMessage(senderId, event.message);
           } else if (event.postback) {
             console.log('Handling postback event');
