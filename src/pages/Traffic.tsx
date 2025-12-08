@@ -38,6 +38,15 @@ import {
 import { TrendingUp, Search, X, Filter } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 
+interface MessengerAdContext {
+  ad_id?: string;
+  ad_title?: string;
+  photo_url?: string;
+  video_url?: string;
+  post_id?: string;
+  product_id?: string;
+}
+
 interface TrafficData {
   id: string;
   facebook_click_id: string | null;
@@ -51,6 +60,7 @@ interface TrafficData {
   utm_campaign_id: string | null;
   referrer: string | null;
   messenger_ref: string | null;
+  messenger_ad_context: MessengerAdContext | null;
   created_at: string;
   customer: {
     id: string;
@@ -139,7 +149,7 @@ const Traffic = () => {
 
       let dataQuery = supabase
         .from("telegram_leads")
-        .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, messenger_ref, created_at, user_id");
+        .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, messenger_ref, messenger_ad_context, created_at, user_id");
 
       // Apply global search
       if (searchTerm) {
@@ -207,6 +217,7 @@ const Traffic = () => {
               utm_campaign_id: lead.utm_campaign_id,
               referrer: lead.referrer,
               messenger_ref: lead.messenger_ref,
+              messenger_ad_context: lead.messenger_ad_context as MessengerAdContext | null,
               created_at: lead.created_at,
               customer,
             };
@@ -224,6 +235,7 @@ const Traffic = () => {
             utm_campaign_id: lead.utm_campaign_id,
             referrer: lead.referrer,
             messenger_ref: lead.messenger_ref,
+            messenger_ad_context: lead.messenger_ad_context as MessengerAdContext | null,
             created_at: lead.created_at,
             customer: null,
           };
@@ -511,12 +523,62 @@ const Traffic = () => {
                                       </div>
                                     </div>
                                   )}
+                                  {traffic.messenger_ad_context && (
+                                    <div className="border-t pt-2 mt-2">
+                                      <div className="font-semibold text-foreground mb-2">
+                                        Facebook Ad Context
+                                      </div>
+                                      {traffic.messenger_ad_context.ad_title && (
+                                        <div>
+                                          <span className="font-semibold">Ad Title:</span>
+                                          <span className="ml-2 text-muted-foreground">{traffic.messenger_ad_context.ad_title}</span>
+                                        </div>
+                                      )}
+                                      {traffic.messenger_ad_context.ad_id && (
+                                        <div>
+                                          <span className="font-semibold">Ad ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.messenger_ad_context.ad_id}</span>
+                                        </div>
+                                      )}
+                                      {traffic.messenger_ad_context.post_id && (
+                                        <div>
+                                          <span className="font-semibold">Post ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.messenger_ad_context.post_id}</span>
+                                        </div>
+                                      )}
+                                      {traffic.messenger_ad_context.product_id && (
+                                        <div>
+                                          <span className="font-semibold">Product ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.messenger_ad_context.product_id}</span>
+                                        </div>
+                                      )}
+                                      {traffic.messenger_ad_context.photo_url && (
+                                        <div className="mt-2">
+                                          <span className="font-semibold block mb-1">Ad Image:</span>
+                                          <img 
+                                            src={traffic.messenger_ad_context.photo_url} 
+                                            alt="Ad creative" 
+                                            className="max-w-[200px] max-h-[150px] object-cover rounded border"
+                                          />
+                                        </div>
+                                      )}
+                                      {traffic.messenger_ad_context.video_url && (
+                                        <div>
+                                          <span className="font-semibold">Video URL:</span>
+                                          <div className="text-xs text-muted-foreground break-all mt-1">
+                                            {traffic.messenger_ad_context.video_url}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                   {!traffic.messenger_ref &&
                                    !traffic.facebook_click_id && 
                                    !traffic.utm_source && 
                                    !traffic.utm_medium && 
                                    !traffic.utm_campaign && 
-                                   !traffic.referrer && (
+                                   !traffic.referrer &&
+                                   !traffic.messenger_ad_context && (
                                     <div className="text-muted-foreground italic">
                                       No tracking data available
                                     </div>
