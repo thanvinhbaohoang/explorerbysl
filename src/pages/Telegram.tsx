@@ -25,7 +25,7 @@ const Telegram = () => {
         const referrer = document.referrer;
 
         // Save to Supabase and get the lead ID
-        const { data: insertedData } = await supabase
+        const { data: insertedData, error: insertError } = await supabase
           .from("telegram_leads")
           .insert({
             facebook_click_id: fbclid,
@@ -43,9 +43,14 @@ const Telegram = () => {
           .select('id')
           .single();
 
-        // Redirect immediately with product ref as start parameter
-        const telegramUrl = productRef 
-          ? `https://t.me/${BOT_USERNAME}?start=${productRef}`
+        if (insertError) {
+          console.error("Error saving lead:", insertError);
+        }
+
+        // Redirect with lead UUID as start parameter so bot can link customer to lead
+        const leadId = insertedData?.id;
+        const telegramUrl = leadId 
+          ? `https://t.me/${BOT_USERNAME}?start=${leadId}`
           : `https://t.me/${BOT_USERNAME}`;
         
         window.location.href = telegramUrl;
