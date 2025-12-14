@@ -45,23 +45,73 @@ interface Ad {
   };
 }
 
+interface AdAccount {
+  id: string;
+  name: string;
+  account_status: number;
+  currency: string;
+  timezone_name: string;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { startDate, endDate, level, adId } = await req.json();
+    const { startDate, endDate, level, adId, accountId: requestedAccountId } = await req.json();
     
-    const accountId = Deno.env.get('FACEBOOK_AD_ACCOUNT_ID');
     // Use unified System User Token for all Facebook API operations
     const accessToken = Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN') || Deno.env.get('FACEBOOK_ACCESS_TOKEN');
+    const defaultAccountId = Deno.env.get('FACEBOOK_AD_ACCOUNT_ID');
 
-    if (!accountId || !accessToken) {
-      console.error('Missing Facebook credentials');
+    if (!accessToken) {
+      console.error('Missing Facebook access token');
       return new Response(
         JSON.stringify({ 
-          error: 'Facebook credentials not configured. Please add FACEBOOK_AD_ACCOUNT_ID and FACEBOOK_ACCESS_TOKEN in settings.' 
+          error: 'Facebook access token not configured. Please add FACEBOOK_SYSTEM_USER_TOKEN in settings.' 
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const baseUrl = `https://graph.facebook.com/v21.0`;
+
+    // If fetching all ad accounts
+    if (level === 'ad-accounts') {
+      const endpoint = `${baseUrl}/me/adaccounts?fields=id,name,account_status,currency,timezone_name&access_token=${accessToken}`;
+      console.log('Fetching all ad accounts:', { endpoint: endpoint.replace(accessToken, 'HIDDEN') });
+      
+      const response = await fetch(endpoint);
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('Facebook API error:', data);
+        return new Response(
+          JSON.stringify({ 
+            error: data.error?.message || 'Failed to fetch ad accounts',
+            details: data.error
+          }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log('Successfully fetched ad accounts:', data.data?.length || 0, 'accounts');
+      
+      return new Response(
+        JSON.stringify({ success: true, data: data.data || [] }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Use requested account ID or fall back to default
+    const accountId = requestedAccountId || defaultAccountId;
+    
+    if (!accountId) {
+      console.error('No ad account ID provided or configured');
+      return new Response(
+        JSON.stringify({ 
+          error: 'No ad account selected. Please select an ad account.' 
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -69,7 +119,6 @@ serve(async (req) => {
 
     // Ensure account ID has 'act_' prefix for Facebook Graph API
     const formattedAccountId = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
-    const baseUrl = `https://graph.facebook.com/v21.0`;
     const dateRange = startDate && endDate ? `&time_range={'since':'${startDate}','until':'${endDate}'}` : '';
     
     let endpoint = '';
@@ -108,7 +157,7 @@ serve(async (req) => {
       }
     }
 
-    console.log('Fetching Facebook Ads data:', { level, endpoint: endpoint.replace(accessToken, 'HIDDEN') });
+    console.log('Fetching Facebook Ads data:', { level, accountId: formattedAccountId, endpoint: endpoint.replace(accessToken, 'HIDDEN') });
 
     const response = await fetch(endpoint);
     const data = await response.json();
