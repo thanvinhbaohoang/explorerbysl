@@ -366,6 +366,35 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
     customer = existingCustomer;
     console.log(`Customer lookup result:`, customer ? `Found: ${customer.id}` : 'Not found');
     
+    // If customer exists but has "Unknown" name, try to refresh their profile
+    if (customer && customer.messenger_name === 'Unknown') {
+      console.log(`Customer has Unknown name, attempting to refresh profile for ${senderId}`);
+      const profile = await getUserProfile(senderId, pageId);
+      
+      if (profile && profile.first_name) {
+        console.log(`Profile refresh successful: ${profile.first_name} ${profile.last_name}`);
+        const { error: updateError } = await supabase
+          .from('customer')
+          .update({
+            messenger_name: `${profile.first_name} ${profile.last_name}`,
+            messenger_profile_pic: profile.profile_pic || customer.messenger_profile_pic,
+            locale: profile.locale || customer.locale,
+            timezone_offset: profile.timezone || customer.timezone_offset,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', customer.id);
+        
+        if (updateError) {
+          console.error("Error updating customer profile:", updateError);
+        } else {
+          console.log(`Customer profile updated successfully`);
+          customer.messenger_name = `${profile.first_name} ${profile.last_name}`;
+        }
+      } else {
+        console.log(`Profile refresh failed, keeping Unknown name`);
+      }
+    }
+    
     if (!customer) {
       isNewCustomer = true;
       console.log(`Creating new customer for messenger_id: ${senderId}`);
