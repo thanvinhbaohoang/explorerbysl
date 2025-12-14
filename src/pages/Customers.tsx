@@ -1319,14 +1319,37 @@ const Customers = () => {
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
               }
             }, 100);
-          } else if (newMessage.sender_type === "customer") {
-            // Show toast notification for customer messages from other customers
-            const customer = customers.find((c) => c.id === newMessage.customer_id);
-            if (customer) {
-              toast.success("New message received", {
-                description: `${customer.first_name || "Customer"} sent a message`,
-                icon: <Bell className="h-4 w-4" />,
+          } else {
+            // Invalidate cache for this customer so next open shows fresh messages
+            setMessagesCache((cache) => {
+              const newCache = { ...cache };
+              // Find and delete any cache keys that include this customer_id
+              Object.keys(newCache).forEach(key => {
+                if (key.includes(newMessage.customer_id)) {
+                  delete newCache[key];
+                }
               });
+              return newCache;
+            });
+            setMessageMetaCache((cache) => {
+              const newCache = { ...cache };
+              Object.keys(newCache).forEach(key => {
+                if (key.includes(newMessage.customer_id)) {
+                  delete newCache[key];
+                }
+              });
+              return newCache;
+            });
+            
+            // Show toast notification for customer messages
+            if (newMessage.sender_type === "customer") {
+              const customer = customers.find((c) => c.id === newMessage.customer_id);
+              if (customer) {
+                toast.success("New message received", {
+                  description: `${customer.first_name || customer.messenger_name || "Customer"} sent a message`,
+                  icon: <Bell className="h-4 w-4" />,
+                });
+              }
             }
           }
         }
