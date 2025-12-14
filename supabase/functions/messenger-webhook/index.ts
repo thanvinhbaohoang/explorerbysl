@@ -9,12 +9,61 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // Use unified System User Token for all Facebook API operations
-const pageAccessToken = Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN') || Deno.env.get('FACEBOOK_PAGE_ACCESS_TOKEN')!;
+const systemUserToken = Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN') || Deno.env.get('FACEBOOK_PAGE_ACCESS_TOKEN')!;
 const appSecret = Deno.env.get('FACEBOOK_APP_SECRET')!;
 const verifyToken = Deno.env.get('FACEBOOK_VERIFY_TOKEN')!;
-// Multiple pages supported - page ID is extracted dynamically from webhook payload
+
+// Cache for page access tokens
+let pageTokensCache: Map<string, string> = new Map();
+let pageTokensCacheTime: number = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+// Fetch all pages and their access tokens from System User
+async function fetchPageTokens(): Promise<Map<string, string>> {
+  const now = Date.now();
+  
+  // Return cached tokens if still valid
+  if (pageTokensCache.size > 0 && (now - pageTokensCacheTime) < CACHE_TTL) {
+    return pageTokensCache;
+  }
+  
+  console.log('Fetching page tokens from Facebook...');
+  
+  try {
+    const url = `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token&access_token=${systemUserToken}`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.error('Failed to fetch page tokens:', await response.text());
+      return pageTokensCache; // Return stale cache if fetch fails
+    }
+    
+    const data = await response.json();
+    const newCache = new Map<string, string>();
+    
+    for (const page of data.data || []) {
+      newCache.set(page.id, page.access_token);
+      console.log(`Cached token for page: ${page.id} (${page.name})`);
+    }
+    
+    pageTokensCache = newCache;
+    pageTokensCacheTime = now;
+    
+    console.log(`Cached ${newCache.size} page tokens`);
+    return newCache;
+  } catch (error) {
+    console.error('Error fetching page tokens:', error);
+    return pageTokensCache;
+  }
+}
+
+// Get access token for a specific page
+async function getPageToken(pageId: string): Promise<string> {
+  const tokens = await fetchPageTokens();
+  return tokens.get(pageId) || systemUserToken;
+}
 
 // Verify webhook signature
 async function verifySignature(payload: string, signature: string): Promise<boolean> {
@@ -37,9 +86,10 @@ async function verifySignature(payload: string, signature: string): Promise<bool
   return `sha256=${sigHex}` === signature;
 }
 
-// Fetch user profile from Facebook
-async function getUserProfile(psid: string) {
-  const url = `https://graph.facebook.com/v18.0/${psid}?fields=first_name,last_name,profile_pic,locale,timezone&access_token=${pageAccessToken}`;
+// Fetch user profile from Facebook (uses page token)
+async function getUserProfile(psid: string, pageId?: string) {
+  const token = pageId ? await getPageToken(pageId) : systemUserToken;
+  const url = `https://graph.facebook.com/v18.0/${psid}?fields=first_name,last_name,profile_pic,locale,timezone&access_token=${token}`;
   const response = await fetch(url);
   
   if (!response.ok) {
@@ -50,9 +100,10 @@ async function getUserProfile(psid: string) {
   return await response.json();
 }
 
-// Send message via Facebook Send API
-async function sendMessage(psid: string, text: string) {
-  const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${pageAccessToken}`;
+// Send message via Facebook Send API (uses page token)
+async function sendMessage(psid: string, text: string, pageId?: string) {
+  const token = pageId ? await getPageToken(pageId) : systemUserToken;
+  const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${token}`;
   
   const response = await fetch(url, {
     method: 'POST',
@@ -72,9 +123,10 @@ async function sendMessage(psid: string, text: string) {
   return await response.json();
 }
 
-// Send media attachment via Facebook Send API
-async function sendAttachment(psid: string, type: string, url: string) {
-  const apiUrl = `https://graph.facebook.com/v18.0/me/messages?access_token=${pageAccessToken}`;
+// Send media attachment via Facebook Send API (uses page token)
+async function sendAttachment(psid: string, type: string, url: string, pageId?: string) {
+  const token = pageId ? await getPageToken(pageId) : systemUserToken;
+  const apiUrl = `https://graph.facebook.com/v18.0/me/messages?access_token=${token}`;
   
   const response = await fetch(apiUrl, {
     method: 'POST',
@@ -83,7 +135,7 @@ async function sendAttachment(psid: string, type: string, url: string) {
       recipient: { id: psid },
       message: {
         attachment: {
-          type: type, // 'image', 'video', 'file'
+          type: type,
           payload: {
             url: url,
             is_reusable: true
@@ -116,7 +168,6 @@ async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | '
     const blob = await response.blob();
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
     
-    // Determine file extension based on content type
     let extension = 'bin';
     if (contentType.includes('jpeg') || contentType.includes('jpg')) extension = 'jpg';
     else if (contentType.includes('png')) extension = 'png';
@@ -129,7 +180,6 @@ async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | '
     else if (contentType.includes('wav')) extension = 'wav';
     else if (contentType.includes('aac') || contentType.includes('m4a')) extension = 'm4a';
     
-    // Create unique filename
     const timestamp = Date.now();
     const randomId = Math.random().toString(36).substring(7);
     const folder = `messenger-${fileType}`;
@@ -137,7 +187,6 @@ async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | '
     
     console.log(`Uploading to storage: ${fileName}`);
     
-    // Upload to Supabase Storage
     const arrayBuffer = await blob.arrayBuffer();
     const { error: uploadError } = await supabase.storage
       .from('chat-attachments')
@@ -151,7 +200,6 @@ async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | '
       return null;
     }
     
-    // Get public URL
     const { data: publicUrlData } = supabase.storage
       .from('chat-attachments')
       .getPublicUrl(fileName);
@@ -166,15 +214,14 @@ async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | '
 }
 
 // Handle incoming messages
-async function handleMessage(senderId: string, message: any, hasReferral: boolean = false) {
-  console.log(`Handling message from ${senderId}:`, message);
+async function handleMessage(senderId: string, message: any, pageId: string, hasReferral: boolean = false) {
+  console.log(`Handling message from ${senderId} on page ${pageId}:`, message);
   console.log(`Has referral data: ${hasReferral}`);
   
   let customer: any = null;
   let isNewCustomer = false;
   
   try {
-    // Get or create customer
     console.log(`Looking up customer with messenger_id: ${senderId}`);
     const { data: existingCustomer, error: customerError } = await supabase
       .from('customer')
@@ -193,12 +240,10 @@ async function handleMessage(senderId: string, message: any, hasReferral: boolea
       isNewCustomer = true;
       console.log(`Creating new customer for messenger_id: ${senderId}`);
       
-      // Fetch profile from Facebook
       console.log(`Fetching Facebook profile for ${senderId}`);
-      const profile = await getUserProfile(senderId);
+      const profile = await getUserProfile(senderId, pageId);
       console.log(`Profile fetch result:`, profile ? 'Success' : 'Failed');
       
-      // Create new customer
       const customerData = {
         messenger_id: senderId,
         messenger_name: profile ? `${profile.first_name} ${profile.last_name}` : 'Unknown',
@@ -224,8 +269,6 @@ async function handleMessage(senderId: string, message: any, hasReferral: boolea
       console.log(`Customer created successfully: ${customer.id}`);
     }
     
-    // Create lead entry for new customers OR if there's no referral (referral handler creates its own lead)
-    // Only create a "direct_message" lead if this is a new customer without referral data
     if (isNewCustomer && !hasReferral) {
       console.log(`Creating lead entry for new Messenger customer: ${customer.id}`);
       const { error: leadError } = await supabase
@@ -252,7 +295,6 @@ async function handleMessage(senderId: string, message: any, hasReferral: boolea
     return;
   }
   
-  // Determine message type and content
   let messageType = 'text';
   let messageText = null;
   let photoUrl = null;
@@ -272,14 +314,12 @@ async function handleMessage(senderId: string, message: any, hasReferral: boolea
     
     if (attachment.type === 'image') {
       messageType = 'photo';
-      // Download and store permanently
       const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo');
-      photoUrl = storedUrl || attachment.payload.url; // Fallback to original if storage fails
+      photoUrl = storedUrl || attachment.payload.url;
       photoFileId = attachment.payload.sticker_id || 'fb_image';
       console.log(`Photo stored: ${photoUrl}`);
     } else if (attachment.type === 'video') {
       messageType = 'video';
-      // Download and store permanently
       const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'video');
       videoUrl = storedUrl || attachment.payload.url;
       videoFileId = 'fb_video';
@@ -287,7 +327,6 @@ async function handleMessage(senderId: string, message: any, hasReferral: boolea
       console.log(`Video stored: ${videoUrl}`);
     } else if (attachment.type === 'audio') {
       messageType = 'voice';
-      // Download and store permanently
       const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'voice');
       voiceUrl = storedUrl || attachment.payload.url;
       voiceFileId = 'fb_audio';
@@ -298,7 +337,6 @@ async function handleMessage(senderId: string, message: any, hasReferral: boolea
     }
   }
   
-  // Save message to database
   const timestamp = message.timestamp ? new Date(message.timestamp).toISOString() : new Date().toISOString();
   
   const { error: messageError } = await supabase
@@ -328,10 +366,9 @@ async function handleMessage(senderId: string, message: any, hasReferral: boolea
 }
 
 // Handle referrals (ad attribution)
-async function handleReferral(senderId: string, referral: any) {
-  console.log(`Handling referral from ${senderId}:`, referral);
+async function handleReferral(senderId: string, referral: any, pageId: string) {
+  console.log(`Handling referral from ${senderId} on page ${pageId}:`, referral);
   
-  // Get or create customer
   let { data: customer } = await supabase
     .from('customer')
     .select('*')
@@ -339,7 +376,7 @@ async function handleReferral(senderId: string, referral: any) {
     .maybeSingle();
   
   if (!customer) {
-    const profile = await getUserProfile(senderId);
+    const profile = await getUserProfile(senderId, pageId);
     
     const { data: newCustomer } = await supabase
       .from('customer')
@@ -357,7 +394,6 @@ async function handleReferral(senderId: string, referral: any) {
     customer = newCustomer;
   }
   
-  // Save lead attribution
   if (customer) {
     const { error: leadError } = await supabase
       .from('telegram_leads')
@@ -376,22 +412,17 @@ async function handleReferral(senderId: string, referral: any) {
 }
 
 // Handle postbacks (button clicks)
-async function handlePostback(senderId: string, postback: any) {
-  console.log(`Handling postback from ${senderId}:`, postback);
+async function handlePostback(senderId: string, postback: any, pageId: string) {
+  console.log(`Handling postback from ${senderId} on page ${pageId}:`, postback);
   
-  // If postback has referral data, handle it
   if (postback.referral) {
-    await handleReferral(senderId, postback.referral);
+    await handleReferral(senderId, postback.referral, pageId);
   }
-  
-  // You can handle button clicks here
-  // For now, we'll just log them
 }
 
 serve(async (req) => {
   console.log(`[${new Date().toISOString()}] Incoming request: ${req.method} ${req.url}`);
   
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -409,6 +440,46 @@ serve(async (req) => {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
+  }
+  
+  // Endpoint to fetch all connected pages
+  if (url.pathname.endsWith('/pages') && req.method === 'GET') {
+    console.log('Fetching all connected pages');
+    try {
+      const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token,category,picture&access_token=${systemUserToken}`;
+      const response = await fetch(pagesUrl);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Failed to fetch pages:', errorText);
+        return new Response(JSON.stringify({ error: 'Failed to fetch pages', details: errorText }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      const data = await response.json();
+      
+      // Don't expose access tokens to frontend
+      const pages = (data.data || []).map((page: any) => ({
+        id: page.id,
+        name: page.name,
+        category: page.category,
+        picture: page.picture?.data?.url
+      }));
+      
+      console.log(`Found ${pages.length} connected pages`);
+      
+      return new Response(JSON.stringify({ success: true, pages }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      console.error('Error fetching pages:', error);
+      return new Response(JSON.stringify({ error: 'Failed to fetch pages' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
   }
   
   // Webhook verification (GET request from Facebook)
@@ -435,7 +506,6 @@ serve(async (req) => {
     console.log('Signature present:', !!signature);
     console.log('Body length:', body.length);
     
-    // Verify signature
     if (signature) {
       const isValid = await verifySignature(body, signature);
       if (!isValid) {
@@ -449,9 +519,8 @@ serve(async (req) => {
     console.log('Parsed webhook data:', JSON.stringify(data, null, 2));
     
     // Handle special action for sending messages from frontend
-    // Frontend sends { psid, text, sent_by_name } while Facebook sends { object: 'page', entry: [...] }
     if (data.psid && data.text && !data.object) {
-      const { psid, text, sent_by_name } = data;
+      const { psid, text, sent_by_name, page_id } = data;
       
       if (!psid || !text) {
         return new Response(JSON.stringify({ error: 'Missing psid or text' }), {
@@ -460,7 +529,6 @@ serve(async (req) => {
         });
       }
       
-      // Check if message is within 24-hour window
       const { data: customerRecord } = await supabase
         .from('customer')
         .select('id')
@@ -468,7 +536,6 @@ serve(async (req) => {
         .single();
       
       if (customerRecord) {
-        // Get last customer message timestamp
         const { data: lastMessage } = await supabase
           .from('messages')
           .select('timestamp')
@@ -494,13 +561,11 @@ serve(async (req) => {
         }
       }
       
-      // Send message
-      const result = await sendMessage(psid, text);
+      const result = await sendMessage(psid, text, page_id);
       
       if (result?.error) {
         const fbError = result.error.error;
         
-        // Handle 24-hour window error specifically
         if (fbError.code === 10 && fbError.error_subcode === 2018278) {
           return new Response(JSON.stringify({ 
             error: 'Cannot send message: 24-hour messaging window has expired. Wait for customer to message first.',
@@ -522,14 +587,12 @@ serve(async (req) => {
         });
       }
       
-      // Get customer
       const { data: customer } = await supabase
         .from('customer')
         .select('id')
         .eq('messenger_id', psid)
         .single();
       
-      // Save outbound message
       if (customer) {
         await supabase
           .from('messages')
@@ -551,9 +614,9 @@ serve(async (req) => {
       });
     }
     
-    // Handle send_media action for attachments (images, videos, files)
+    // Handle send_media action for attachments
     if (data.psid && data.media_url && data.media_type && !data.object) {
-      const { psid, media_url, media_type, caption, sent_by_name } = data;
+      const { psid, media_url, media_type, caption, sent_by_name, page_id } = data;
       
       if (!psid || !media_url || !media_type) {
         return new Response(JSON.stringify({ error: 'Missing psid, media_url, or media_type' }), {
@@ -562,7 +625,6 @@ serve(async (req) => {
         });
       }
       
-      // Check if message is within 24-hour window
       const { data: customerRecord } = await supabase
         .from('customer')
         .select('id')
@@ -595,7 +657,6 @@ serve(async (req) => {
         }
       }
       
-      // Map media_type to Facebook attachment type
       let fbAttachmentType = 'file';
       let dbMediaType = media_type;
       if (media_type === 'photo') fbAttachmentType = 'image';
@@ -605,8 +666,7 @@ serve(async (req) => {
         dbMediaType = 'voice';
       }
       
-      // Send attachment
-      const result = await sendAttachment(psid, fbAttachmentType, media_url);
+      const result = await sendAttachment(psid, fbAttachmentType, media_url, page_id);
       
       if (result?.error) {
         const fbError = result.error.error;
@@ -632,7 +692,6 @@ serve(async (req) => {
         });
       }
       
-      // Get customer and save message
       const { data: customer } = await supabase
         .from('customer')
         .select('id')
@@ -668,7 +727,6 @@ serve(async (req) => {
     if (data.object === 'page') {
       console.log(`Processing ${data.entry.length} page entries`);
       for (const entry of data.entry) {
-        // Extract page ID dynamically from entry - supports multiple pages
         const currentPageId = entry.id;
         console.log(`Processing page ${currentPageId} with ${entry.messaging?.length || 0} messaging events`);
         
@@ -678,13 +736,10 @@ serve(async (req) => {
           console.log(`[Page ${currentPageId}] Event from sender ${senderId}:`, JSON.stringify(event, null, 2));
           
           // Handle messages sent by the page (employee) through Messenger app
-          // Compare senderId with currentPageId (dynamic per-entry)
           if (senderId === currentPageId && event.message) {
-            // Check if this is an echo of a message we already sent via our interface
             const isEcho = event.message.is_echo === true;
             
             if (isEcho) {
-              // Check if we already have this message (sent from our interface)
               const { data: existingMessage } = await supabase
                 .from('messages')
                 .select('id')
@@ -696,10 +751,8 @@ serve(async (req) => {
                 continue;
               }
               
-              // This is a message sent directly through Messenger by employee
               console.log(`Employee message sent via Messenger app on page ${currentPageId}`);
               
-              // Get the recipient (customer) info
               const { data: customer } = await supabase
                 .from('customer')
                 .select('*')
@@ -728,7 +781,6 @@ serve(async (req) => {
             continue;
           }
           
-          // Skip other page-related events
           if (senderId === currentPageId) {
             console.log('Skipping other page event');
             continue;
@@ -737,18 +789,17 @@ serve(async (req) => {
           if (event.message) {
             console.log('Handling message event');
             const hasReferral = !!event.message.referral;
-            // Check if message has referral data (from clicking "Send Message" on a post/ad)
             if (hasReferral) {
               console.log('Message contains referral data, handling referral first');
-              await handleReferral(senderId, event.message.referral);
+              await handleReferral(senderId, event.message.referral, currentPageId);
             }
-            await handleMessage(senderId, event.message, hasReferral);
+            await handleMessage(senderId, event.message, currentPageId, hasReferral);
           } else if (event.postback) {
             console.log('Handling postback event');
-            await handlePostback(senderId, event.postback);
+            await handlePostback(senderId, event.postback, currentPageId);
           } else if (event.referral) {
             console.log('Handling referral event');
-            await handleReferral(senderId, event.referral);
+            await handleReferral(senderId, event.referral, currentPageId);
           }
         }
       }
