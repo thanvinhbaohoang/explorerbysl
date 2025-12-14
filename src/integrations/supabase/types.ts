@@ -79,6 +79,45 @@ export type Database = {
           },
         ]
       }
+      facebook_pages: {
+        Row: {
+          access_token: string
+          category: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          page_id: string
+          picture_url: string | null
+          token_expires_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          access_token: string
+          category?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          page_id: string
+          picture_url?: string | null
+          token_expires_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string
+          category?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          page_id?: string
+          picture_url?: string | null
+          token_expires_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           created_at: string

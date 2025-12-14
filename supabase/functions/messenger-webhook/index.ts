@@ -20,7 +20,7 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Fetch all pages and their access tokens from System User
+// Fetch page tokens from database first, fallback to Facebook API
 async function fetchPageTokens(): Promise<Map<string, string>> {
   const now = Date.now();
   
@@ -29,15 +29,34 @@ async function fetchPageTokens(): Promise<Map<string, string>> {
     return pageTokensCache;
   }
   
-  console.log('Fetching page tokens from Facebook...');
+  console.log('Fetching page tokens from database...');
   
   try {
+    // First try to get from database
+    const { data: dbPages, error } = await supabase
+      .from('facebook_pages')
+      .select('page_id, access_token')
+      .eq('is_active', true);
+    
+    if (!error && dbPages && dbPages.length > 0) {
+      const newCache = new Map<string, string>();
+      for (const page of dbPages) {
+        newCache.set(page.page_id, page.access_token);
+      }
+      pageTokensCache = newCache;
+      pageTokensCacheTime = now;
+      console.log(`Loaded ${newCache.size} page tokens from database`);
+      return newCache;
+    }
+    
+    // Fallback to Facebook API if database is empty
+    console.log('No tokens in database, fetching from Facebook API...');
     const url = `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token&access_token=${systemUserToken}`;
     const response = await fetch(url);
     
     if (!response.ok) {
       console.error('Failed to fetch page tokens:', await response.text());
-      return pageTokensCache; // Return stale cache if fetch fails
+      return pageTokensCache;
     }
     
     const data = await response.json();
@@ -51,7 +70,7 @@ async function fetchPageTokens(): Promise<Map<string, string>> {
     pageTokensCache = newCache;
     pageTokensCacheTime = now;
     
-    console.log(`Cached ${newCache.size} page tokens`);
+    console.log(`Cached ${newCache.size} page tokens from Facebook API`);
     return newCache;
   } catch (error) {
     console.error('Error fetching page tokens:', error);
@@ -63,6 +82,66 @@ async function fetchPageTokens(): Promise<Map<string, string>> {
 async function getPageToken(pageId: string): Promise<string> {
   const tokens = await fetchPageTokens();
   return tokens.get(pageId) || systemUserToken;
+}
+
+// Sync pages from Facebook to database
+async function syncPagesToDatabase(): Promise<{ success: boolean; pages: any[]; error?: string }> {
+  console.log('Syncing pages from Facebook to database...');
+  
+  try {
+    const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token,category,picture&access_token=${systemUserToken}`;
+    const response = await fetch(pagesUrl);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Failed to fetch pages from Facebook:', errorText);
+      return { success: false, pages: [], error: errorText };
+    }
+    
+    const data = await response.json();
+    const pages = data.data || [];
+    const syncedPages = [];
+    
+    for (const page of pages) {
+      const pageData = {
+        page_id: page.id,
+        name: page.name,
+        category: page.category,
+        picture_url: page.picture?.data?.url || null,
+        access_token: page.access_token,
+        is_active: true,
+        updated_at: new Date().toISOString()
+      };
+      
+      // Upsert page data
+      const { data: upsertedPage, error } = await supabase
+        .from('facebook_pages')
+        .upsert(pageData, { onConflict: 'page_id' })
+        .select()
+        .single();
+      
+      if (error) {
+        console.error(`Error upserting page ${page.id}:`, error);
+      } else {
+        syncedPages.push({
+          id: page.id,
+          name: page.name,
+          category: page.category,
+          picture: page.picture?.data?.url
+        });
+      }
+    }
+    
+    // Invalidate cache to use new tokens
+    pageTokensCache = new Map();
+    pageTokensCacheTime = 0;
+    
+    console.log(`Synced ${syncedPages.length} pages to database`);
+    return { success: true, pages: syncedPages };
+  } catch (error) {
+    console.error('Error syncing pages:', error);
+    return { success: false, pages: [], error: String(error) };
+  }
 }
 
 // Verify webhook signature
@@ -442,10 +521,33 @@ serve(async (req) => {
     });
   }
   
-  // Endpoint to fetch all connected pages
+  // Endpoint to fetch all connected pages (from database or Facebook)
   if (url.pathname.endsWith('/pages') && req.method === 'GET') {
     console.log('Fetching all connected pages');
     try {
+      // First try database
+      const { data: dbPages, error: dbError } = await supabase
+        .from('facebook_pages')
+        .select('page_id, name, category, picture_url, is_active, updated_at')
+        .eq('is_active', true);
+      
+      if (!dbError && dbPages && dbPages.length > 0) {
+        const pages = dbPages.map(page => ({
+          id: page.page_id,
+          name: page.name,
+          category: page.category,
+          picture: page.picture_url,
+          synced: true,
+          lastUpdated: page.updated_at
+        }));
+        
+        console.log(`Found ${pages.length} pages in database`);
+        return new Response(JSON.stringify({ success: true, pages, source: 'database' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Fallback to Facebook API
       const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token,category,picture&access_token=${systemUserToken}`;
       const response = await fetch(pagesUrl);
       
@@ -460,22 +562,70 @@ serve(async (req) => {
       
       const data = await response.json();
       
-      // Don't expose access tokens to frontend
       const pages = (data.data || []).map((page: any) => ({
         id: page.id,
         name: page.name,
         category: page.category,
-        picture: page.picture?.data?.url
+        picture: page.picture?.data?.url,
+        synced: false
       }));
       
-      console.log(`Found ${pages.length} connected pages`);
+      console.log(`Found ${pages.length} connected pages from Facebook`);
       
-      return new Response(JSON.stringify({ success: true, pages }), {
+      return new Response(JSON.stringify({ success: true, pages, source: 'facebook' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     } catch (error) {
       console.error('Error fetching pages:', error);
       return new Response(JSON.stringify({ error: 'Failed to fetch pages' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+  }
+  
+  // Endpoint to sync pages from Facebook to database
+  if (url.pathname.endsWith('/pages/sync') && req.method === 'POST') {
+    console.log('Syncing pages to database');
+    const result = await syncPagesToDatabase();
+    
+    return new Response(JSON.stringify(result), {
+      status: result.success ? 200 : 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  // Endpoint to get page tokens (for authenticated admin users)
+  if (url.pathname.endsWith('/pages/tokens') && req.method === 'GET') {
+    console.log('Fetching page tokens');
+    
+    try {
+      const { data: dbPages, error } = await supabase
+        .from('facebook_pages')
+        .select('page_id, name, access_token, updated_at, token_expires_at')
+        .eq('is_active', true);
+      
+      if (error) {
+        return new Response(JSON.stringify({ error: 'Failed to fetch tokens', details: error.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      const tokens = (dbPages || []).map(page => ({
+        pageId: page.page_id,
+        name: page.name,
+        accessToken: page.access_token,
+        updatedAt: page.updated_at,
+        expiresAt: page.token_expires_at
+      }));
+      
+      return new Response(JSON.stringify({ success: true, tokens }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      console.error('Error fetching tokens:', error);
+      return new Response(JSON.stringify({ error: 'Failed to fetch tokens' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
