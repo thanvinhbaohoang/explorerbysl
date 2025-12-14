@@ -20,6 +20,7 @@ import WebhookDebug from "./pages/WebhookDebug";
 import MediaGallery from "./pages/MediaGallery";
 import Auth from "./pages/Auth";
 import MondayImport from "./pages/MondayImport";
+import FacebookPages from "./pages/FacebookPages";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +51,7 @@ const App = () => (
               <Route path="/webhook-debug" element={<ProtectedRoute><WebhookDebug /></ProtectedRoute>} />
               <Route path="/media-gallery" element={<ProtectedRoute><MediaGallery /></ProtectedRoute>} />
               <Route path="/monday-import" element={<ProtectedRoute><MondayImport /></ProtectedRoute>} />
+              <Route path="/facebook-pages" element={<ProtectedRoute><FacebookPages /></ProtectedRoute>} />
               
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />

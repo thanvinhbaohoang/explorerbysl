@@ -12,6 +12,7 @@ const navLinks = [
   { href: "/customers", label: "Customers" },
   { href: "/traffic", label: "Traffic" },
   { href: "/ads-insight", label: "Ads Insight" },
+  { href: "/facebook-pages", label: "Pages" },
   { href: "/monday-import", label: "Import" },
 ];
 
