@@ -8,19 +8,30 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-// Use unified System User Token for all Facebook API operations
-const systemUserToken = Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN') || Deno.env.get('FACEBOOK_PAGE_ACCESS_TOKEN')!;
-const appSecret = Deno.env.get('FACEBOOK_APP_SECRET')!;
+// System User Token - ONLY used for initial page sync, NOT for messaging
+const systemUserToken = Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN')!;
+// App Secret - REQUIRED for webhook signature verification
+const appSecret = Deno.env.get('FACEBOOK_APP_SECRET');
+// Verify Token - REQUIRED for webhook subscription
 const verifyToken = Deno.env.get('FACEBOOK_VERIFY_TOKEN')!;
 
-// Cache for page access tokens
+// Cache for page access tokens (from DB only)
 let pageTokensCache: Map<string, string> = new Map();
 let pageTokensCacheTime: number = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Fetch page tokens from database first, fallback to Facebook API
+// Log configuration status on startup
+console.log('=== Messenger Webhook Configuration ===');
+console.log('SUPABASE_URL:', supabaseUrl ? '✓ Set' : '✗ Missing');
+console.log('SUPABASE_SERVICE_ROLE_KEY:', supabaseServiceKey ? '✓ Set' : '✗ Missing');
+console.log('FACEBOOK_SYSTEM_USER_TOKEN:', systemUserToken ? `✓ Set (length: ${systemUserToken.length})` : '✗ Missing');
+console.log('FACEBOOK_APP_SECRET:', appSecret ? `✓ Set (length: ${appSecret.length})` : '✗ Missing - Signature verification DISABLED');
+console.log('FACEBOOK_VERIFY_TOKEN:', verifyToken ? '✓ Set' : '✗ Missing');
+console.log('======================================');
+
+// Fetch page tokens from database ONLY - no fallback to API
 async function fetchPageTokens(): Promise<Map<string, string>> {
   const now = Date.now();
   
@@ -32,13 +43,17 @@ async function fetchPageTokens(): Promise<Map<string, string>> {
   console.log('Fetching page tokens from database...');
   
   try {
-    // First try to get from database
     const { data: dbPages, error } = await supabase
       .from('facebook_pages')
       .select('page_id, access_token')
       .eq('is_active', true);
     
-    if (!error && dbPages && dbPages.length > 0) {
+    if (error) {
+      console.error('Error fetching page tokens from DB:', error);
+      return pageTokensCache;
+    }
+    
+    if (dbPages && dbPages.length > 0) {
       const newCache = new Map<string, string>();
       for (const page of dbPages) {
         newCache.set(page.page_id, page.access_token);
@@ -49,44 +64,34 @@ async function fetchPageTokens(): Promise<Map<string, string>> {
       return newCache;
     }
     
-    // Fallback to Facebook API if database is empty
-    console.log('No tokens in database, fetching from Facebook API...');
-    const url = `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token&access_token=${systemUserToken}`;
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      console.error('Failed to fetch page tokens:', await response.text());
-      return pageTokensCache;
-    }
-    
-    const data = await response.json();
-    const newCache = new Map<string, string>();
-    
-    for (const page of data.data || []) {
-      newCache.set(page.id, page.access_token);
-      console.log(`Cached token for page: ${page.id} (${page.name})`);
-    }
-    
-    pageTokensCache = newCache;
-    pageTokensCacheTime = now;
-    
-    console.log(`Cached ${newCache.size} page tokens from Facebook API`);
-    return newCache;
+    console.warn('No page tokens found in database. Please sync pages from the Facebook Pages UI.');
+    return pageTokensCache;
   } catch (error) {
     console.error('Error fetching page tokens:', error);
     return pageTokensCache;
   }
 }
 
-// Get access token for a specific page
-async function getPageToken(pageId: string): Promise<string> {
+// Get access token for a specific page - DB only, no fallback
+async function getPageToken(pageId: string): Promise<string | null> {
   const tokens = await fetchPageTokens();
-  return tokens.get(pageId) || systemUserToken;
+  const token = tokens.get(pageId);
+  
+  if (!token) {
+    console.error(`No token found for page ${pageId}. Please sync pages from the Facebook Pages UI.`);
+    return null;
+  }
+  
+  return token;
 }
 
-// Sync pages from Facebook to database
+// Sync pages from Facebook to database using System User Token
 async function syncPagesToDatabase(): Promise<{ success: boolean; pages: any[]; error?: string }> {
-  console.log('Syncing pages from Facebook to database...');
+  console.log('Syncing pages from Facebook to database using System User Token...');
+  
+  if (!systemUserToken) {
+    return { success: false, pages: [], error: 'FACEBOOK_SYSTEM_USER_TOKEN is not configured' };
+  }
   
   try {
     const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token,category,picture&access_token=${systemUserToken}`;
@@ -144,8 +149,21 @@ async function syncPagesToDatabase(): Promise<{ success: boolean; pages: any[]; 
   }
 }
 
-// Verify webhook signature
+// Verify webhook signature with detailed debug logging
 async function verifySignature(payload: string, signature: string): Promise<boolean> {
+  if (!appSecret) {
+    console.warn('FACEBOOK_APP_SECRET not configured - skipping signature verification');
+    console.warn('⚠️ This is insecure! Configure FACEBOOK_APP_SECRET for production.');
+    return true; // Skip verification if no secret configured
+  }
+  
+  console.log('=== Signature Verification Debug ===');
+  console.log('App Secret length:', appSecret.length);
+  console.log('App Secret first 4 chars:', appSecret.substring(0, 4));
+  console.log('App Secret last 4 chars:', appSecret.substring(appSecret.length - 4));
+  console.log('Payload length:', payload.length);
+  console.log('Received signature:', signature);
+  
   const hmac = new TextEncoder().encode(appSecret);
   const data = new TextEncoder().encode(payload);
   
@@ -162,12 +180,23 @@ async function verifySignature(payload: string, signature: string): Promise<bool
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
   
-  return `sha256=${sigHex}` === signature;
+  const expectedSignature = `sha256=${sigHex}`;
+  console.log('Expected signature:', expectedSignature);
+  console.log('Signatures match:', expectedSignature === signature);
+  console.log('=====================================');
+  
+  return expectedSignature === signature;
 }
 
-// Fetch user profile from Facebook (uses page token)
-async function getUserProfile(psid: string, pageId?: string) {
-  const token = pageId ? await getPageToken(pageId) : systemUserToken;
+// Fetch user profile from Facebook using page token from DB
+async function getUserProfile(psid: string, pageId: string) {
+  const token = await getPageToken(pageId);
+  
+  if (!token) {
+    console.error(`Cannot fetch user profile - no token for page ${pageId}`);
+    return null;
+  }
+  
   const url = `https://graph.facebook.com/v18.0/${psid}?fields=first_name,last_name,profile_pic,locale,timezone&access_token=${token}`;
   
   try {
@@ -176,9 +205,8 @@ async function getUserProfile(psid: string, pageId?: string) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Failed to fetch user profile:", errorText);
-      // Check if it's a permission error
       if (errorText.includes('pages_messaging') || errorText.includes('permission')) {
-        console.warn("Note: Your Facebook App needs 'pages_messaging' permission to fetch user profiles. Request this permission in Facebook App Review.");
+        console.warn("Note: Your Facebook App needs 'pages_messaging' permission to fetch user profiles.");
       }
       return null;
     }
@@ -190,9 +218,15 @@ async function getUserProfile(psid: string, pageId?: string) {
   }
 }
 
-// Send message via Facebook Send API (uses page token)
-async function sendMessage(psid: string, text: string, pageId?: string) {
-  const token = pageId ? await getPageToken(pageId) : systemUserToken;
+// Send message via Facebook Send API using page token from DB
+async function sendMessage(psid: string, text: string, pageId: string) {
+  const token = await getPageToken(pageId);
+  
+  if (!token) {
+    console.error(`Cannot send message - no token for page ${pageId}`);
+    return { error: { error: { message: 'No page token available. Please sync pages first.', code: 'NO_TOKEN' } } };
+  }
+  
   const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${token}`;
   
   const response = await fetch(url, {
@@ -213,9 +247,15 @@ async function sendMessage(psid: string, text: string, pageId?: string) {
   return await response.json();
 }
 
-// Send media attachment via Facebook Send API (uses page token)
-async function sendAttachment(psid: string, type: string, url: string, pageId?: string) {
-  const token = pageId ? await getPageToken(pageId) : systemUserToken;
+// Send media attachment via Facebook Send API using page token from DB
+async function sendAttachment(psid: string, type: string, url: string, pageId: string) {
+  const token = await getPageToken(pageId);
+  
+  if (!token) {
+    console.error(`Cannot send attachment - no token for page ${pageId}`);
+    return { error: { error: { message: 'No page token available. Please sync pages first.', code: 'NO_TOKEN' } } };
+  }
+  
   const apiUrl = `https://graph.facebook.com/v18.0/me/messages?access_token=${token}`;
   
   const response = await fetch(apiUrl, {
@@ -330,9 +370,9 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
       isNewCustomer = true;
       console.log(`Creating new customer for messenger_id: ${senderId}`);
       
-      console.log(`Fetching Facebook profile for ${senderId}`);
+      console.log(`Fetching Facebook profile for ${senderId} on page ${pageId}`);
       const profile = await getUserProfile(senderId, pageId);
-      console.log(`Profile fetch result:`, profile ? 'Success' : 'Failed');
+      console.log(`Profile fetch result:`, profile ? `Success: ${profile.first_name} ${profile.last_name}` : 'Failed');
       
       const customerData = {
         messenger_id: senderId,
@@ -522,10 +562,20 @@ serve(async (req) => {
   // Health check endpoint
   if (url.pathname.endsWith('/health')) {
     console.log('Health check requested');
+    
+    // Check token status
+    const tokens = await fetchPageTokens();
+    
     return new Response(JSON.stringify({ 
       status: 'healthy', 
       timestamp: new Date().toISOString(),
-      service: 'messenger-webhook'
+      service: 'messenger-webhook',
+      config: {
+        systemUserToken: systemUserToken ? 'configured' : 'missing',
+        appSecret: appSecret ? 'configured' : 'missing (signature verification disabled)',
+        verifyToken: verifyToken ? 'configured' : 'missing',
+        pageTokensInDB: tokens.size
+      }
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -558,7 +608,14 @@ serve(async (req) => {
         });
       }
       
-      // Fallback to Facebook API
+      // Fallback to Facebook API using System User Token for initial discovery
+      if (!systemUserToken) {
+        return new Response(JSON.stringify({ error: 'No System User Token configured', pages: [] }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
       const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token,category,picture&access_token=${systemUserToken}`;
       const response = await fetch(pagesUrl);
       
@@ -666,14 +723,19 @@ serve(async (req) => {
     console.log('POST request received');
     console.log('Signature present:', !!signature);
     console.log('Body length:', body.length);
+    console.log('Body preview (first 200 chars):', body.substring(0, 200));
     
     if (signature) {
       const isValid = await verifySignature(body, signature);
       if (!isValid) {
-        console.error('Invalid signature');
+        console.error('Invalid signature - Request rejected');
+        console.error('This usually means FACEBOOK_APP_SECRET is incorrect or outdated.');
+        console.error('Please verify your App Secret in Facebook Developer Console matches the secret in Supabase.');
         return new Response('Forbidden', { status: 403, headers: corsHeaders });
       }
       console.log('Signature verified successfully');
+    } else {
+      console.warn('No signature header - Request may not be from Facebook');
     }
     
     const data = JSON.parse(body);
@@ -685,6 +747,13 @@ serve(async (req) => {
       
       if (!psid || !text) {
         return new Response(JSON.stringify({ error: 'Missing psid or text' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      if (!page_id) {
+        return new Response(JSON.stringify({ error: 'Missing page_id - required to send messages' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
@@ -727,7 +796,7 @@ serve(async (req) => {
       if (result?.error) {
         const fbError = result.error.error;
         
-        if (fbError.code === 10 && fbError.error_subcode === 2018278) {
+        if (fbError?.code === 10 && fbError?.error_subcode === 2018278) {
           return new Response(JSON.stringify({ 
             error: 'Cannot send message: 24-hour messaging window has expired. Wait for customer to message first.',
             code: 'MESSAGING_WINDOW_EXPIRED',
@@ -739,9 +808,9 @@ serve(async (req) => {
         }
         
         return new Response(JSON.stringify({ 
-          error: fbError.message,
-          code: fbError.code,
-          type: fbError.type
+          error: fbError?.message || 'Unknown error',
+          code: fbError?.code || 'UNKNOWN',
+          type: fbError?.type
         }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -781,6 +850,13 @@ serve(async (req) => {
       
       if (!psid || !media_url || !media_type) {
         return new Response(JSON.stringify({ error: 'Missing psid, media_url, or media_type' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      if (!page_id) {
+        return new Response(JSON.stringify({ error: 'Missing page_id - required to send media' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
@@ -832,7 +908,7 @@ serve(async (req) => {
       if (result?.error) {
         const fbError = result.error.error;
         
-        if (fbError.code === 10 && fbError.error_subcode === 2018278) {
+        if (fbError?.code === 10 && fbError?.error_subcode === 2018278) {
           return new Response(JSON.stringify({ 
             error: 'Cannot send media: 24-hour messaging window has expired.',
             code: 'MESSAGING_WINDOW_EXPIRED',
@@ -844,9 +920,9 @@ serve(async (req) => {
         }
         
         return new Response(JSON.stringify({ 
-          error: fbError.message,
-          code: fbError.code,
-          type: fbError.type
+          error: fbError?.message || 'Unknown error',
+          code: fbError?.code || 'UNKNOWN',
+          type: fbError?.type
         }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -891,7 +967,7 @@ serve(async (req) => {
         const currentPageId = entry.id;
         console.log(`Processing page ${currentPageId} with ${entry.messaging?.length || 0} messaging events`);
         
-        for (const event of entry.messaging) {
+        for (const event of entry.messaging || []) {
           const senderId = event.sender.id;
           const recipientId = event.recipient.id;
           console.log(`[Page ${currentPageId}] Event from sender ${senderId}:`, JSON.stringify(event, null, 2));
