@@ -169,14 +169,25 @@ async function verifySignature(payload: string, signature: string): Promise<bool
 async function getUserProfile(psid: string, pageId?: string) {
   const token = pageId ? await getPageToken(pageId) : systemUserToken;
   const url = `https://graph.facebook.com/v18.0/${psid}?fields=first_name,last_name,profile_pic,locale,timezone&access_token=${token}`;
-  const response = await fetch(url);
   
-  if (!response.ok) {
-    console.error("Failed to fetch user profile:", await response.text());
+  try {
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Failed to fetch user profile:", errorText);
+      // Check if it's a permission error
+      if (errorText.includes('pages_messaging') || errorText.includes('permission')) {
+        console.warn("Note: Your Facebook App needs 'pages_messaging' permission to fetch user profiles. Request this permission in Facebook App Review.");
+      }
+      return null;
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching user profile:", error);
     return null;
   }
-  
-  return await response.json();
 }
 
 // Send message via Facebook Send API (uses page token)
