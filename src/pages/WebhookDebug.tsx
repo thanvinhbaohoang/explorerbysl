@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCw, Activity, Database, MessageSquare, CheckCircle, XCircle } from "lucide-react";
+import { RefreshCw, Activity, Database, MessageSquare, CheckCircle, XCircle, Globe, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 interface Customer {
@@ -27,14 +27,28 @@ interface Message {
   timestamp: string;
 }
 
+interface WebhookInfo {
+  status: 'unknown' | 'success' | 'error';
+  multiPageSupport: boolean;
+  verifyTokenSet: boolean;
+  pageAccessTokenSet: boolean;
+}
+
 const WebhookDebug = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
-  const [webhookStatus, setWebhookStatus] = useState<'unknown' | 'success' | 'error'>('unknown');
+  const [webhookInfo, setWebhookInfo] = useState<WebhookInfo>({
+    status: 'unknown',
+    multiPageSupport: true,
+    verifyTokenSet: false,
+    pageAccessTokenSet: false,
+  });
+  const [uniquePages, setUniquePages] = useState<string[]>([]);
   
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/messenger-webhook`;
+  const verifyToken = "Your FACEBOOK_VERIFY_TOKEN secret value";
 
   const fetchData = async () => {
     setLoading(true);
@@ -58,13 +72,32 @@ const WebhookDebug = () => {
       .from('messages')
       .select('*')
       .order('timestamp', { ascending: false })
-      .limit(20);
+      .limit(50);
     
     if (messagesError) {
       console.error('Error fetching messages:', messagesError);
       toast.error('Failed to fetch messages');
     } else {
       setMessages(messagesData || []);
+    }
+    
+    // Fetch leads to get unique page references
+    const { data: leadsData } = await supabase
+      .from('telegram_leads')
+      .select('messenger_ref, messenger_ad_context')
+      .eq('platform', 'messenger')
+      .limit(100);
+    
+    if (leadsData) {
+      // Extract unique page info from ad contexts
+      const pages = new Set<string>();
+      leadsData.forEach(lead => {
+        if (lead.messenger_ad_context && typeof lead.messenger_ad_context === 'object') {
+          const ctx = lead.messenger_ad_context as any;
+          if (ctx.page_id) pages.add(ctx.page_id);
+        }
+      });
+      setUniquePages(Array.from(pages));
     }
     
     setLoading(false);
@@ -78,19 +111,30 @@ const WebhookDebug = () => {
       });
       
       if (response.ok) {
-        setWebhookStatus('success');
+        const data = await response.json().catch(() => ({}));
+        setWebhookInfo(prev => ({
+          ...prev,
+          status: 'success',
+          verifyTokenSet: data.verifyTokenSet ?? true,
+          pageAccessTokenSet: data.pageAccessTokenSet ?? true,
+        }));
         toast.success('Webhook is responding!');
       } else {
-        setWebhookStatus('error');
+        setWebhookInfo(prev => ({ ...prev, status: 'error' }));
         toast.error(`Webhook error: ${response.status}`);
       }
     } catch (error) {
-      setWebhookStatus('error');
+      setWebhookInfo(prev => ({ ...prev, status: 'error' }));
       toast.error('Failed to reach webhook');
       console.error('Webhook test error:', error);
     } finally {
       setTesting(false);
     }
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied to clipboard`);
   };
 
   useEffect(() => {
@@ -120,6 +164,72 @@ const WebhookDebug = () => {
           </Button>
         </div>
 
+        {/* Webhook Configuration */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              Webhook Configuration
+            </CardTitle>
+            <CardDescription>Use these values to configure your Facebook App webhook</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="p-4 bg-muted rounded-lg space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Callback URL</p>
+                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard(webhookUrl, 'Callback URL')}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs font-mono break-all text-muted-foreground">{webhookUrl}</p>
+              </div>
+              <div className="p-4 bg-muted rounded-lg space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Verify Token</p>
+                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard(verifyToken, 'Verify Token')}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs font-mono text-muted-foreground">Use your FACEBOOK_VERIFY_TOKEN secret value</p>
+              </div>
+            </div>
+            <div className="p-4 border rounded-lg space-y-2">
+              <p className="text-sm font-medium">Multi-Page Support</p>
+              <div className="flex items-center gap-2">
+                <Badge className="bg-green-500/10 text-green-500">
+                  <CheckCircle className="mr-1 h-3 w-3" />
+                  Enabled
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  Webhook dynamically handles messages from any subscribed page
+                </span>
+              </div>
+            </div>
+            <div className="p-4 border rounded-lg space-y-2">
+              <p className="text-sm font-medium">Required Webhook Events</p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline">messages</Badge>
+                <Badge variant="outline">messaging_postbacks</Badge>
+                <Badge variant="outline">messaging_referrals</Badge>
+                <Badge variant="outline">message_reads</Badge>
+              </div>
+            </div>
+            {uniquePages.length > 0 && (
+              <div className="p-4 border rounded-lg space-y-2">
+                <p className="text-sm font-medium">Connected Pages (from leads)</p>
+                <div className="flex flex-wrap gap-2">
+                  {uniquePages.map(pageId => (
+                    <Badge key={pageId} variant="secondary" className="font-mono">
+                      {pageId}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Webhook Status */}
         <div className="grid gap-6 md:grid-cols-3">
           <Card>
@@ -132,29 +242,25 @@ const WebhookDebug = () => {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Status</span>
-                {webhookStatus === 'success' && (
+                {webhookInfo.status === 'success' && (
                   <Badge className="bg-green-500/10 text-green-500 hover:bg-green-500/20">
                     <CheckCircle className="mr-1 h-3 w-3" />
                     Active
                   </Badge>
                 )}
-                {webhookStatus === 'error' && (
+                {webhookInfo.status === 'error' && (
                   <Badge className="bg-red-500/10 text-red-500 hover:bg-red-500/20">
                     <XCircle className="mr-1 h-3 w-3" />
                     Error
                   </Badge>
                 )}
-                {webhookStatus === 'unknown' && (
+                {webhookInfo.status === 'unknown' && (
                   <Badge variant="secondary">Unknown</Badge>
                 )}
               </div>
               <Button onClick={testWebhook} disabled={testing} className="w-full">
                 {testing ? 'Testing...' : 'Test Connection'}
               </Button>
-              <div className="p-3 bg-muted rounded-lg">
-                <p className="text-xs text-muted-foreground mb-1">Webhook URL:</p>
-                <p className="text-xs font-mono break-all">{webhookUrl}</p>
-              </div>
             </CardContent>
           </Card>
 
