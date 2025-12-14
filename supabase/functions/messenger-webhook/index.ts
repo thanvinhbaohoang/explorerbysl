@@ -8,11 +8,10 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-// Use unified System User Token for all Facebook API operations
-const pageAccessToken = Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN') || Deno.env.get('FACEBOOK_PAGE_ACCESS_TOKEN')!;
+const pageAccessToken = Deno.env.get('FACEBOOK_PAGE_ACCESS_TOKEN')!;
 const appSecret = Deno.env.get('FACEBOOK_APP_SECRET')!;
 const verifyToken = Deno.env.get('FACEBOOK_VERIFY_TOKEN')!;
-// Multiple pages supported - page ID is extracted dynamically from webhook payload
+const pageId = '561589463698263'; // Facebook Page ID to filter echo messages
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -668,18 +667,14 @@ serve(async (req) => {
     if (data.object === 'page') {
       console.log(`Processing ${data.entry.length} page entries`);
       for (const entry of data.entry) {
-        // Extract page ID dynamically from entry - supports multiple pages
-        const currentPageId = entry.id;
-        console.log(`Processing page ${currentPageId} with ${entry.messaging?.length || 0} messaging events`);
-        
+        console.log(`Processing ${entry.messaging?.length || 0} messaging events`);
         for (const event of entry.messaging) {
           const senderId = event.sender.id;
           const recipientId = event.recipient.id;
-          console.log(`[Page ${currentPageId}] Event from sender ${senderId}:`, JSON.stringify(event, null, 2));
+          console.log(`Event from sender ${senderId}:`, JSON.stringify(event, null, 2));
           
           // Handle messages sent by the page (employee) through Messenger app
-          // Compare senderId with currentPageId (dynamic per-entry)
-          if (senderId === currentPageId && event.message) {
+          if (senderId === pageId && event.message) {
             // Check if this is an echo of a message we already sent via our interface
             const isEcho = event.message.is_echo === true;
             
@@ -697,7 +692,7 @@ serve(async (req) => {
               }
               
               // This is a message sent directly through Messenger by employee
-              console.log(`Employee message sent via Messenger app on page ${currentPageId}`);
+              console.log('Employee message sent via Messenger app');
               
               // Get the recipient (customer) info
               const { data: customer } = await supabase
@@ -729,7 +724,7 @@ serve(async (req) => {
           }
           
           // Skip other page-related events
-          if (senderId === currentPageId) {
+          if (senderId === pageId) {
             console.log('Skipping other page event');
             continue;
           }

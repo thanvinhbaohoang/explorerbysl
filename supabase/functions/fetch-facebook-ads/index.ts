@@ -54,8 +54,7 @@ serve(async (req) => {
     const { startDate, endDate, level, adId } = await req.json();
     
     const accountId = Deno.env.get('FACEBOOK_AD_ACCOUNT_ID');
-    // Use unified System User Token for all Facebook API operations
-    const accessToken = Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN') || Deno.env.get('FACEBOOK_ACCESS_TOKEN');
+    const accessToken = Deno.env.get('FACEBOOK_ACCESS_TOKEN');
 
     if (!accountId || !accessToken) {
       console.error('Missing Facebook credentials');
