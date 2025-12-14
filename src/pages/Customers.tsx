@@ -1320,26 +1320,10 @@ const Customers = () => {
               }
             }, 100);
           } else {
-            // Invalidate cache for this customer so next open shows fresh messages
-            setMessagesCache((cache) => {
-              const newCache = { ...cache };
-              // Find and delete any cache keys that include this customer_id
-              Object.keys(newCache).forEach(key => {
-                if (key.includes(newMessage.customer_id)) {
-                  delete newCache[key];
-                }
-              });
-              return newCache;
-            });
-            setMessageMetaCache((cache) => {
-              const newCache = { ...cache };
-              Object.keys(newCache).forEach(key => {
-                if (key.includes(newMessage.customer_id)) {
-                  delete newCache[key];
-                }
-              });
-              return newCache;
-            });
+            // Invalidate ALL caches to ensure fresh data on next open
+            // This is simpler and more reliable than trying to match customer IDs in cache keys
+            setMessagesCache({});
+            setMessageMetaCache({});
             
             // Show toast notification for customer messages
             if (newMessage.sender_type === "customer") {
