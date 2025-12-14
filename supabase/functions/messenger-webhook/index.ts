@@ -8,7 +8,8 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const pageAccessToken = Deno.env.get('FACEBOOK_PAGE_ACCESS_TOKEN')!;
+// Use unified System User Token for all Facebook API operations
+const pageAccessToken = Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN') || Deno.env.get('FACEBOOK_PAGE_ACCESS_TOKEN')!;
 const appSecret = Deno.env.get('FACEBOOK_APP_SECRET')!;
 const verifyToken = Deno.env.get('FACEBOOK_VERIFY_TOKEN')!;
 const pageId = Deno.env.get('FACEBOOK_PAGE_ID') || ''; // Facebook Page ID to filter echo messages
