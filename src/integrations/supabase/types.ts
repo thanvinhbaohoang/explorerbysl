@@ -28,6 +28,7 @@ export type Database = {
           messenger_id: string | null
           messenger_name: string | null
           messenger_profile_pic: string | null
+          page_id: string | null
           telegram_id: number | null
           timezone_offset: number | null
           updated_at: string
@@ -46,6 +47,7 @@ export type Database = {
           messenger_id?: string | null
           messenger_name?: string | null
           messenger_profile_pic?: string | null
+          page_id?: string | null
           telegram_id?: number | null
           timezone_offset?: number | null
           updated_at?: string
@@ -64,6 +66,7 @@ export type Database = {
           messenger_id?: string | null
           messenger_name?: string | null
           messenger_profile_pic?: string | null
+          page_id?: string | null
           telegram_id?: number | null
           timezone_offset?: number | null
           updated_at?: string

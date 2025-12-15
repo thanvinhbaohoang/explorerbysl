@@ -56,6 +56,7 @@ interface Customer {
   locale: string | null;
   timezone_offset: number | null;
   linked_customer_id: string | null;
+  page_id: string | null;
   lead_source?: {
     messenger_ref?: string;
     campaign_name?: string;
@@ -114,7 +115,7 @@ const Customers = () => {
   const [messagesCache, setMessagesCache] = useState<Record<string, Message[]>>({});
   const [messageMetaCache, setMessageMetaCache] = useState<Record<string, { offset: number; hasMore: boolean }>>({});
   const [linkedCustomerIds, setLinkedCustomerIds] = useState<string[]>([]);
-  const [linkedCustomersMap, setLinkedCustomersMap] = useState<Record<string, { name: string; platform: string; telegram_id: number | null; messenger_id: string | null }>>({});
+  const [linkedCustomersMap, setLinkedCustomersMap] = useState<Record<string, { name: string; platform: string; telegram_id: number | null; messenger_id: string | null; page_id: string | null }>>({});
   const [platformFilter, setPlatformFilter] = useState<'telegram' | 'messenger' | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -169,6 +170,7 @@ const Customers = () => {
       id: customerId,
       messenger_id: info.messenger_id,
       telegram_id: info.telegram_id,
+      page_id: info.page_id,
     } as Customer;
   }, [platformFilter, linkedCustomersMap, selectedCustomer, linkedCustomerIds]);
 
@@ -412,6 +414,7 @@ const Customers = () => {
             psid: customerToReply.messenger_id,
             text: messageToSend,
             sent_by_name: employeeName,
+            page_id: customerToReply.page_id,
           },
         });
       } else {
@@ -603,6 +606,7 @@ const Customers = () => {
             media_type: mediaType,
             caption,
             sent_by_name: employeeName,
+            page_id: customerToReply.page_id,
           },
         });
       } else {
@@ -862,6 +866,7 @@ const Customers = () => {
             media_url: mediaUrl,
             media_type: 'audio',
             sent_by_name: employeeName,
+            page_id: customerToReply.page_id,
           },
         });
       } else {
@@ -933,14 +938,15 @@ const Customers = () => {
     
     // Fetch linked customer IDs first
     const allCustomerIds = [customer.id];
-    const linkedMap: Record<string, { name: string; platform: string; telegram_id: number | null; messenger_id: string | null }> = {};
+    const linkedMap: Record<string, { name: string; platform: string; telegram_id: number | null; messenger_id: string | null; page_id: string | null }> = {};
     
     // Add current customer to map
     linkedMap[customer.id] = {
       name: customer.messenger_name || `${customer.first_name || ""} ${customer.last_name || ""}`.trim() || "Unknown",
       platform: customer.messenger_id ? "messenger" : "telegram",
       telegram_id: customer.telegram_id,
-      messenger_id: customer.messenger_id
+      messenger_id: customer.messenger_id,
+      page_id: customer.page_id
     };
     
     try {
@@ -949,7 +955,7 @@ const Customers = () => {
         allCustomerIds.push(customer.linked_customer_id);
         const { data: primary } = await supabase
           .from("customer")
-          .select("id, first_name, last_name, messenger_name, messenger_id, telegram_id")
+          .select("id, first_name, last_name, messenger_name, messenger_id, telegram_id, page_id")
           .eq("id", customer.linked_customer_id)
           .maybeSingle();
         
@@ -958,7 +964,8 @@ const Customers = () => {
             name: primary.messenger_name || `${primary.first_name || ""} ${primary.last_name || ""}`.trim() || "Unknown",
             platform: primary.messenger_id ? "messenger" : "telegram",
             telegram_id: primary.telegram_id,
-            messenger_id: primary.messenger_id
+            messenger_id: primary.messenger_id,
+            page_id: primary.page_id
           };
         }
       }
@@ -966,7 +973,7 @@ const Customers = () => {
       // Find customers that link to this one
       const { data: linkedToThis } = await supabase
         .from("customer")
-        .select("id, first_name, last_name, messenger_name, messenger_id, telegram_id")
+        .select("id, first_name, last_name, messenger_name, messenger_id, telegram_id, page_id")
         .eq("linked_customer_id", customer.id);
       
       if (linkedToThis) {
@@ -976,7 +983,8 @@ const Customers = () => {
             name: linked.messenger_name || `${linked.first_name || ""} ${linked.last_name || ""}`.trim() || "Unknown",
             platform: linked.messenger_id ? "messenger" : "telegram",
             telegram_id: linked.telegram_id,
-            messenger_id: linked.messenger_id
+            messenger_id: linked.messenger_id,
+            page_id: linked.page_id
           };
         });
       }

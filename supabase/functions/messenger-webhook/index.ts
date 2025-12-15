@@ -410,6 +410,7 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
         locale: profile?.locale || null,
         timezone_offset: profile?.timezone || null,
         first_message_at: new Date().toISOString(),
+        page_id: pageId,
       };
       console.log(`Inserting customer:`, customerData);
       
