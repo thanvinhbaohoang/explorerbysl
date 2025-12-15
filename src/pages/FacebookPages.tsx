@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, Eye, EyeOff, Copy, Check, MessageSquare } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, Eye, EyeOff, Copy, Check, MessageSquare, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-
+import { useUserRole } from "@/hooks/useUserRole";
 interface FacebookPage {
   id: string;
   name: string;
@@ -26,6 +26,7 @@ interface PageToken {
 
 const FacebookPages = () => {
   const navigate = useNavigate();
+  const { isAdmin, isLoading: roleLoading } = useUserRole();
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [tokens, setTokens] = useState<PageToken[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -293,8 +294,8 @@ const FacebookPages = () => {
                             )}
                           </div>
 
-                          {/* Token Section */}
-                          {token && (
+                          {/* Token Section - Admin Only */}
+                          {isAdmin && token && (
                             <div className="mt-4 p-3 bg-muted/50 rounded-lg">
                               <div className="flex items-center justify-between mb-2">
                                 <span className="text-sm font-medium">Access Token</span>
@@ -334,6 +335,13 @@ const FacebookPages = () => {
                                   Expires: {new Date(token.expiresAt).toLocaleString()}
                                 </p>
                               )}
+                            </div>
+                          )}
+
+                          {!isAdmin && token && (
+                            <div className="mt-4 p-3 bg-muted/50 rounded-lg flex items-center gap-2 text-muted-foreground">
+                              <ShieldAlert className="h-4 w-4" />
+                              <span className="text-sm">Access tokens are only visible to admins</span>
                             </div>
                           )}
 
@@ -393,17 +401,19 @@ const FacebookPages = () => {
                   The webhook uses stored tokens for messaging. Falls back to Facebook API if database is empty.
                 </p>
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
-                    4
+              {isAdmin && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
+                      4
+                    </div>
+                    <span className="font-medium">Copy Tokens</span>
                   </div>
-                  <span className="font-medium">Copy Tokens</span>
+                  <p className="text-sm text-muted-foreground pl-10">
+                    Use the eye icon to reveal tokens and copy button to copy them for external use.
+                  </p>
                 </div>
-                <p className="text-sm text-muted-foreground pl-10">
-                  Use the eye icon to reveal tokens and copy button to copy them for external use.
-                </p>
-              </div>
+              )}
             </div>
           </CardContent>
         </Card>
