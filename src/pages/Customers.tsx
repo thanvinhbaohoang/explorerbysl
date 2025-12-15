@@ -409,6 +409,12 @@ const Customers = () => {
       
       if (platform === 'messenger') {
         // Send via Messenger webhook
+        console.log("Sending Messenger message with:", {
+          psid: customerToReply.messenger_id,
+          text: messageToSend,
+          sent_by_name: employeeName,
+          page_id: customerToReply.page_id,
+        });
         response = await supabase.functions.invoke("messenger-webhook", {
           body: {
             psid: customerToReply.messenger_id,
