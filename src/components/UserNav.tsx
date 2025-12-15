@@ -1,5 +1,7 @@
 import { useAuth } from "@/contexts/AuthContext";
+import { useUserRole } from "@/hooks/useUserRole";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,11 +11,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, User } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const UserNav = () => {
   const { user, signOut } = useAuth();
+  const { isAdmin, isLoading } = useUserRole();
   const navigate = useNavigate();
 
   if (!user) return null;
@@ -47,8 +50,15 @@ const UserNav = () => {
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col space-y-1">
-            <p className="text-sm font-medium leading-none">{userName}</p>
+          <div className="flex flex-col space-y-2">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium leading-none">{userName}</p>
+              {!isLoading && isAdmin && (
+                <Badge variant="destructive" className="text-xs px-1.5 py-0">
+                  Admin
+                </Badge>
+              )}
+            </div>
             <p className="text-xs leading-none text-muted-foreground">
               {userEmail}
             </p>
