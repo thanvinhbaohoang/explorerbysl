@@ -2,23 +2,36 @@ import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import UserNav from "@/components/UserNav";
 import { useAuth } from "@/contexts/AuthContext";
+import { useUserRole } from "@/hooks/useUserRole";
 import { cn } from "@/lib/utils";
 
 interface AppLayoutProps {
   children: ReactNode;
 }
 
-const navLinks = [
+interface NavLink {
+  href: string;
+  label: string;
+  adminOnly?: boolean;
+}
+
+const navLinks: NavLink[] = [
   { href: "/customers", label: "Customers" },
   { href: "/traffic", label: "Traffic" },
   { href: "/ads-insight", label: "Ads Insight" },
-  { href: "/facebook-pages", label: "Pages" },
-  { href: "/monday-import", label: "Import" },
+  { href: "/facebook-pages", label: "Pages", adminOnly: true },
+  { href: "/monday-import", label: "Import", adminOnly: true },
+  { href: "/user-roles", label: "Roles", adminOnly: true },
 ];
 
 const AppLayout = ({ children }: AppLayoutProps) => {
   const { user } = useAuth();
+  const { isAdmin } = useUserRole();
   const location = useLocation();
+
+  const filteredNavLinks = navLinks.filter(
+    (link) => !link.adminOnly || isAdmin
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -29,7 +42,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               ExplorerBySL
             </Link>
             <nav className="flex-1 flex items-center justify-center gap-6">
-              {navLinks.map((link) => (
+              {filteredNavLinks.map((link) => (
                 <Link
                   key={link.href}
                   to={link.href}

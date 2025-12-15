@@ -21,6 +21,7 @@ import MediaGallery from "./pages/MediaGallery";
 import Auth from "./pages/Auth";
 import MondayImport from "./pages/MondayImport";
 import FacebookPages from "./pages/FacebookPages";
+import UserRoles from "./pages/UserRoles";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,6 +53,7 @@ const App = () => (
               <Route path="/media-gallery" element={<ProtectedRoute><MediaGallery /></ProtectedRoute>} />
               <Route path="/monday-import" element={<ProtectedRoute><MondayImport /></ProtectedRoute>} />
               <Route path="/facebook-pages" element={<ProtectedRoute><FacebookPages /></ProtectedRoute>} />
+              <Route path="/user-roles" element={<ProtectedRoute><UserRoles /></ProtectedRoute>} />
               
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
