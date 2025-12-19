@@ -18,9 +18,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Trash2, Plus, Shield } from "lucide-react";
+import { Trash2, Plus, Shield, User } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
@@ -32,12 +33,34 @@ interface UserRole {
   created_at: string | null;
 }
 
+interface UserInfo {
+  email: string;
+  name: string | null;
+  avatar_url: string | null;
+}
+
 const UserRoles = () => {
   const { isAdmin, isLoading: roleLoading } = useUserRole();
   const [roles, setRoles] = useState<UserRole[]>([]);
+  const [usersInfo, setUsersInfo] = useState<Record<string, UserInfo>>({});
   const [loading, setLoading] = useState(true);
   const [newUserId, setNewUserId] = useState("");
   const [newRole, setNewRole] = useState<AppRole>("user");
+
+  const fetchUsersInfo = async (userIds: string[]) => {
+    if (userIds.length === 0) return;
+
+    try {
+      const { data, error } = await supabase.functions.invoke("get-users-info", {
+        body: { user_ids: userIds },
+      });
+
+      if (error) throw error;
+      setUsersInfo(data.users || {});
+    } catch (error) {
+      console.error("Failed to fetch users info:", error);
+    }
+  };
 
   const fetchRoles = async () => {
     const { data, error } = await supabase
@@ -49,8 +72,14 @@ const UserRoles = () => {
       toast.error("Failed to fetch roles");
       return;
     }
+    
     setRoles(data || []);
     setLoading(false);
+
+    const userIds = data?.map((r) => r.user_id) || [];
+    if (userIds.length > 0) {
+      fetchUsersInfo(userIds);
+    }
   };
 
   useEffect(() => {
@@ -80,6 +109,23 @@ const UserRoles = () => {
     fetchRoles();
   };
 
+  const updateRole = async (id: string, newRoleValue: AppRole) => {
+    const { error } = await supabase
+      .from("user_roles")
+      .update({ role: newRoleValue })
+      .eq("id", id);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    toast.success("Role updated");
+    setRoles((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, role: newRoleValue } : r))
+    );
+  };
+
   const deleteRole = async (id: string) => {
     const { error } = await supabase.from("user_roles").delete().eq("id", id);
 
@@ -101,6 +147,18 @@ const UserRoles = () => {
       default:
         return "secondary";
     }
+  };
+
+  const getInitials = (name: string | null, email: string) => {
+    if (name) {
+      return name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2);
+    }
+    return email.slice(0, 2).toUpperCase();
   };
 
   if (roleLoading) {
@@ -169,7 +227,7 @@ const UserRoles = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>User ID</TableHead>
+              <TableHead>User</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Created At</TableHead>
               <TableHead className="w-20">Actions</TableHead>
@@ -189,30 +247,72 @@ const UserRoles = () => {
                 </TableCell>
               </TableRow>
             ) : (
-              roles.map((role) => (
-                <TableRow key={role.id}>
-                  <TableCell className="font-mono text-sm">{role.user_id}</TableCell>
-                  <TableCell>
-                    <Badge variant={getRoleBadgeVariant(role.role)}>
-                      {role.role}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {role.created_at
-                      ? new Date(role.created_at).toLocaleDateString()
-                      : "-"}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteRole(role.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
+              roles.map((role) => {
+                const userInfo = usersInfo[role.user_id];
+                return (
+                  <TableRow key={role.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage src={userInfo?.avatar_url || undefined} />
+                          <AvatarFallback>
+                            {userInfo ? (
+                              getInitials(userInfo.name, userInfo.email)
+                            ) : (
+                              <User className="h-4 w-4" />
+                            )}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex flex-col">
+                          <span className="font-medium">
+                            {userInfo?.name || "Unknown User"}
+                          </span>
+                          <span className="text-sm text-muted-foreground">
+                            {userInfo?.email || role.user_id}
+                          </span>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={role.role}
+                        onValueChange={(v) => updateRole(role.id, v as AppRole)}
+                      >
+                        <SelectTrigger className="w-32">
+                          <Badge variant={getRoleBadgeVariant(role.role)}>
+                            {role.role}
+                          </Badge>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="user">
+                            <Badge variant="secondary">user</Badge>
+                          </SelectItem>
+                          <SelectItem value="moderator">
+                            <Badge variant="default">moderator</Badge>
+                          </SelectItem>
+                          <SelectItem value="admin">
+                            <Badge variant="destructive">admin</Badge>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {role.created_at
+                        ? new Date(role.created_at).toLocaleDateString()
+                        : "-"}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteRole(role.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
