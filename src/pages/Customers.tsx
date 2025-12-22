@@ -174,9 +174,15 @@ const Customers = () => {
     } as Customer;
   }, [platformFilter, linkedCustomersMap, selectedCustomer, linkedCustomerIds]);
 
-  // Check if the current platform filter is Messenger and outside 24-hour window
-  const isCurrentPlatformMessengerOutsideWindow = useMemo(() => {
+  // Check if the current customer is Messenger and outside 24-hour window
+  const isMessengerOutsideWindow = useMemo(() => {
     const currentCustomer = replyCustomer || selectedCustomer;
+    
+    // Determine if we're dealing with a Messenger customer
+    const isMessenger = platformFilter === 'messenger' || 
+      (!platformFilter && currentCustomer?.messenger_id && !currentCustomer?.telegram_id);
+    
+    if (!isMessenger) return false;
     if (!currentCustomer?.messenger_id) return false;
     
     // Check if this customer has been flagged as expired from API error
@@ -190,7 +196,7 @@ const Customers = () => {
           const info = linkedCustomersMap[msg.customer_id];
           return info?.platform === platformFilter;
         })
-      : messages;
+      : messages.filter(msg => msg.platform === 'messenger');
     
     // Find last customer message for current platform
     const lastCustomerMessage = [...platformMessages]
@@ -202,6 +208,27 @@ const Customers = () => {
     const hoursSinceLastMessage = (Date.now() - new Date(lastCustomerMessage.timestamp).getTime()) / (1000 * 60 * 60);
     return hoursSinceLastMessage > 24;
   }, [replyCustomer, selectedCustomer, messages, platformFilter, linkedCustomersMap, expiredWindowCustomers]);
+
+  // Calculate hours since last customer message for display
+  const hoursSinceLastCustomerMessage = useMemo(() => {
+    const currentCustomer = replyCustomer || selectedCustomer;
+    if (!currentCustomer?.messenger_id) return null;
+    
+    const platformMessages = platformFilter 
+      ? messages.filter(msg => {
+          const info = linkedCustomersMap[msg.customer_id];
+          return info?.platform === platformFilter;
+        })
+      : messages.filter(msg => msg.platform === 'messenger');
+    
+    const lastCustomerMessage = [...platformMessages]
+      .reverse()
+      .find(msg => msg.sender_type === 'customer');
+    
+    if (!lastCustomerMessage) return null;
+    
+    return Math.floor((Date.now() - new Date(lastCustomerMessage.timestamp).getTime()) / (1000 * 60 * 60));
+  }, [replyCustomer, selectedCustomer, messages, platformFilter, linkedCustomersMap]);
 
 
   // Fetch last message sender for all customers
@@ -1851,11 +1878,13 @@ const Customers = () => {
           {selectedCustomer && (
             <div className="flex-shrink-0 pt-4 border-t">
               {/* 24-hour window warning for Messenger */}
-              {platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow && (
-                <Alert className="mb-3 border-amber-500/50 bg-amber-500/10">
-                  <AlertCircle className="h-4 w-4 text-amber-500" />
-                  <AlertDescription className="text-sm text-amber-600 dark:text-amber-500">
-                    This customer hasn't messaged in over 24 hours. Facebook's messaging policy prevents sending messages outside this window. Please reply directly on your Facebook Page inbox.
+              {isMessengerOutsideWindow && (
+                <Alert className="mb-3 border-destructive/50 bg-destructive/10">
+                  <AlertCircle className="h-4 w-4 text-destructive" />
+                  <AlertDescription className="text-sm text-destructive">
+                    <strong>Chat disabled:</strong> This customer hasn't messaged in {hoursSinceLastCustomerMessage ? `${hoursSinceLastCustomerMessage}+ hours` : 'over 24 hours'}. 
+                    Facebook's messaging policy prevents sending messages outside the 24-hour window. 
+                    Please reply directly on your Facebook Page inbox or wait for the customer to message you first.
                   </AlertDescription>
                 </Alert>
               )}
@@ -2000,7 +2029,7 @@ const Customers = () => {
                         <Button 
                           variant="outline" 
                           size="icon"
-                          disabled={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow || isUploadingFile}
+                          disabled={isMessengerOutsideWindow || isUploadingFile}
                         >
                           <Paperclip className="h-4 w-4" />
                         </Button>
@@ -2026,19 +2055,25 @@ const Customers = () => {
                       variant="outline" 
                       size="icon"
                       onClick={startRecording}
-                      disabled={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow || isUploadingFile || !!selectedFile}
+                      disabled={isMessengerOutsideWindow || isUploadingFile || !!selectedFile}
                       title="Record voice message"
                     >
                       <Mic className="h-4 w-4" />
                     </Button>
                     
                     <Input
-                      placeholder={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow ? "Chat disabled - reply on Facebook Page" : selectedFile ? "Add a caption (optional)..." : "Type your reply..."}
+                      placeholder={isMessengerOutsideWindow ? "Chat disabled - 24h window expired" : selectedFile ? "Add a caption (optional)..." : "Type your reply..."}
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
                       onKeyPress={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
+                          if (isMessengerOutsideWindow) {
+                            toast.error("Cannot send message: The 24-hour messaging window has expired. Wait for the customer to message you first.", {
+                              duration: 6000,
+                            });
+                            return;
+                          }
                           if (selectedFile) {
                             sendMedia();
                           } else {
@@ -2047,12 +2082,12 @@ const Customers = () => {
                         }
                       }}
                       autoFocus
-                      disabled={platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow}
+                      disabled={isMessengerOutsideWindow}
                       className="flex-1"
                     />
                     <Button 
                       onClick={selectedFile ? sendMedia : sendReply} 
-                      disabled={((!replyText.trim() && !selectedFile) || isSending || isUploadingFile || (platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow))}
+                      disabled={((!replyText.trim() && !selectedFile) || isSending || isUploadingFile || isMessengerOutsideWindow)}
                       size="icon"
                     >
                       {isUploadingFile ? (
@@ -2065,11 +2100,11 @@ const Customers = () => {
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                {platformFilter === 'messenger' && isCurrentPlatformMessengerOutsideWindow 
-                  ? 'Messaging disabled due to 24-hour policy' 
+                {isMessengerOutsideWindow 
+                  ? 'Messaging disabled - 24-hour window expired. Reply via Facebook Page inbox.' 
                   : selectedFile 
-                    ? `Press Enter to send ${getMediaType(selectedFile)} via ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}`
-                    : `Press Enter to send • This will be sent via ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}`}
+                    ? `Press Enter to send ${getMediaType(selectedFile)} via ${platformFilter === 'messenger' || (selectedCustomer?.messenger_id && !selectedCustomer?.telegram_id) ? 'Messenger' : 'Telegram'}`
+                    : `Press Enter to send • This will be sent via ${platformFilter === 'messenger' || (selectedCustomer?.messenger_id && !selectedCustomer?.telegram_id) ? 'Messenger' : 'Telegram'}`}
               </p>
             </div>
           )}
