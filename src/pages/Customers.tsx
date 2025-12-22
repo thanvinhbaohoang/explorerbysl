@@ -30,7 +30,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square, Play, Pause, Trash2 } from "lucide-react";
+import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square, Play, Pause, Trash2, Clock } from "lucide-react";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -209,10 +209,16 @@ const Customers = () => {
     return hoursSinceLastMessage > 24;
   }, [replyCustomer, selectedCustomer, messages, platformFilter, linkedCustomersMap, expiredWindowCustomers]);
 
-  // Calculate hours since last customer message for display
-  const hoursSinceLastCustomerMessage = useMemo(() => {
+  // Calculate remaining time in 24-hour window for display
+  const messengerWindowInfo = useMemo(() => {
     const currentCustomer = replyCustomer || selectedCustomer;
     if (!currentCustomer?.messenger_id) return null;
+    
+    // Determine if we're dealing with a Messenger customer
+    const isMessenger = platformFilter === 'messenger' || 
+      (!platformFilter && currentCustomer?.messenger_id && !currentCustomer?.telegram_id);
+    
+    if (!isMessenger) return null;
     
     const platformMessages = platformFilter 
       ? messages.filter(msg => {
@@ -227,7 +233,23 @@ const Customers = () => {
     
     if (!lastCustomerMessage) return null;
     
-    return Math.floor((Date.now() - new Date(lastCustomerMessage.timestamp).getTime()) / (1000 * 60 * 60));
+    const msSinceLastMessage = Date.now() - new Date(lastCustomerMessage.timestamp).getTime();
+    const hoursSince = msSinceLastMessage / (1000 * 60 * 60);
+    const hoursRemaining = 24 - hoursSince;
+    
+    if (hoursRemaining <= 0) {
+      return { expired: true, hoursSince: Math.floor(hoursSince), hoursRemaining: 0, minutesRemaining: 0 };
+    }
+    
+    const fullHoursRemaining = Math.floor(hoursRemaining);
+    const minutesRemaining = Math.floor((hoursRemaining - fullHoursRemaining) * 60);
+    
+    return { 
+      expired: false, 
+      hoursSince: Math.floor(hoursSince), 
+      hoursRemaining: fullHoursRemaining, 
+      minutesRemaining 
+    };
   }, [replyCustomer, selectedCustomer, messages, platformFilter, linkedCustomersMap]);
 
 
@@ -1877,16 +1899,30 @@ const Customers = () => {
           {/* Reply Input */}
           {selectedCustomer && (
             <div className="flex-shrink-0 pt-4 border-t">
-              {/* 24-hour window warning for Messenger */}
-              {isMessengerOutsideWindow && (
-                <Alert className="mb-3 border-destructive/50 bg-destructive/10">
-                  <AlertCircle className="h-4 w-4 text-destructive" />
-                  <AlertDescription className="text-sm text-destructive">
-                    <strong>Chat disabled:</strong> This customer hasn't messaged in {hoursSinceLastCustomerMessage ? `${hoursSinceLastCustomerMessage}+ hours` : 'over 24 hours'}. 
-                    Facebook's messaging policy prevents sending messages outside the 24-hour window. 
-                    Please reply directly on your Facebook Page inbox or wait for the customer to message you first.
-                  </AlertDescription>
-                </Alert>
+              {/* 24-hour window info for Messenger */}
+              {messengerWindowInfo && (
+                isMessengerOutsideWindow ? (
+                  <Alert className="mb-3 border-destructive/50 bg-destructive/10">
+                    <AlertCircle className="h-4 w-4 text-destructive" />
+                    <AlertDescription className="text-sm text-destructive">
+                      <strong>Chat disabled:</strong> This customer hasn't messaged in {messengerWindowInfo.hoursSince}+ hours. 
+                      Facebook's 24-hour messaging policy prevents replying here. 
+                      <span className="font-medium"> Reply directly via Facebook Messenger</span> or wait for the customer to message you first.
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <Alert className="mb-3 border-primary/30 bg-primary/5">
+                    <Clock className="h-4 w-4 text-primary" />
+                    <AlertDescription className="text-sm text-muted-foreground">
+                      <strong className="text-foreground">
+                        {messengerWindowInfo.hoursRemaining > 0 
+                          ? `${messengerWindowInfo.hoursRemaining}h ${messengerWindowInfo.minutesRemaining}m left to reply`
+                          : `${messengerWindowInfo.minutesRemaining}m left to reply`}
+                      </strong>
+                      {' '}— Facebook's 24-hour messaging window
+                    </AlertDescription>
+                  </Alert>
+                )
               )}
               
               {/* File Preview */}
@@ -2069,7 +2105,7 @@ const Customers = () => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
                           if (isMessengerOutsideWindow) {
-                            toast.error("Cannot send message: The 24-hour messaging window has expired. Wait for the customer to message you first.", {
+                            toast.error("Cannot send message: The 24-hour messaging window has expired. Please reply directly via Facebook Messenger or wait for the customer to message you first.", {
                               duration: 6000,
                             });
                             return;
@@ -2101,7 +2137,7 @@ const Customers = () => {
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 {isMessengerOutsideWindow 
-                  ? 'Messaging disabled - 24-hour window expired. Reply via Facebook Page inbox.' 
+                  ? 'Messaging disabled — Reply directly via Facebook Messenger app or wait for customer to message first.' 
                   : selectedFile 
                     ? `Press Enter to send ${getMediaType(selectedFile)} via ${platformFilter === 'messenger' || (selectedCustomer?.messenger_id && !selectedCustomer?.telegram_id) ? 'Messenger' : 'Telegram'}`
                     : `Press Enter to send • This will be sent via ${platformFilter === 'messenger' || (selectedCustomer?.messenger_id && !selectedCustomer?.telegram_id) ? 'Messenger' : 'Telegram'}`}
