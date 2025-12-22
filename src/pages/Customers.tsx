@@ -1579,57 +1579,37 @@ const Customers = () => {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-3xl h-[80vh] flex flex-col overflow-hidden">
           <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center gap-2">
-              <Badge variant={selectedCustomer?.messenger_id ? 'default' : 'secondary'}>
+            <DialogTitle className="flex items-center gap-3">
+              {selectedCustomer?.messenger_profile_pic ? (
+                <img 
+                  src={selectedCustomer.messenger_profile_pic} 
+                  alt="Profile"
+                  className="w-10 h-10 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                  <Users className="h-5 w-5 text-muted-foreground" />
+                </div>
+              )}
+              <span 
+                className="hover:underline cursor-pointer"
+                onClick={() => {
+                  setDialogOpen(false);
+                  navigate(`/customers/${selectedCustomer?.id}`);
+                }}
+              >
+                {selectedCustomer?.messenger_id 
+                  ? selectedCustomer.messenger_name 
+                  : `${selectedCustomer?.first_name || ''} ${selectedCustomer?.last_name || ''}`.trim() || 'Customer'}
+              </span>
+              <Badge variant={selectedCustomer?.messenger_id ? 'default' : 'secondary'} className="ml-auto">
                 {selectedCustomer?.messenger_id ? (
                   <><Facebook className="h-3 w-3 mr-1" /> Messenger</>
                 ) : (
                   <>Telegram</>
                 )}
               </Badge>
-              Messages from {selectedCustomer?.messenger_id 
-                ? selectedCustomer.messenger_name 
-                : `${selectedCustomer?.first_name || ''} ${selectedCustomer?.last_name || ''}`.trim()}
             </DialogTitle>
-            <DialogDescription asChild>
-              <div>
-                {selectedCustomer?.messenger_id ? (
-                  <div className="space-y-1">
-                    <div>PSID: {selectedCustomer.messenger_id}</div>
-                    {selectedCustomer.locale && (
-                      <div className="text-xs">Locale: {selectedCustomer.locale}</div>
-                    )}
-                    {selectedCustomer.timezone_offset !== null && (
-                      <div className="text-xs">
-                        Timezone: UTC{selectedCustomer.timezone_offset >= 0 ? '+' : ''}{selectedCustomer.timezone_offset}
-                      </div>
-                    )}
-                    {selectedCustomer.lead_source && (
-                      <div className="mt-2 pt-2 border-t space-y-1">
-                        <div className="text-xs font-semibold">Lead Source:</div>
-                        {selectedCustomer.lead_source.campaign_name && (
-                          <div className="text-xs">Campaign: {selectedCustomer.lead_source.campaign_name}</div>
-                        )}
-                        {selectedCustomer.lead_source.ad_name && (
-                          <div className="text-xs">Ad: {selectedCustomer.lead_source.ad_name}</div>
-                        )}
-                        {selectedCustomer.lead_source.messenger_ref && (
-                          <div className="text-xs">Post Ref: {selectedCustomer.lead_source.messenger_ref}</div>
-                        )}
-                        {selectedCustomer.lead_source.referrer && (
-                          <div className="text-xs">Source: {selectedCustomer.lead_source.referrer}</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <span>
-                    @{selectedCustomer?.username || "No username"} • Telegram ID:{" "}
-                    {selectedCustomer?.telegram_id}
-                  </span>
-                )}
-              </div>
-            </DialogDescription>
           </DialogHeader>
 
           {/* Platform Toggle for Linked Accounts */}
