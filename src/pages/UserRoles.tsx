@@ -47,44 +47,46 @@ const UserRoles = () => {
   const [newUserId, setNewUserId] = useState("");
   const [newRole, setNewRole] = useState<AppRole>("user");
 
-  const fetchUsersInfo = async (userIds: string[]) => {
-    if (userIds.length === 0) return;
-
-    try {
-      const { data, error } = await supabase.functions.invoke("get-users-info", {
-        body: { user_ids: userIds },
-      });
-
-      if (error) throw error;
-      setUsersInfo(data.users || {});
-    } catch (error) {
-      console.error("Failed to fetch users info:", error);
-    }
-  };
-
-  const fetchRoles = async () => {
-    const { data, error } = await supabase
+  const fetchRolesAndUsers = async () => {
+    setLoading(true);
+    
+    // Fetch roles first
+    const { data: rolesData, error: rolesError } = await supabase
       .from("user_roles")
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (error) {
+    if (rolesError) {
       toast.error("Failed to fetch roles");
+      setLoading(false);
       return;
     }
     
-    setRoles(data || []);
-    setLoading(false);
-
-    const userIds = data?.map((r) => r.user_id) || [];
+    const userIds = rolesData?.map((r) => r.user_id) || [];
+    
+    // Fetch user info in the same request cycle
     if (userIds.length > 0) {
-      fetchUsersInfo(userIds);
+      try {
+        const { data, error } = await supabase.functions.invoke("get-users-info", {
+          body: { user_ids: userIds },
+        });
+
+        if (!error && data?.users) {
+          setUsersInfo(data.users);
+        }
+      } catch (error) {
+        console.error("Failed to fetch users info:", error);
+      }
     }
+    
+    // Set roles and loading state together after all data is fetched
+    setRoles(rolesData || []);
+    setLoading(false);
   };
 
   useEffect(() => {
     if (isAdmin) {
-      fetchRoles();
+      fetchRolesAndUsers();
     }
   }, [isAdmin]);
 
@@ -106,7 +108,7 @@ const UserRoles = () => {
 
     toast.success("Role added successfully");
     setNewUserId("");
-    fetchRoles();
+    fetchRolesAndUsers();
   };
 
   const updateRole = async (id: string, newRoleValue: AppRole) => {
@@ -135,7 +137,7 @@ const UserRoles = () => {
     }
 
     toast.success("Role deleted");
-    fetchRoles();
+    fetchRolesAndUsers();
   };
 
   const getRoleBadgeVariant = (role: AppRole) => {
