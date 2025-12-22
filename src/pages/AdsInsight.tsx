@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BarChart3, TrendingUp, DollarSign, MousePointer, Eye, RefreshCw, ArrowLeft, Building2 } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { useNavigate } from "react-router-dom";
+import { useAdAccounts, useAccountInsights, useCampaigns, useAdSets, useAds } from "@/hooks/useAdsInsightData";
 
 interface Insight {
   impressions: string;
@@ -51,112 +52,37 @@ interface Ad {
   };
 }
 
-interface AdAccount {
-  id: string;
-  name: string;
-  account_status: number;
-  currency: string;
-  timezone_name: string;
-}
-
 const AdsInsight = () => {
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
-  const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
+  const queryClient = useQueryClient();
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [adSets, setAdSets] = useState<AdSet[]>([]);
-  const [ads, setAds] = useState<Ad[]>([]);
-  const [accountInsights, setAccountInsights] = useState<Insight[]>([]);
-  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [fetchAdSets, setFetchAdSets] = useState(false);
+  const [fetchAdsFlag, setFetchAdsFlag] = useState(false);
 
-  const fetchAdAccounts = async () => {
-    setIsLoadingAccounts(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('fetch-facebook-ads', {
-        body: { level: 'ad-accounts' },
-      });
+  // Use cached hooks
+  const { data: adAccounts = [], isLoading: isLoadingAccounts } = useAdAccounts();
+  const { data: accountInsights = [], isLoading: isLoadingInsights, dataUpdatedAt } = useAccountInsights(selectedAccountId);
+  const { data: campaigns = [], isLoading: isLoadingCampaigns } = useCampaigns(selectedAccountId);
+  const { data: adSets = [] } = useAdSets(selectedAccountId, fetchAdSets);
+  const { data: ads = [] } = useAds(selectedAccountId, fetchAdsFlag);
 
-      if (error) throw error;
-      if (data?.error) {
-        toast.error(data.error);
-        return;
-      }
+  const isLoading = isLoadingInsights || isLoadingCampaigns;
 
-      const accounts = data?.data || [];
-      setAdAccounts(accounts);
-      
-      // Auto-select first account if available
-      if (accounts.length > 0 && !selectedAccountId) {
-        setSelectedAccountId(accounts[0].id);
-      }
-    } catch (error: any) {
-      console.error('Error fetching ad accounts:', error);
-      toast.error('Failed to fetch ad accounts');
-    } finally {
-      setIsLoadingAccounts(false);
-    }
-  };
-
-  const fetchAdsData = async (level: 'account' | 'campaigns' | 'adsets' | 'ads') => {
-    if (!selectedAccountId) return;
-    
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('fetch-facebook-ads', {
-        body: {
-          level,
-          accountId: selectedAccountId,
-          startDate: '2024-01-01',
-          endDate: new Date().toISOString().split('T')[0],
-        },
-      });
-
-      if (error) throw error;
-
-      if (data?.error) {
-        toast.error(data.error);
-        return;
-      }
-
-      if (level === 'account' && data?.data?.data) {
-        setAccountInsights(data.data.data);
-      } else if (level === 'campaigns' && data?.data?.data) {
-        setCampaigns(data.data.data);
-      } else if (level === 'adsets' && data?.data?.data) {
-        setAdSets(data.data.data);
-      } else if (level === 'ads' && data?.data?.data) {
-        setAds(data.data.data);
-      }
-
-      setLastRefreshed(new Date());
-      toast.success(`${level} data refreshed successfully`);
-    } catch (error: any) {
-      console.error('Error fetching ads data:', error);
-      toast.error('Failed to fetch ads data');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+  // Auto-select first account when accounts load
   useEffect(() => {
-    fetchAdAccounts();
-  }, []);
-
-  useEffect(() => {
-    if (selectedAccountId) {
-      // Reset data when switching accounts
-      setCampaigns([]);
-      setAdSets([]);
-      setAds([]);
-      setAccountInsights([]);
-      
-      // Fetch data for selected account
-      fetchAdsData('account');
-      fetchAdsData('campaigns');
+    if (adAccounts.length > 0 && !selectedAccountId) {
+      setSelectedAccountId(adAccounts[0].id);
     }
-  }, [selectedAccountId]);
+  }, [adAccounts, selectedAccountId]);
+
+  // Refetch data for the selected account
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["account-insights", selectedAccountId] });
+    queryClient.invalidateQueries({ queryKey: ["campaigns", selectedAccountId] });
+    queryClient.invalidateQueries({ queryKey: ["adsets", selectedAccountId] });
+    queryClient.invalidateQueries({ queryKey: ["ads", selectedAccountId] });
+    toast.success("Refreshing data...");
+  };
 
   const calculateTotals = (insights: Insight[]) => {
     if (!insights || insights.length === 0) return { impressions: 0, clicks: 0, spend: 0, ctr: 0, cpc: 0 };
@@ -227,16 +153,13 @@ const AdsInsight = () => {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            {lastRefreshed && (
+            {dataUpdatedAt && (
               <span className="text-sm text-muted-foreground">
-                Last updated: {lastRefreshed.toLocaleTimeString()}
+                Last updated: {new Date(dataUpdatedAt).toLocaleTimeString()}
               </span>
             )}
             <Button
-              onClick={() => {
-                fetchAdsData('account');
-                fetchAdsData('campaigns');
-              }}
+              onClick={handleRefresh}
               disabled={isLoading || !selectedAccountId}
               variant="outline"
             >
@@ -354,10 +277,10 @@ const AdsInsight = () => {
                   <BarChart3 className="h-4 w-4 mr-2" />
                   Campaigns
                 </TabsTrigger>
-                <TabsTrigger value="adsets" onClick={() => adSets.length === 0 && fetchAdsData('adsets')}>
+                <TabsTrigger value="adsets" onClick={() => setFetchAdSets(true)}>
                   Ad Sets
                 </TabsTrigger>
-                <TabsTrigger value="ads" onClick={() => ads.length === 0 && fetchAdsData('ads')}>
+                <TabsTrigger value="ads" onClick={() => setFetchAdsFlag(true)}>
                   Individual Ads
                 </TabsTrigger>
               </TabsList>
