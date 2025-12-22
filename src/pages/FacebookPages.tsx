@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -16,6 +16,40 @@ interface FacebookPage {
   lastUpdated?: string;
 }
 
+interface AppInfo {
+  id: string;
+  name: string;
+  category?: string;
+  link?: string;
+  privacyPolicyUrl?: string;
+  dailyActiveUsers?: number;
+  weeklyActiveUsers?: number;
+  monthlyActiveUsers?: number;
+}
+
+interface SystemUserInfo {
+  id: string;
+  name: string;
+}
+
+interface BusinessInfo {
+  id: string;
+  name: string;
+  profilePicture?: string;
+  verificationStatus?: string;
+  link?: string;
+}
+
+interface TokenInfo {
+  appId: string;
+  userId: string;
+  type: string;
+  isValid: boolean;
+  expiresAt: string;
+  scopes: string[];
+  granularScopes?: any[];
+}
+
 const FacebookPages = () => {
   const navigate = useNavigate();
   const [pages, setPages] = useState<FacebookPage[]>([]);
@@ -24,6 +58,13 @@ const FacebookPages = () => {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<string>('');
+  
+  // App info state
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [systemUser, setSystemUser] = useState<SystemUserInfo | null>(null);
+  const [business, setBusiness] = useState<BusinessInfo | null>(null);
+  const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
+  const [appInfoLoading, setAppInfoLoading] = useState(true);
 
   const fetchPages = async () => {
     setIsLoading(true);
@@ -61,6 +102,36 @@ const FacebookPages = () => {
     }
   };
 
+  const fetchAppInfo = async () => {
+    setAppInfoLoading(true);
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/messenger-webhook/app-info`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) return;
+
+      const result = await response.json();
+      
+      if (result.success) {
+        setAppInfo(result.app);
+        setSystemUser(result.systemUser);
+        setBusiness(result.business);
+        setTokenInfo(result.token);
+      }
+    } catch (err: any) {
+      console.error('Error fetching app info:', err);
+    } finally {
+      setAppInfoLoading(false);
+    }
+  };
+
   const syncPages = async () => {
     setSyncing(true);
     try {
@@ -92,6 +163,7 @@ const FacebookPages = () => {
 
   useEffect(() => {
     fetchPages();
+    fetchAppInfo();
   }, []);
 
   return (
@@ -128,7 +200,7 @@ const FacebookPages = () => {
               {syncing ? 'Syncing...' : 'Sync to DB'}
             </Button>
             <Button
-              onClick={fetchPages}
+              onClick={() => { fetchPages(); fetchAppInfo(); }}
               disabled={isLoading}
               variant="outline"
             >
@@ -138,12 +210,144 @@ const FacebookPages = () => {
           </div>
         </div>
 
-        {/* Status Card */}
+        {/* App & Business Info Card */}
+        <div className="grid gap-4 md:grid-cols-2">
+          {/* Connected App */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <AppWindow className="h-5 w-5" />
+                Connected App
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {appInfoLoading ? (
+                <div className="text-muted-foreground text-sm">Loading...</div>
+              ) : appInfo ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Facebook className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <div className="font-semibold">{appInfo.name}</div>
+                      <div className="text-xs text-muted-foreground font-mono">ID: {appInfo.id}</div>
+                    </div>
+                  </div>
+                  {appInfo.category && (
+                    <Badge variant="secondary">{appInfo.category}</Badge>
+                  )}
+                  {tokenInfo && (
+                    <div className="pt-2 border-t space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={tokenInfo.isValid ? "default" : "destructive"} className="text-xs">
+                          {tokenInfo.isValid ? "Token Valid" : "Token Invalid"}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          Expires: {tokenInfo.expiresAt === 'Never' ? 'Never' : new Date(tokenInfo.expiresAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      {tokenInfo.scopes && tokenInfo.scopes.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {tokenInfo.scopes.slice(0, 5).map((scope: string) => (
+                            <Badge key={scope} variant="outline" className="text-xs">
+                              {scope}
+                            </Badge>
+                          ))}
+                          {tokenInfo.scopes.length > 5 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{tokenInfo.scopes.length - 5} more
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-muted-foreground text-sm">No app info available</div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* System User & Business */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <User className="h-5 w-5" />
+                System User
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {appInfoLoading ? (
+                <div className="text-muted-foreground text-sm">Loading...</div>
+              ) : systemUser ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-12 w-12 rounded-lg bg-secondary flex items-center justify-center">
+                      <User className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <div className="font-semibold">{systemUser.name}</div>
+                      <div className="text-xs text-muted-foreground font-mono">ID: {systemUser.id}</div>
+                    </div>
+                  </div>
+                  
+                  {business && (
+                    <div className="pt-3 border-t">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                        <Building2 className="h-4 w-4" />
+                        Business
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {business.profilePicture ? (
+                          <Avatar className="h-10 w-10">
+                            <AvatarImage src={business.profilePicture} />
+                            <AvatarFallback>{business.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                            <Building2 className="h-5 w-5 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div>
+                          <div className="font-medium text-sm">{business.name}</div>
+                          <div className="text-xs text-muted-foreground font-mono">ID: {business.id}</div>
+                        </div>
+                      </div>
+                      {business.verificationStatus && (
+                        <Badge variant={business.verificationStatus === 'verified' ? 'default' : 'secondary'} className="mt-2 text-xs">
+                          <Shield className="h-3 w-3 mr-1" />
+                          {business.verificationStatus}
+                        </Badge>
+                      )}
+                      {business.link && (
+                        <a 
+                          href={business.link} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary hover:underline flex items-center gap-1 mt-2"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          View on Facebook
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-muted-foreground text-sm">No system user info available</div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Connection Status Card */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Facebook className="h-5 w-5" />
-              Connection Status
+              Connected Pages
             </CardTitle>
             <CardDescription>
               Pages connected via your Facebook System User Token
@@ -236,51 +440,6 @@ const FacebookPages = () => {
             )}
           </div>
         )}
-
-        {/* Instructions Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>How Page Sync Works</CardTitle>
-            <CardDescription>Understanding page connections and database sync</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
-                    1
-                  </div>
-                  <span className="font-medium">System User Token</span>
-                </div>
-                <p className="text-sm text-muted-foreground pl-10">
-                  Your System User Token grants access to all pages assigned to your System User.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
-                    2
-                  </div>
-                  <span className="font-medium">Sync to Database</span>
-                </div>
-                <p className="text-sm text-muted-foreground pl-10">
-                  Click "Sync to DB" to store page information securely in your database.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
-                    3
-                  </div>
-                  <span className="font-medium">Automatic Messaging</span>
-                </div>
-                <p className="text-sm text-muted-foreground pl-10">
-                  The webhook uses stored data for messaging. Falls back to API if database is empty.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
