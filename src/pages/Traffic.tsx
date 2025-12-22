@@ -146,10 +146,6 @@ const Traffic = () => {
     setSearchParams({ page: page.toString() });
   };
 
-  const updatePage = (page: number) => {
-    setSearchParams({ page: page.toString() });
-  };
-
   const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
 
   const formatDisplayDate = (dateString: string) => {
