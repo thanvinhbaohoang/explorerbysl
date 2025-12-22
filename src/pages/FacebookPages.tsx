@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, Eye, EyeOff, Copy, Check, MessageSquare, ShieldAlert } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { useUserRole } from "@/hooks/useUserRole";
+
 interface FacebookPage {
   id: string;
   name: string;
@@ -16,26 +16,14 @@ interface FacebookPage {
   lastUpdated?: string;
 }
 
-interface PageToken {
-  pageId: string;
-  name: string;
-  accessToken: string;
-  updatedAt: string;
-  expiresAt: string | null;
-}
-
 const FacebookPages = () => {
   const navigate = useNavigate();
-  const { isAdmin, isLoading: roleLoading } = useUserRole();
   const [pages, setPages] = useState<FacebookPage[]>([]);
-  const [tokens, setTokens] = useState<PageToken[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<string>('');
-  const [visibleTokens, setVisibleTokens] = useState<Set<string>>(new Set());
-  const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
   const fetchPages = async () => {
     setIsLoading(true);
@@ -73,30 +61,6 @@ const FacebookPages = () => {
     }
   };
 
-  const fetchTokens = async () => {
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/messenger-webhook/pages/tokens`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) return;
-
-      const result = await response.json();
-      
-      if (result.tokens) {
-        setTokens(result.tokens);
-      }
-    } catch (err: any) {
-      console.error('Error fetching tokens:', err);
-    }
-  };
-
   const syncPages = async () => {
     setSyncing(true);
     try {
@@ -115,7 +79,6 @@ const FacebookPages = () => {
       if (result.success) {
         toast.success(`Synced ${result.pages.length} pages to database`);
         await fetchPages();
-        await fetchTokens();
       } else {
         toast.error(result.error || 'Failed to sync pages');
       }
@@ -127,33 +90,9 @@ const FacebookPages = () => {
     }
   };
 
-  const toggleTokenVisibility = (pageId: string) => {
-    setVisibleTokens(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(pageId)) {
-        newSet.delete(pageId);
-      } else {
-        newSet.add(pageId);
-      }
-      return newSet;
-    });
-  };
-
-  const copyToken = async (pageId: string, token: string) => {
-    await navigator.clipboard.writeText(token);
-    setCopiedToken(pageId);
-    toast.success('Token copied to clipboard');
-    setTimeout(() => setCopiedToken(null), 2000);
-  };
-
   useEffect(() => {
     fetchPages();
-    fetchTokens();
   }, []);
-
-  const getTokenForPage = (pageId: string) => {
-    return tokens.find(t => t.pageId === pageId);
-  };
 
   return (
     <div className="min-h-screen bg-background p-8">
@@ -250,112 +189,50 @@ const FacebookPages = () => {
                 </CardContent>
               </Card>
             ) : (
-              pages.map((page) => {
-                const token = getTokenForPage(page.id);
-                const isTokenVisible = visibleTokens.has(page.id);
-                
-                return (
-                  <Card key={page.id} className="hover:border-primary/50 transition-colors">
-                    <CardContent className="pt-6">
-                      <div className="flex items-start gap-4">
-                        <Avatar className="h-16 w-16">
-                          <AvatarImage src={page.picture} alt={page.name} />
-                          <AvatarFallback className="bg-primary/10 text-primary text-lg">
-                            {page.name.charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 space-y-2">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h3 className="font-semibold text-lg">{page.name}</h3>
-                              {page.synced && (
-                                <Badge variant="outline" className="text-green-600 border-green-600">
-                                  <Database className="h-3 w-3 mr-1" />
-                                  Synced
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-muted-foreground font-mono">
-                              ID: {page.id}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {page.category && (
-                              <Badge variant="secondary">{page.category}</Badge>
-                            )}
-                            <Badge variant="outline" className="gap-1">
-                              <MessageSquare className="h-3 w-3" />
-                              Messenger Active
-                            </Badge>
-                            {page.lastUpdated && (
-                              <span className="text-xs text-muted-foreground">
-                                Synced: {new Date(page.lastUpdated).toLocaleString()}
-                              </span>
+              pages.map((page) => (
+                <Card key={page.id} className="hover:border-primary/50 transition-colors">
+                  <CardContent className="pt-6">
+                    <div className="flex items-start gap-4">
+                      <Avatar className="h-16 w-16">
+                        <AvatarImage src={page.picture} alt={page.name} />
+                        <AvatarFallback className="bg-primary/10 text-primary text-lg">
+                          {page.name.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 space-y-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-lg">{page.name}</h3>
+                            {page.synced && (
+                              <Badge variant="outline" className="text-green-600 border-green-600">
+                                <Database className="h-3 w-3 mr-1" />
+                                Synced
+                              </Badge>
                             )}
                           </div>
-
-                          {/* Token Section - Admin Only */}
-                          {isAdmin && token && (
-                            <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-sm font-medium">Access Token</span>
-                                <div className="flex gap-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => toggleTokenVisibility(page.id)}
-                                  >
-                                    {isTokenVisible ? (
-                                      <EyeOff className="h-4 w-4" />
-                                    ) : (
-                                      <Eye className="h-4 w-4" />
-                                    )}
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => copyToken(page.id, token.accessToken)}
-                                  >
-                                    {copiedToken === page.id ? (
-                                      <Check className="h-4 w-4 text-green-600" />
-                                    ) : (
-                                      <Copy className="h-4 w-4" />
-                                    )}
-                                  </Button>
-                                </div>
-                              </div>
-                              <code className="text-xs break-all block bg-background p-2 rounded">
-                                {isTokenVisible 
-                                  ? token.accessToken 
-                                  : token.accessToken.substring(0, 20) + '...' + token.accessToken.substring(token.accessToken.length - 10)
-                                }
-                              </code>
-                              {token.expiresAt && (
-                                <p className="text-xs text-muted-foreground mt-2">
-                                  Expires: {new Date(token.expiresAt).toLocaleString()}
-                                </p>
-                              )}
-                            </div>
+                          <p className="text-sm text-muted-foreground font-mono">
+                            ID: {page.id}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {page.category && (
+                            <Badge variant="secondary">{page.category}</Badge>
                           )}
-
-                          {!isAdmin && token && (
-                            <div className="mt-4 p-3 bg-muted/50 rounded-lg flex items-center gap-2 text-muted-foreground">
-                              <ShieldAlert className="h-4 w-4" />
-                              <span className="text-sm">Access tokens are only visible to admins</span>
-                            </div>
-                          )}
-
-                          {!token && page.synced === false && (
-                            <p className="mt-3 text-sm text-amber-600">
-                              Click "Sync to DB" to store access token
-                            </p>
+                          <Badge variant="outline" className="gap-1">
+                            <MessageSquare className="h-3 w-3" />
+                            Messenger Active
+                          </Badge>
+                          {page.lastUpdated && (
+                            <span className="text-xs text-muted-foreground">
+                              Synced: {new Date(page.lastUpdated).toLocaleString()}
+                            </span>
                           )}
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
             )}
           </div>
         )}
@@ -363,11 +240,11 @@ const FacebookPages = () => {
         {/* Instructions Card */}
         <Card>
           <CardHeader>
-            <CardTitle>How Token Management Works</CardTitle>
-            <CardDescription>Understanding page tokens and database sync</CardDescription>
+            <CardTitle>How Page Sync Works</CardTitle>
+            <CardDescription>Understanding page connections and database sync</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
@@ -376,7 +253,7 @@ const FacebookPages = () => {
                   <span className="font-medium">System User Token</span>
                 </div>
                 <p className="text-sm text-muted-foreground pl-10">
-                  Your FACEBOOK_SYSTEM_USER_TOKEN grants access to all pages assigned to your System User.
+                  Your System User Token grants access to all pages assigned to your System User.
                 </p>
               </div>
               <div className="space-y-2">
@@ -387,7 +264,7 @@ const FacebookPages = () => {
                   <span className="font-medium">Sync to Database</span>
                 </div>
                 <p className="text-sm text-muted-foreground pl-10">
-                  Click "Sync to DB" to fetch and store page access tokens securely in your database.
+                  Click "Sync to DB" to store page information securely in your database.
                 </p>
               </div>
               <div className="space-y-2">
@@ -395,25 +272,12 @@ const FacebookPages = () => {
                   <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
                     3
                   </div>
-                  <span className="font-medium">Token Usage</span>
+                  <span className="font-medium">Automatic Messaging</span>
                 </div>
                 <p className="text-sm text-muted-foreground pl-10">
-                  The webhook uses stored tokens for messaging. Falls back to Facebook API if database is empty.
+                  The webhook uses stored data for messaging. Falls back to API if database is empty.
                 </p>
               </div>
-              {isAdmin && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
-                      4
-                    </div>
-                    <span className="font-medium">Copy Tokens</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground pl-10">
-                    Use the eye icon to reveal tokens and copy button to copy them for external use.
-                  </p>
-                </div>
-              )}
             </div>
           </CardContent>
         </Card>
