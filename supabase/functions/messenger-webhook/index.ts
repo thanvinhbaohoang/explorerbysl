@@ -693,6 +693,128 @@ serve(async (req) => {
     });
   }
   
+  // Endpoint to get app and system user info
+  if (url.pathname.endsWith('/app-info') && req.method === 'GET') {
+    console.log('Fetching app and system user info');
+    
+    try {
+      if (!systemUserToken) {
+        return new Response(JSON.stringify({ 
+          error: 'No System User Token configured',
+          app: null,
+          systemUser: null
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Fetch info about the current token (which includes app and user info)
+      const debugUrl = `https://graph.facebook.com/debug_token?input_token=${systemUserToken}&access_token=${systemUserToken}`;
+      const debugResponse = await fetch(debugUrl);
+      let tokenData = null;
+      
+      if (debugResponse.ok) {
+        const debugResult = await debugResponse.json();
+        tokenData = debugResult.data;
+        console.log('Token debug info:', JSON.stringify(tokenData, null, 2));
+      }
+      
+      // Fetch app info using the app_id from token debug
+      let appInfo = null;
+      if (tokenData?.app_id) {
+        const appUrl = `https://graph.facebook.com/v18.0/${tokenData.app_id}?fields=id,name,category,link,privacy_policy_url,daily_active_users,weekly_active_users,monthly_active_users&access_token=${systemUserToken}`;
+        const appResponse = await fetch(appUrl);
+        
+        if (appResponse.ok) {
+          appInfo = await appResponse.json();
+          console.log('App info:', JSON.stringify(appInfo, null, 2));
+        } else {
+          console.error('Failed to fetch app info:', await appResponse.text());
+        }
+      }
+      
+      // Fetch system user info using the user_id from token debug
+      let systemUserInfo = null;
+      if (tokenData?.user_id) {
+        const userUrl = `https://graph.facebook.com/v18.0/${tokenData.user_id}?fields=id,name&access_token=${systemUserToken}`;
+        const userResponse = await fetch(userUrl);
+        
+        if (userResponse.ok) {
+          systemUserInfo = await userResponse.json();
+          console.log('System user info:', JSON.stringify(systemUserInfo, null, 2));
+        } else {
+          console.error('Failed to fetch system user info:', await userResponse.text());
+        }
+      }
+      
+      // Also try to get the business info (which system users belong to)
+      let businessInfo = null;
+      try {
+        const businessUrl = `https://graph.facebook.com/v18.0/me?fields=business&access_token=${systemUserToken}`;
+        const businessResponse = await fetch(businessUrl);
+        
+        if (businessResponse.ok) {
+          const businessResult = await businessResponse.json();
+          if (businessResult.business) {
+            // Fetch more business details
+            const businessDetailsUrl = `https://graph.facebook.com/v18.0/${businessResult.business.id}?fields=id,name,profile_picture_uri,verification_status,link&access_token=${systemUserToken}`;
+            const detailsResponse = await fetch(businessDetailsUrl);
+            
+            if (detailsResponse.ok) {
+              businessInfo = await detailsResponse.json();
+              console.log('Business info:', JSON.stringify(businessInfo, null, 2));
+            }
+          }
+        }
+      } catch (err) {
+        console.log('Could not fetch business info:', err);
+      }
+      
+      return new Response(JSON.stringify({
+        success: true,
+        app: appInfo ? {
+          id: appInfo.id,
+          name: appInfo.name,
+          category: appInfo.category,
+          link: appInfo.link,
+          privacyPolicyUrl: appInfo.privacy_policy_url,
+          dailyActiveUsers: appInfo.daily_active_users,
+          weeklyActiveUsers: appInfo.weekly_active_users,
+          monthlyActiveUsers: appInfo.monthly_active_users,
+        } : null,
+        systemUser: systemUserInfo ? {
+          id: systemUserInfo.id,
+          name: systemUserInfo.name,
+        } : null,
+        business: businessInfo ? {
+          id: businessInfo.id,
+          name: businessInfo.name,
+          profilePicture: businessInfo.profile_picture_uri,
+          verificationStatus: businessInfo.verification_status,
+          link: businessInfo.link,
+        } : null,
+        token: tokenData ? {
+          appId: tokenData.app_id,
+          userId: tokenData.user_id,
+          type: tokenData.type,
+          isValid: tokenData.is_valid,
+          expiresAt: tokenData.expires_at ? new Date(tokenData.expires_at * 1000).toISOString() : 'Never',
+          scopes: tokenData.scopes,
+          granularScopes: tokenData.granular_scopes,
+        } : null,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      console.error('Error fetching app info:', error);
+      return new Response(JSON.stringify({ error: 'Failed to fetch app info' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+  }
+  
   // Endpoint to get page tokens (for authenticated admin users)
   if (url.pathname.endsWith('/pages/tokens') && req.method === 'GET') {
     console.log('Fetching page tokens');
