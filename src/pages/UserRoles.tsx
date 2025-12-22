@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useUserRolesData, useAddRole, useUpdateRole, useDeleteRole } from "@/hooks/useUserRolesData";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -26,118 +26,35 @@ import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 
-interface UserRole {
-  id: string;
-  user_id: string;
-  role: AppRole;
-  created_at: string | null;
-}
-
-interface UserInfo {
-  email: string;
-  name: string | null;
-  avatar_url: string | null;
-}
-
 const UserRoles = () => {
   const { isAdmin, isLoading: roleLoading } = useUserRole();
-  const [roles, setRoles] = useState<UserRole[]>([]);
-  const [usersInfo, setUsersInfo] = useState<Record<string, UserInfo>>({});
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading: loading } = useUserRolesData(isAdmin);
+  const addRoleMutation = useAddRole();
+  const updateRoleMutation = useUpdateRole();
+  const deleteRoleMutation = useDeleteRole();
+  
   const [newUserId, setNewUserId] = useState("");
   const [newRole, setNewRole] = useState<AppRole>("user");
 
-  const fetchRolesAndUsers = async () => {
-    setLoading(true);
-    
-    // Fetch roles first
-    const { data: rolesData, error: rolesError } = await supabase
-      .from("user_roles")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (rolesError) {
-      toast.error("Failed to fetch roles");
-      setLoading(false);
-      return;
-    }
-    
-    const userIds = rolesData?.map((r) => r.user_id) || [];
-    
-    // Fetch user info in the same request cycle
-    if (userIds.length > 0) {
-      try {
-        const { data, error } = await supabase.functions.invoke("get-users-info", {
-          body: { user_ids: userIds },
-        });
-
-        if (!error && data?.users) {
-          setUsersInfo(data.users);
-        }
-      } catch (error) {
-        console.error("Failed to fetch users info:", error);
-      }
-    }
-    
-    // Set roles and loading state together after all data is fetched
-    setRoles(rolesData || []);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    if (isAdmin) {
-      fetchRolesAndUsers();
-    }
-  }, [isAdmin]);
+  const roles = data?.roles || [];
+  const usersInfo = data?.usersInfo || {};
 
   const addRole = async () => {
     if (!newUserId.trim()) {
       toast.error("Please enter a user ID");
       return;
     }
-
-    const { error } = await supabase.from("user_roles").insert({
-      user_id: newUserId.trim(),
-      role: newRole,
+    addRoleMutation.mutate({ userId: newUserId.trim(), role: newRole }, {
+      onSuccess: () => setNewUserId(""),
     });
-
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-
-    toast.success("Role added successfully");
-    setNewUserId("");
-    fetchRolesAndUsers();
   };
 
   const updateRole = async (id: string, newRoleValue: AppRole) => {
-    const { error } = await supabase
-      .from("user_roles")
-      .update({ role: newRoleValue })
-      .eq("id", id);
-
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-
-    toast.success("Role updated");
-    setRoles((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, role: newRoleValue } : r))
-    );
+    updateRoleMutation.mutate({ id, role: newRoleValue });
   };
 
   const deleteRole = async (id: string) => {
-    const { error } = await supabase.from("user_roles").delete().eq("id", id);
-
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-
-    toast.success("Role deleted");
-    fetchRolesAndUsers();
+    deleteRoleMutation.mutate(id);
   };
 
   const getRoleBadgeVariant = (role: AppRole) => {
