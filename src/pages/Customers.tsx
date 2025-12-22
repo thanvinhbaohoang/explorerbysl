@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCustomersData } from "@/hooks/useCustomersData";
 import { toast } from "sonner";
 import {
   Table,
@@ -95,8 +97,16 @@ interface Message {
 const Customers = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const [customersPage, setCustomersPage] = useState(1);
+  const itemsPerPage = 10;
+  
+  // Use cached customers data
+  const { data: customersData, isLoading, refetch: refetchCustomers } = useCustomersData(customersPage, itemsPerPage);
+  const customers = customersData?.customers || [];
+  const totalCustomers = customersData?.total || 0;
+  const linkedPlatformsMap = customersData?.linkedPlatformsMap || {};
+  
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -105,8 +115,6 @@ const Customers = () => {
   const [isSending, setIsSending] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [lastMessageSender, setLastMessageSender] = useState<Record<string, string>>({});
-  const [customersPage, setCustomersPage] = useState(1);
-  const [totalCustomers, setTotalCustomers] = useState(0);
   const [hasNewCustomers, setHasNewCustomers] = useState(false);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [messageOffset, setMessageOffset] = useState(0);
@@ -134,7 +142,6 @@ const Customers = () => {
   const animationFrameRef = useRef<number | null>(null);
   // Track customers where messaging window has expired (from API error)
   const [expiredWindowCustomers, setExpiredWindowCustomers] = useState<Set<string>>(new Set());
-  const itemsPerPage = 10;
   const messagesPerPage = 10;
 
   // Filter messages by platform
@@ -307,93 +314,13 @@ const Customers = () => {
     }
   };
 
-  // Build map of linked platforms for unified customer display
-  const [linkedPlatformsMap, setLinkedPlatformsMap] = useState<Record<string, { telegram: boolean; messenger: boolean; linkedIds: string[] }>>({});
-
-  // Fetch customers with pagination (unified view - hide secondary linked accounts)
-  const fetchCustomers = async (page: number) => {
-    setIsLoading(true);
-    try {
-      // Get total count of PRIMARY customers only (those without linked_customer_id)
-      const { count, error: countError } = await supabase
-        .from("customer")
-        .select("*", { count: "exact", head: true })
-        .is("linked_customer_id", null);
-
-      if (countError) throw countError;
-      setTotalCustomers(count || 0);
-
-      // Fetch paginated data - only PRIMARY customers
-      const from = (page - 1) * itemsPerPage;
-      const to = from + itemsPerPage - 1;
-
-      const { data: customersData, error } = await supabase
-        .from("customer")
-        .select("*")
-        .is("linked_customer_id", null)
-        .order("created_at", { ascending: false })
-        .range(from, to);
-
-      if (error) throw error;
-      
-      // Build linked platforms map
-      if (customersData && customersData.length > 0) {
-        const customerIds = customersData.map(c => c.id);
-        
-        // Fetch customers that link to these primary customers
-        const { data: linkedCustomers } = await supabase
-          .from("customer")
-          .select("id, linked_customer_id, telegram_id, messenger_id")
-          .in("linked_customer_id", customerIds);
-        
-        // Build the map
-        const platformsMap: Record<string, { telegram: boolean; messenger: boolean; linkedIds: string[] }> = {};
-        customersData.forEach(customer => {
-          const linkedToThis = linkedCustomers?.filter(lc => lc.linked_customer_id === customer.id) || [];
-          const allIds = [customer.id, ...linkedToThis.map(lc => lc.id)];
-          const hasTelegram = customer.telegram_id !== null || linkedToThis.some(lc => lc.telegram_id !== null);
-          const hasMessenger = customer.messenger_id !== null || linkedToThis.some(lc => lc.messenger_id !== null);
-          
-          platformsMap[customer.id] = {
-            telegram: hasTelegram,
-            messenger: hasMessenger,
-            linkedIds: allIds,
-          };
-        });
-        setLinkedPlatformsMap(platformsMap);
-        
-        // Fetch lead sources
-        const { data: leadsData } = await supabase
-          .from("telegram_leads")
-          .select("user_id, messenger_ref, campaign_name, ad_name, adset_name, referrer")
-          .in("user_id", customerIds);
-        
-        // Merge lead source data with customers
-        const customersWithLeads = customersData.map(customer => ({
-          ...customer,
-          lead_source: leadsData?.find(lead => lead.user_id === customer.id)
-        }));
-        
-        setCustomers(customersWithLeads);
-      } else {
-        setCustomers(customersData || []);
-        setLinkedPlatformsMap({});
-      }
-      
-      setHasNewCustomers(false);
-    } catch (error: any) {
-      console.error("Error fetching customers:", error);
-      toast.error("Failed to load customers");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Fetch when page changes (including initial mount)
+  // Fetch when hasNewCustomers flag is set (from realtime updates)
   useEffect(() => {
-    console.log("Fetching customers for page:", customersPage);
-    fetchCustomers(customersPage);
-  }, [customersPage]);
+    if (hasNewCustomers) {
+      refetchCustomers();
+      setHasNewCustomers(false);
+    }
+  }, [hasNewCustomers, refetchCustomers]);
 
   // Fetch unread counts on mount
   useEffect(() => {
@@ -1276,7 +1203,7 @@ const Customers = () => {
               icon: <Bell className="h-4 w-4" />,
               action: {
                 label: "Refresh",
-                onClick: () => fetchCustomers(customersPage),
+                onClick: () => refetchCustomers(),
               },
             }
           );
@@ -1451,7 +1378,7 @@ const Customers = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => fetchCustomers(customersPage)}
+                onClick={() => refetchCustomers()}
                 className="animate-pulse"
               >
                 <Bell className="h-4 w-4 mr-2" />
