@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.messenger-webhook]
 verify_jwt = false
+
+[functions.summarize-chat]
+verify_jwt = false
