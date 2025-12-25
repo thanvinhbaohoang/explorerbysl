@@ -6,7 +6,6 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-const HUMAN_ACCOUNT = "Haroldthan";
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 const corsHeaders = {
@@ -183,42 +182,35 @@ async function handleStart(message: any) {
 
   console.log("User started bot:", info);
 
-  // Format message
-  const tokenInfo = token ? `\n🔗 *Tracking Token:* \`${escapeMd(token)}\`\n` : '';
-  const msg = `
-👋 Hi ${escapeMd(u.first_name || "there")}\\!
-${tokenInfo}
-Here's the info we captured from your Telegram account:
+  // Format warm, human-like greeting message
+  const firstName = u.first_name || "there";
+  const msg = `👋 Hi ${escapeMd(firstName)}!
 
-🧾 *User Data*
-• ID: \`${info.ID}\`
-• Username: ${escapeMd(info.Username)}
-• Name: ${escapeMd(info.First_Name)} ${escapeMd(info.Last_Name)}
-• Language: ${escapeMd(info.Language)}
-• Premium: ${escapeMd(info.Is_Premium)}
+Thanks for reaching out to ExplorerBySL! ✨
 
-Please tap below to chat with our human support team 👇
-`;
+One of our team members will be connected with you shortly to help with your inquiry.
 
-  // Send message with inline button (with MarkdownV2)
+Feel free to send us a message anytime – we're here to help you plan your perfect adventure! 🌍
+
+Is there anything specific you'd like to know about our travel services?`;
+
+  // Send warm greeting (no inline buttons - conversation starts here)
   await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
       text: msg,
-      parse_mode: "MarkdownV2",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "💬 Chat with Human Support",
-              url: `https://t.me/${HUMAN_ACCOUNT}`,
-            },
-          ],
-        ],
-      },
     }),
+  });
+  
+  // Log user data for internal tracking (not shown to customer)
+  console.log("Customer started conversation:", {
+    telegram_id: u.id,
+    username: u.username,
+    name: `${u.first_name || ''} ${u.last_name || ''}`.trim(),
+    language: u.language_code,
+    token: token,
   });
 }
 
@@ -650,16 +642,33 @@ serve(async (req) => {
         try {
           console.log("Sending message to:", telegram_id, "Text:", message_text);
           
-          // Send message to Telegram user
-          await sendMessage(telegram_id, message_text);
+          // Check if this is the first employee message to this customer
+          let finalMessage = message_text;
+          if (customer_id && sent_by_name) {
+            const { data: previousMessages } = await supabase
+              .from('messages')
+              .select('id')
+              .eq('customer_id', customer_id)
+              .eq('sender_type', 'employee')
+              .limit(1);
+            
+            // If no previous employee messages, add introduction
+            if (!previousMessages || previousMessages.length === 0) {
+              finalMessage = `Hi! I'm ${sent_by_name} from ExplorerBySL. ${message_text}`;
+              console.log("First employee message - adding introduction");
+            }
+          }
           
-          // Save to database
+          // Send message to Telegram user
+          await sendMessage(telegram_id, finalMessage);
+          
+          // Save original message to database (without the auto-prefix for cleaner logs)
           const { error: dbError } = await supabase
             .from('messages')
             .insert({
               customer_id,
               telegram_id,
-              message_text,
+              message_text: finalMessage,
               message_type: 'text',
               sender_type: 'employee',
               sent_by_name: sent_by_name || null,

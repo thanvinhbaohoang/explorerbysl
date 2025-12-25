@@ -116,7 +116,7 @@ const Redirect = () => {
         setStatus("ready");
 
         // Prepare Telegram URL
-        const botUsername = "ClientinfoHarvestBot";
+        const botUsername = "ExplorerBySLBot";
         const url = `https://t.me/${botUsername}?start=${data.id}`;
         setTelegramUrl(url);
         

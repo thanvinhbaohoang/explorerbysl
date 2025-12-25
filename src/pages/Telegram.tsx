@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
 
-const BOT_USERNAME = "ClientInfoHarvestBot";
+const BOT_USERNAME = "ExplorerBySLBot";
 
 const Telegram = () => {
   const [searchParams] = useSearchParams();
