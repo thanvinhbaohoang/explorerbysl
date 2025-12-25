@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings, Download } from "lucide-react";
+import { exportToCSV } from "@/lib/csv-export";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -231,6 +232,25 @@ const FacebookPages = () => {
                 Last updated: {lastRefreshed.toLocaleTimeString()}
               </span>
             )}
+            <Button
+              variant="outline"
+              onClick={() => {
+                exportToCSV(
+                  pages,
+                  [
+                    { key: 'name', header: 'Page Name' },
+                    { key: 'id', header: 'Page ID' },
+                    { key: 'category', header: 'Category' },
+                    { key: 'synced', header: 'Synced', getValue: (p) => p.synced ? 'Yes' : 'No' },
+                  ],
+                  'facebook_pages'
+                );
+              }}
+              disabled={pages.length === 0}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
             <Button
               onClick={syncPages}
               disabled={syncing}

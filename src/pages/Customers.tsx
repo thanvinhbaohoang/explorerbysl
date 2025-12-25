@@ -32,7 +32,8 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square, Play, Pause, Trash2, Clock } from "lucide-react";
+import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square, Play, Pause, Trash2, Clock, Download } from "lucide-react";
+import { exportToCSV } from "@/lib/csv-export";
 import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -1378,6 +1379,28 @@ const Customers = () => {
               <span className="text-2xl font-semibold">{totalCustomers}</span>
               <span>Total Customers</span>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                exportToCSV(
+                  customers,
+                  [
+                    { key: 'first_name', header: 'First Name', getValue: (c) => c.first_name || c.messenger_name || '' },
+                    { key: 'last_name', header: 'Last Name', getValue: (c) => c.last_name || '' },
+                    { key: 'username', header: 'Username', getValue: (c) => c.username || '' },
+                    { key: 'platform', header: 'Platform', getValue: (c) => c.messenger_id ? 'Messenger' : 'Telegram' },
+                    { key: 'first_message_at', header: 'First Message', getValue: (c) => new Date(c.first_message_at).toLocaleString() },
+                    { key: 'language_code', header: 'Language', getValue: (c) => c.language_code || c.locale || '' },
+                    { key: 'is_premium', header: 'Premium', getValue: (c) => c.is_premium ? 'Yes' : 'No' },
+                  ],
+                  'customers'
+                );
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
             <Button
               variant="outline"
               size="sm"

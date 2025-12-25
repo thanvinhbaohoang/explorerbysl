@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Shield, User } from "lucide-react";
+import { Trash2, Shield, User, Download } from "lucide-react";
+import { exportToCSV } from "@/lib/csv-export";
 import type { Database } from "@/integrations/supabase/types";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
@@ -108,11 +109,31 @@ const UserRoles = () => {
 
   return (
     <div className="container py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">User Roles Management</h1>
-        <p className="text-muted-foreground mt-2">
-          Manage user roles and permissions
-        </p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">User Roles Management</h1>
+          <p className="text-muted-foreground mt-2">
+            Manage user roles and permissions
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => {
+            exportToCSV(
+              allUsers,
+              [
+                { key: 'name', header: 'Name', getValue: (u) => u.name || 'Unknown User' },
+                { key: 'email', header: 'Email' },
+                { key: 'role', header: 'Role', getValue: (u) => u.role?.role || 'No Role' },
+              ],
+              'user_roles'
+            );
+          }}
+          disabled={allUsers.length === 0}
+        >
+          <Download className="h-4 w-4 mr-2" />
+          Export CSV
+        </Button>
       </div>
 
       <div className="bg-card border rounded-lg">
