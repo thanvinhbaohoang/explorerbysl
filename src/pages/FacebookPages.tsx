@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, Globe, FileText } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -243,30 +243,17 @@ const FacebookPages = () => {
                   )}
 
                   {/* App Links */}
-                  <div className="flex flex-wrap gap-2">
-                    {appInfo.link && (
-                      <a 
-                        href={appInfo.link} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline flex items-center gap-1"
-                      >
-                        <Globe className="h-3 w-3" />
-                        App Page
-                      </a>
-                    )}
-                    {appInfo.privacyPolicyUrl && (
-                      <a 
-                        href={appInfo.privacyPolicyUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline flex items-center gap-1"
-                      >
-                        <FileText className="h-3 w-3" />
-                        Privacy Policy
-                      </a>
-                    )}
-                  </div>
+                  {appInfo.privacyPolicyUrl && (
+                    <a 
+                      href={appInfo.privacyPolicyUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline flex items-center gap-1"
+                    >
+                      <FileText className="h-3 w-3" />
+                      Privacy Policy
+                    </a>
+                  )}
 
 
                   {/* Token Info */}
