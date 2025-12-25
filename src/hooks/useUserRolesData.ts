@@ -35,22 +35,19 @@ export const useUserRolesData = (isAdmin: boolean) => {
 
       if (rolesError) throw rolesError;
       
-      const userIds = rolesData?.map((r) => r.user_id) || [];
       let usersInfo: Record<string, UserInfo> = {};
       
-      // Fetch user info
-      if (userIds.length > 0) {
-        try {
-          const { data, error } = await supabase.functions.invoke("get-users-info", {
-            body: { user_ids: userIds },
-          });
+      // Fetch ALL users from auth
+      try {
+        const { data, error } = await supabase.functions.invoke("get-users-info", {
+          body: { fetch_all: true },
+        });
 
-          if (!error && data?.users) {
-            usersInfo = data.users;
-          }
-        } catch (error) {
-          console.error("Failed to fetch users info:", error);
+        if (!error && data?.users) {
+          usersInfo = data.users;
         }
+      } catch (error) {
+        console.error("Failed to fetch users info:", error);
       }
       
       return { roles: rolesData || [], usersInfo };
