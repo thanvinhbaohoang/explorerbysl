@@ -153,7 +153,7 @@ const Customers = () => {
     }
   };
 
-  // Auto-scroll to bottom when messages change or dialog opens
+  // Auto-scroll to bottom when messages change, dialog opens, or platform filter changes
   useEffect(() => {
     if (dialogOpen && messages.length > 0 && !isLoadingMessages) {
       // Use setTimeout to ensure DOM is fully rendered
@@ -162,7 +162,7 @@ const Customers = () => {
       }, 100);
       return () => clearTimeout(timeoutId);
     }
-  }, [dialogOpen, messages.length, isLoadingMessages]);
+  }, [dialogOpen, messages.length, isLoadingMessages, platformFilter]);
 
   // Filter messages by platform
   const filteredMessages = useMemo(() => {
@@ -1670,17 +1670,28 @@ const Customers = () => {
             onScroll={handleMessagesScroll}
           >
             {isLoadingMessages ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Loading messages...
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Loader2 className="h-8 w-8 animate-spin mb-3" />
+                <span>Loading messages...</span>
               </div>
             ) : filteredMessages.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {platformFilter ? `No messages on ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}` : 'No messages yet'}
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <MessageSquare className="h-8 w-8 mb-3 opacity-50" />
+                <span>{platformFilter ? `No messages on ${platformFilter === 'messenger' ? 'Messenger' : 'Telegram'}` : 'No messages yet'}</span>
+                <button
+                  onClick={() => selectedCustomer && loadMessages(selectedCustomer, 0, true)}
+                  className="mt-3 text-xs text-primary hover:underline flex items-center gap-1"
+                >
+                  <Loader2 className="h-3 w-3" />
+                  Tap to refresh
+                </button>
               </div>
             ) : (
               <div className="space-y-4 p-1">
+                {/* Pull to refresh indicator */}
                 {isLoadingMoreMessages && (
-                  <div className="text-center py-2 text-sm text-muted-foreground">
+                  <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     Loading older messages...
                   </div>
                 )}
@@ -1688,9 +1699,10 @@ const Customers = () => {
                   <div className="text-center py-2">
                     <button
                       onClick={() => selectedCustomer && loadMessages(selectedCustomer, messageOffset)}
-                      className="text-xs text-primary hover:underline"
+                      className="text-xs text-primary hover:underline flex items-center gap-1 mx-auto"
                     >
-                      Scroll to top to load older messages
+                      <Loader2 className="h-3 w-3" />
+                      Load older messages
                     </button>
                   </div>
                 )}
