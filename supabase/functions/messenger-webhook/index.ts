@@ -711,6 +711,7 @@ serve(async (req) => {
       
       // Fetch info about the current token (which includes app and user info)
       const debugUrl = `https://graph.facebook.com/debug_token?input_token=${systemUserToken}&access_token=${systemUserToken}`;
+      console.log('Calling debug_token API...');
       const debugResponse = await fetch(debugUrl);
       let tokenData = null;
       
@@ -718,6 +719,10 @@ serve(async (req) => {
         const debugResult = await debugResponse.json();
         tokenData = debugResult.data;
         console.log('Token debug info:', JSON.stringify(tokenData, null, 2));
+      } else {
+        const errorText = await debugResponse.text();
+        console.error('Failed to debug token:', errorText);
+        console.error('This usually means the System User Token is invalid or expired.');
       }
       
       // Fetch app info using the app_id from token debug
