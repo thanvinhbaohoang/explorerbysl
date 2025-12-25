@@ -46,7 +46,7 @@ serve(async (req) => {
   }
 
   try {
-    const { customerId, linkedCustomerIds } = await req.json();
+    const { customerId, linkedCustomerIds, forceRefresh = false } = await req.json();
     
     if (!customerId) {
       return new Response(
@@ -72,6 +72,41 @@ serve(async (req) => {
     // Fetch all messages for the customer (and linked accounts)
     const customerIds = linkedCustomerIds?.length > 0 ? linkedCustomerIds : [customerId];
     
+    // Get current message count
+    const { count: currentMessageCount } = await supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .in('customer_id', customerIds);
+
+    // Check for cached summary if not forcing refresh
+    if (!forceRefresh) {
+      const { data: cachedSummary } = await supabase
+        .from('customer_summaries')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('generated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cachedSummary) {
+        const cacheAge = Date.now() - new Date(cachedSummary.generated_at).getTime();
+        const oneHour = 60 * 60 * 1000;
+        
+        // Return cached if less than 1 hour old AND message count hasn't changed
+        if (cacheAge < oneHour && cachedSummary.message_count === currentMessageCount) {
+          console.log('Returning cached summary');
+          return new Response(
+            JSON.stringify({ 
+              summary: cachedSummary.summary_data,
+              cached: true,
+              generatedAt: cachedSummary.generated_at
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+    }
+
     const { data: messages, error: messagesError } = await supabase
       .from('messages')
       .select('*')
@@ -88,17 +123,16 @@ serve(async (req) => {
     }
 
     if (!messages || messages.length === 0) {
+      const emptySummary = {
+        personalInfo: { fullName: null, nationality: null, passportPhotoDetected: false, contactDetails: null },
+        travelDetails: { destinations: [], travelDates: null, numberOfTravelers: null, purposeOfTravel: null },
+        serviceRequirements: { visaType: null, servicesRequested: [], specialRequirements: [], budgetIndication: null },
+        conversationStatus: { keyQuestions: [], unansweredQuestions: [], actionItems: [], sentiment: 'neutral' },
+        attachments: { photoCount: 0, voiceMessageCount: 0, videoCount: 0 },
+        summary: 'No messages to summarize.'
+      };
       return new Response(
-        JSON.stringify({ 
-          summary: {
-            personalInfo: { fullName: null, nationality: null, passportPhotoDetected: false, contactDetails: null },
-            travelDetails: { destinations: [], travelDates: null, numberOfTravelers: null, purposeOfTravel: null },
-            serviceRequirements: { visaType: null, servicesRequested: [], specialRequirements: [], budgetIndication: null },
-            conversationStatus: { keyQuestions: [], unansweredQuestions: [], actionItems: [], sentiment: 'neutral' },
-            attachments: { photoCount: 0, voiceMessageCount: 0, videoCount: 0 },
-            summary: 'No messages to summarize.'
-          }
-        }),
+        JSON.stringify({ summary: emptySummary, cached: false, generatedAt: new Date().toISOString() }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -241,10 +275,23 @@ Only respond with the JSON object, no additional text.`;
       };
     }
 
-    console.log('Chat summary generated successfully');
+    // Save summary to database
+    const generatedAt = new Date().toISOString();
+    await supabase
+      .from('customer_summaries')
+      .upsert({
+        customer_id: customerId,
+        summary_data: summary,
+        message_count: currentMessageCount || messages.length,
+        generated_at: generatedAt
+      }, {
+        onConflict: 'customer_id'
+      });
+
+    console.log('Chat summary generated and saved successfully');
 
     return new Response(
-      JSON.stringify({ summary }),
+      JSON.stringify({ summary, cached: false, generatedAt }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

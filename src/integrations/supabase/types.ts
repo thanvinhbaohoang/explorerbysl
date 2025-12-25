@@ -82,6 +82,120 @@ export type Database = {
           },
         ]
       }
+      customer_action_items: {
+        Row: {
+          action_text: string
+          completed_at: string | null
+          completed_by: string | null
+          completed_by_name: string | null
+          created_at: string
+          customer_id: string
+          id: string
+          is_completed: boolean
+        }
+        Insert: {
+          action_text: string
+          completed_at?: string | null
+          completed_by?: string | null
+          completed_by_name?: string | null
+          created_at?: string
+          customer_id: string
+          id?: string
+          is_completed?: boolean
+        }
+        Update: {
+          action_text?: string
+          completed_at?: string | null
+          completed_by?: string | null
+          completed_by_name?: string | null
+          created_at?: string
+          customer_id?: string
+          id?: string
+          is_completed?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_action_items_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customer_notes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          created_by_name: string | null
+          customer_id: string
+          id: string
+          note_text: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          created_by_name?: string | null
+          customer_id: string
+          id?: string
+          note_text: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          created_by_name?: string | null
+          customer_id?: string
+          id?: string
+          note_text?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_notes_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customer_summaries: {
+        Row: {
+          created_at: string
+          customer_id: string
+          generated_at: string
+          id: string
+          message_count: number
+          summary_data: Json
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          generated_at?: string
+          id?: string
+          message_count?: number
+          summary_data: Json
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          generated_at?: string
+          id?: string
+          message_count?: number
+          summary_data?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_summaries_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       facebook_pages: {
         Row: {
           access_token: string

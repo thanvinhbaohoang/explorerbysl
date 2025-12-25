@@ -10,7 +10,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, User, Plane, Briefcase, MessageSquare, Paperclip, RefreshCw, Loader2 } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Sparkles, User, Plane, Briefcase, MessageSquare, Paperclip, RefreshCw, Loader2, Clock, Database } from "lucide-react";
+import { CustomerNotesSection } from "./CustomerNotesSection";
+import { QuickActionsPanel } from "./QuickActionsPanel";
 
 interface ChatSummary {
   personalInfo: {
@@ -56,8 +59,10 @@ export function ChatSummaryDialog({ customerId, linkedCustomerIds, customerName 
   const [isLoading, setIsLoading] = useState(false);
   const [summary, setSummary] = useState<ChatSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isCached, setIsCached] = useState(false);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
 
-  const fetchSummary = async () => {
+  const fetchSummary = async (forceRefresh = false) => {
     setIsLoading(true);
     setError(null);
     
@@ -65,7 +70,8 @@ export function ChatSummaryDialog({ customerId, linkedCustomerIds, customerName 
       const { data, error: fnError } = await supabase.functions.invoke('summarize-chat', {
         body: { 
           customerId,
-          linkedCustomerIds: linkedCustomerIds.length > 0 ? linkedCustomerIds : [customerId]
+          linkedCustomerIds: linkedCustomerIds.length > 0 ? linkedCustomerIds : [customerId],
+          forceRefresh
         }
       });
 
@@ -78,6 +84,8 @@ export function ChatSummaryDialog({ customerId, linkedCustomerIds, customerName 
       }
 
       setSummary(data.summary);
+      setIsCached(data.cached || false);
+      setGeneratedAt(data.generatedAt);
     } catch (err: any) {
       console.error('Error fetching summary:', err);
       const message = err.message || 'Failed to generate summary';
@@ -101,6 +109,20 @@ export function ChatSummaryDialog({ customerId, linkedCustomerIds, customerName 
       case 'concerned': return 'bg-red-500/10 text-red-600 border-red-500/20';
       default: return 'bg-muted text-muted-foreground';
     }
+  };
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
   };
 
   return (
@@ -127,13 +149,44 @@ export function ChatSummaryDialog({ customerId, linkedCustomerIds, customerName 
         ) : error ? (
           <div className="text-center py-8">
             <p className="text-destructive mb-4">{error}</p>
-            <Button onClick={fetchSummary} variant="outline" size="sm">
+            <Button onClick={() => fetchSummary()} variant="outline" size="sm">
               <RefreshCw className="h-4 w-4 mr-2" />
               Try Again
             </Button>
           </div>
         ) : summary ? (
           <div className="space-y-6">
+            {/* Cache Status Indicator */}
+            {generatedAt && (
+              <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2">
+                  {isCached ? (
+                    <>
+                      <Database className="h-3.5 w-3.5" />
+                      <span>Cached summary</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Fresh summary</span>
+                    </>
+                  )}
+                  <span className="text-muted-foreground/60">•</span>
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>{formatTimeAgo(generatedAt)}</span>
+                </div>
+                <Button 
+                  onClick={() => fetchSummary(true)} 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 text-xs gap-1"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Refresh
+                </Button>
+              </div>
+            )}
+
             {/* Overall Summary */}
             <div className="p-4 rounded-lg bg-primary/5 border border-primary/10">
               <p className="text-sm">{summary.summary}</p>
@@ -227,20 +280,9 @@ export function ChatSummaryDialog({ customerId, linkedCustomerIds, customerName 
                     </ul>
                   </div>
                 )}
-                {summary.conversationStatus.actionItems.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-primary mb-1">Action Items</p>
-                    <ul className="list-disc list-inside text-sm space-y-1">
-                      {summary.conversationStatus.actionItems.map((item, i) => (
-                        <li key={i}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
                 {summary.conversationStatus.keyQuestions.length === 0 && 
-                 summary.conversationStatus.unansweredQuestions.length === 0 && 
-                 summary.conversationStatus.actionItems.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No specific action items identified.</p>
+                 summary.conversationStatus.unansweredQuestions.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No specific questions identified.</p>
                 )}
               </div>
             </Section>
@@ -257,13 +299,18 @@ export function ChatSummaryDialog({ customerId, linkedCustomerIds, customerName 
               </div>
             </Section>
 
-            {/* Refresh button */}
-            <div className="pt-2 border-t">
-              <Button onClick={fetchSummary} variant="ghost" size="sm" className="w-full">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh Summary
-              </Button>
-            </div>
+            <Separator />
+
+            {/* Quick Actions Panel */}
+            <QuickActionsPanel 
+              customerId={customerId} 
+              aiActionItems={summary.conversationStatus.actionItems}
+            />
+
+            <Separator />
+
+            {/* Customer Notes */}
+            <CustomerNotesSection customerId={customerId} />
           </div>
         ) : null}
       </DialogContent>
