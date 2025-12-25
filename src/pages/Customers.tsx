@@ -144,7 +144,7 @@ const Customers = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // Track customers where messaging window has expired (from API error)
   const [expiredWindowCustomers, setExpiredWindowCustomers] = useState<Set<string>>(new Set());
-  const messagesPerPage = 20; // Fetch at least 20 messages to ensure enough context
+  const messagesPerPage = 50; // Fetch more messages to ensure enough per platform when filtering
 
   // Scroll to bottom of messages
   const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
