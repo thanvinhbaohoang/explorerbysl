@@ -149,7 +149,7 @@ const Docs = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="bg-muted/50 p-4 rounded-lg border">
-              <p className="font-medium mb-2">Bot Name: <code>ClientInfoHarvestBot</code></p>
+              <p className="font-medium mb-2">Bot Name: <code>ExplorerBySLBot</code></p>
               <p className="text-sm text-muted-foreground">
                 The bot acts as an intermediary between customers and your team.
               </p>
