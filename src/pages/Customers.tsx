@@ -1522,11 +1522,7 @@ const Customers = () => {
                               onClick={() => loadMessages(customer)}
                               className="relative"
                             >
-                              {primaryPlatform === 'messenger' ? (
-                                <Facebook className="h-4 w-4 mr-2" />
-                              ) : (
-                                <Send className="h-4 w-4 mr-2" />
-                              )}
+                              <MessageSquare className="h-4 w-4 mr-2" />
                               Chat
                               {(() => {
                                 const count = (unreadCounts[customer.id] || 0) + 
