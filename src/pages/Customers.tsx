@@ -156,12 +156,13 @@ const Customers = () => {
   // Auto-scroll to bottom when messages change or dialog opens
   useEffect(() => {
     if (dialogOpen && messages.length > 0 && !isLoadingMessages) {
-      // Use requestAnimationFrame for reliable timing after DOM update
-      requestAnimationFrame(() => {
+      // Use setTimeout to ensure DOM is fully rendered
+      const timeoutId = setTimeout(() => {
         scrollToBottom();
-      });
+      }, 100);
+      return () => clearTimeout(timeoutId);
     }
-  }, [dialogOpen, messages, isLoadingMessages]);
+  }, [dialogOpen, messages.length, isLoadingMessages]);
 
   // Filter messages by platform
   const filteredMessages = useMemo(() => {
@@ -1535,8 +1536,10 @@ const Customers = () => {
                               <MessageSquare className="h-4 w-4 mr-2" />
                               Chat
                               {(() => {
-                                const count = (unreadCounts[customer.id] || 0) + 
-                                  (customer.linked_customer_id ? (unreadCounts[customer.linked_customer_id] || 0) : 0);
+                                // Get all linked IDs from the linkedPlatformsMap
+                                const linkedIds = linkedPlatformsMap[customer.id]?.linkedIds || [];
+                                const allIds = [customer.id, ...linkedIds];
+                                const count = allIds.reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
                                 return count > 0 ? (
                                   <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 bg-destructive text-destructive-foreground text-xs font-medium rounded-full flex items-center justify-center animate-pulse">
                                     {count > 99 ? '99+' : count}
