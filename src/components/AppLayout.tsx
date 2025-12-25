@@ -19,6 +19,7 @@ const navLinks: NavLink[] = [
   { href: "/customers", label: "Customers" },
   { href: "/traffic", label: "Traffic" },
   { href: "/ads-insight", label: "Ads Insight" },
+  { href: "/docs", label: "Docs" },
   { href: "/facebook-pages", label: "Pages", adminOnly: true },
   { href: "/monday-import", label: "Import", adminOnly: true },
   { href: "/user-roles", label: "Roles", adminOnly: true },
