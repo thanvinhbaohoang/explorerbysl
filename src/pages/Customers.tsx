@@ -1318,12 +1318,13 @@ const Customers = () => {
             // Show toast notification for customer messages
             if (newMessage.sender_type === "customer") {
               const customer = customers.find((c) => c.id === newMessage.customer_id);
-              if (customer) {
-                toast.success("New message received", {
-                  description: `${customer.first_name || customer.messenger_name || "Customer"} sent a message`,
-                  icon: <Bell className="h-4 w-4" />,
-                });
-              }
+              const platform = newMessage.platform === 'messenger' ? 'Messenger' : 'Telegram';
+              toast.success(`New ${platform} message`, {
+                description: customer 
+                  ? `${customer.first_name || customer.messenger_name || "Customer"} sent a message`
+                  : "A customer sent a message",
+                icon: <Bell className="h-4 w-4" />,
+              });
             }
           }
         }
@@ -2033,8 +2034,8 @@ const Customers = () => {
                 {isMessengerOutsideWindow 
                   ? 'Messaging disabled — Reply directly via Facebook Messenger app or wait for customer to message first.' 
                   : selectedFile 
-                    ? `Press Enter to send ${getMediaType(selectedFile)} via ${platformFilter === 'messenger' || (selectedCustomer?.messenger_id && !selectedCustomer?.telegram_id) ? 'Messenger' : 'Telegram'}`
-                    : `Press Enter to send • This will be sent via ${platformFilter === 'messenger' || (selectedCustomer?.messenger_id && !selectedCustomer?.telegram_id) ? 'Messenger' : 'Telegram'}`}
+                    ? `Press Enter to send ${getMediaType(selectedFile)} via ${platformFilter || (replyCustomer?.messenger_id ? 'messenger' : 'telegram') === 'messenger' ? 'Messenger' : 'Telegram'}`
+                    : `Press Enter to send • This will be sent via ${platformFilter || (replyCustomer?.messenger_id ? 'messenger' : 'telegram') === 'messenger' ? 'Messenger' : 'Telegram'}`}
               </p>
             </div>
           )}
