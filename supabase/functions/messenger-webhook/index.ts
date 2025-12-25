@@ -726,18 +726,29 @@ serve(async (req) => {
       }
       
       // Fetch app info using the app_id from token debug
+      // Note: Usage statistics (daily/weekly/monthly active users) require an app access token, not system user token
       let appInfo = null;
       if (tokenData?.app_id) {
-        const appUrl = `https://graph.facebook.com/v18.0/${tokenData.app_id}?fields=id,name,category,link,privacy_policy_url,daily_active_users,weekly_active_users,monthly_active_users&access_token=${systemUserToken}`;
+        // Only request fields accessible with system user token
+        const appUrl = `https://graph.facebook.com/v18.0/${tokenData.app_id}?fields=id,name,category,link,privacy_policy_url&access_token=${systemUserToken}`;
         const appResponse = await fetch(appUrl);
         
         if (appResponse.ok) {
           appInfo = await appResponse.json();
           console.log('App info:', JSON.stringify(appInfo, null, 2));
         } else {
-          console.error('Failed to fetch app info:', await appResponse.text());
+          const errorText = await appResponse.text();
+          console.log('App endpoint failed (expected with system user token):', errorText);
+          // Use fallback data from token debug
+          console.log('Using token debug data as fallback for app info');
         }
       }
+      
+      // Build app info from token debug data as fallback
+      const appInfoFromToken = tokenData ? {
+        id: tokenData.app_id,
+        name: tokenData.application || 'Unknown App',
+      } : null;
       
       // Fetch system user info using the user_id from token debug
       let systemUserInfo = null;
@@ -776,18 +787,18 @@ serve(async (req) => {
         console.log('Could not fetch business info:', err);
       }
       
+      // Use direct app info if available, otherwise fall back to token debug data
+      const finalAppInfo = appInfo ? {
+        id: appInfo.id,
+        name: appInfo.name,
+        category: appInfo.category,
+        link: appInfo.link,
+        privacyPolicyUrl: appInfo.privacy_policy_url,
+      } : appInfoFromToken;
+      
       return new Response(JSON.stringify({
         success: true,
-        app: appInfo ? {
-          id: appInfo.id,
-          name: appInfo.name,
-          category: appInfo.category,
-          link: appInfo.link,
-          privacyPolicyUrl: appInfo.privacy_policy_url,
-          dailyActiveUsers: appInfo.daily_active_users,
-          weeklyActiveUsers: appInfo.weekly_active_users,
-          monthlyActiveUsers: appInfo.monthly_active_users,
-        } : null,
+        app: finalAppInfo,
         systemUser: systemUserInfo ? {
           id: systemUserInfo.id,
           name: systemUserInfo.name,
