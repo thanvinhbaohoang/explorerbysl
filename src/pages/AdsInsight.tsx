@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart3, TrendingUp, DollarSign, MousePointer, Eye, RefreshCw, ArrowLeft, Building2 } from "lucide-react";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
+
 import { useNavigate } from "react-router-dom";
 import { useAdAccounts, useAccountInsights, useCampaigns, useAdSets, useAds } from "@/hooks/useAdsInsightData";
 
@@ -131,7 +131,7 @@ const AdsInsight = () => {
 
   const selectedAccount = adAccounts.find(acc => acc.id === selectedAccountId);
 
-  const COLORS = ['hsl(0, 0%, 0%)', 'hsl(0, 0%, 20%)', 'hsl(0, 0%, 40%)', 'hsl(0, 0%, 60%)', 'hsl(0, 0%, 80%)'];
+  
 
   return (
     <div className="min-h-screen bg-background p-8">
@@ -303,38 +303,7 @@ const AdsInsight = () => {
                         No campaigns found for this account.
                       </div>
                     ) : (
-                      <div className="space-y-6">
-                        {/* Pie Chart */}
-                        <div className="h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={campaigns.map(campaign => {
-                                  const data = getInsightData(campaign);
-                                  return {
-                                    name: campaign.name,
-                                    value: data.spend,
-                                  };
-                                })}
-                                cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                label={(entry) => `${entry.name}: ${formatCurrency(entry.value)}`}
-                                outerRadius={80}
-                                fill="hsl(var(--foreground))"
-                                dataKey="value"
-                              >
-                                {campaigns.map((_, index) => (
-                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                              </Pie>
-                              <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                            </PieChart>
-                          </ResponsiveContainer>
-                        </div>
-
-                        {/* Table */}
-                        <div className="rounded-md border">
+                      <div className="rounded-md border">
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -369,7 +338,6 @@ const AdsInsight = () => {
                             </TableBody>
                           </Table>
                         </div>
-                      </div>
                     )}
                   </CardContent>
                 </Card>
