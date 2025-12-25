@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Users, Lock, Key, ChevronDown, ChevronUp, Globe, FileText } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, Globe, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -22,9 +22,6 @@ interface AppInfo {
   category?: string;
   link?: string;
   privacyPolicyUrl?: string;
-  dailyActiveUsers?: number;
-  weeklyActiveUsers?: number;
-  monthlyActiveUsers?: number;
 }
 
 interface SystemUserInfo {
@@ -271,35 +268,6 @@ const FacebookPages = () => {
                     )}
                   </div>
 
-                  {/* Active Users */}
-                  {(appInfo.dailyActiveUsers || appInfo.weeklyActiveUsers || appInfo.monthlyActiveUsers) && (
-                    <div className="pt-2 border-t">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                        <Users className="h-4 w-4" />
-                        Active Users
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        {appInfo.dailyActiveUsers !== undefined && (
-                          <div>
-                            <div className="text-lg font-semibold">{appInfo.dailyActiveUsers.toLocaleString()}</div>
-                            <div className="text-xs text-muted-foreground">Daily</div>
-                          </div>
-                        )}
-                        {appInfo.weeklyActiveUsers !== undefined && (
-                          <div>
-                            <div className="text-lg font-semibold">{appInfo.weeklyActiveUsers.toLocaleString()}</div>
-                            <div className="text-xs text-muted-foreground">Weekly</div>
-                          </div>
-                        )}
-                        {appInfo.monthlyActiveUsers !== undefined && (
-                          <div>
-                            <div className="text-lg font-semibold">{appInfo.monthlyActiveUsers.toLocaleString()}</div>
-                            <div className="text-xs text-muted-foreground">Monthly</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Token Info */}
                   {tokenInfo && (
