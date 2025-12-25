@@ -1528,7 +1528,8 @@ const Customers = () => {
                                 <Send className="h-4 w-4 mr-2" />
                               )}
                               Chat
-                              {lastMessageSender[customer.id] === "customer" && (
+                              {(lastMessageSender[customer.id] === "customer" || 
+                                (customer.linked_customer_id && lastMessageSender[customer.linked_customer_id] === "customer")) && (
                                 <span className="absolute -top-1 -right-1 h-3 w-3 bg-destructive rounded-full animate-pulse" />
                               )}
                             </Button>
@@ -2029,13 +2030,11 @@ const Customers = () => {
                   </>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {isMessengerOutsideWindow 
-                  ? 'Messaging disabled — Reply directly via Facebook Messenger app or wait for customer to message first.' 
-                  : selectedFile 
-                    ? `Press Enter to send ${getMediaType(selectedFile)} via ${platformFilter === 'messenger' || (selectedCustomer?.messenger_id && !selectedCustomer?.telegram_id) ? 'Messenger' : 'Telegram'}`
-                    : `Press Enter to send • This will be sent via ${platformFilter === 'messenger' || (selectedCustomer?.messenger_id && !selectedCustomer?.telegram_id) ? 'Messenger' : 'Telegram'}`}
-              </p>
+              {isMessengerOutsideWindow && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Messaging disabled — Reply directly via Facebook Messenger app or wait for customer to message first.
+                </p>
+              )}
             </div>
           )}
         </DialogContent>
