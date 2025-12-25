@@ -1528,8 +1528,8 @@ const Customers = () => {
                                 <Send className="h-4 w-4 mr-2" />
                               )}
                               Chat
-                              {(lastMessageSender[customer.id] === "customer" || 
-                                (customer.linked_customer_id && lastMessageSender[customer.linked_customer_id] === "customer")) && (
+                              {((unreadCounts[customer.id] || 0) > 0 || 
+                                (customer.linked_customer_id && (unreadCounts[customer.linked_customer_id] || 0) > 0)) && (
                                 <span className="absolute -top-1 -right-1 h-3 w-3 bg-destructive rounded-full animate-pulse" />
                               )}
                             </Button>
