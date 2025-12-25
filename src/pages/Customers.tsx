@@ -140,9 +140,27 @@ const Customers = () => {
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [audioLevels, setAudioLevels] = useState<number[]>([0, 0, 0, 0, 0]);
   const animationFrameRef = useRef<number | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   // Track customers where messaging window has expired (from API error)
   const [expiredWindowCustomers, setExpiredWindowCustomers] = useState<Set<string>>(new Set());
   const messagesPerPage = 10;
+
+  // Scroll to bottom of messages
+  const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior });
+    }
+  };
+
+  // Auto-scroll to bottom when messages change or dialog opens
+  useEffect(() => {
+    if (dialogOpen && messages.length > 0 && !isLoadingMessages) {
+      // Use requestAnimationFrame for reliable timing after DOM update
+      requestAnimationFrame(() => {
+        scrollToBottom();
+      });
+    }
+  }, [dialogOpen, messages, isLoadingMessages]);
 
   // Filter messages by platform
   const filteredMessages = useMemo(() => {
@@ -987,14 +1005,7 @@ const Customers = () => {
         setHasMoreMessages(meta.hasMore);
       }
       
-      // Scroll to bottom
-      setTimeout(() => {
-        const messagesContainer = document.getElementById('messages-container');
-        if (messagesContainer) {
-          messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-      }, 100);
-      
+      // useEffect will handle scroll to bottom
       return;
     }
     
@@ -1009,19 +1020,24 @@ const Customers = () => {
     try {
       // Mark all unread messages as read for all linked customers (only on initial load)
       if (offset === 0) {
-        await supabase
+        const { error: markReadError } = await supabase
           .from("messages")
           .update({ is_read: true })
           .in("customer_id", allCustomerIds)
           .eq("sender_type", "customer")
-          .eq("is_read", false);
+          .eq("is_read", false)
+          .select();
 
-        // Reset unread count for all linked customers
-        setUnreadCounts((prev) => {
-          const updated = { ...prev };
-          allCustomerIds.forEach(id => { updated[id] = 0; });
-          return updated;
-        });
+        if (markReadError) {
+          console.error("Error marking messages as read:", markReadError);
+        } else {
+          // Only reset unread count if the update was successful
+          setUnreadCounts((prev) => {
+            const updated = { ...prev };
+            allCustomerIds.forEach(id => { updated[id] = 0; });
+            return updated;
+          });
+        }
       }
 
       // Get total count for all linked customers
@@ -1060,14 +1076,7 @@ const Customers = () => {
           ...prev,
           [cacheKey]: { offset: newOffset, hasMore },
         }));
-        
-        // Scroll to bottom after loading
-        setTimeout(() => {
-          const messagesContainer = document.getElementById('messages-container');
-          if (messagesContainer) {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-          }
-        }, 100);
+        // useEffect will handle scroll to bottom
       } else {
         // Prepend older messages and maintain scroll position
         const container = document.getElementById('messages-container');
@@ -1800,6 +1809,8 @@ const Customers = () => {
                 </div>
                   );
                 })}
+                {/* Scroll anchor for auto-scroll to bottom */}
+                <div ref={messagesEndRef} />
               </div>
             )}
           </div>
