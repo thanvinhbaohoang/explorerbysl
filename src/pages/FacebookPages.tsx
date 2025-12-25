@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useUserRole } from "@/hooks/useUserRole";
+import { UpdateTokenDialog } from "@/components/UpdateTokenDialog";
 
 interface FacebookPage {
   id: string;
@@ -14,6 +17,13 @@ interface FacebookPage {
   picture?: string;
   synced?: boolean;
   lastUpdated?: string;
+}
+
+interface DbPage {
+  id: string;
+  page_id: string;
+  name: string;
+  picture_url?: string;
 }
 
 interface AppInfo {
@@ -54,7 +64,9 @@ interface TokenInfo {
 
 const FacebookPages = () => {
   const navigate = useNavigate();
+  const { isAdmin, isLoading: roleLoading } = useUserRole();
   const [pages, setPages] = useState<FacebookPage[]>([]);
+  const [dbPages, setDbPages] = useState<DbPage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
@@ -68,6 +80,30 @@ const FacebookPages = () => {
   const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
   const [appInfoLoading, setAppInfoLoading] = useState(true);
   const [scopesExpanded, setScopesExpanded] = useState(false);
+  
+  // Token update dialog
+  const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
+  const [selectedPage, setSelectedPage] = useState<DbPage | null>(null);
+  
+  // Fetch database pages for token management
+  const fetchDbPages = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("facebook_pages")
+        .select("id, page_id, name, picture_url")
+        .order("name");
+      
+      if (error) throw error;
+      setDbPages(data || []);
+    } catch (err: any) {
+      console.error("Error fetching db pages:", err);
+    }
+  };
+  
+  const handleUpdateToken = (page: DbPage) => {
+    setSelectedPage(page);
+    setTokenDialogOpen(true);
+  };
 
   const fetchPages = async () => {
     setIsLoading(true);
@@ -167,6 +203,7 @@ const FacebookPages = () => {
   useEffect(() => {
     fetchPages();
     fetchAppInfo();
+    fetchDbPages();
   }, []);
 
   return (
@@ -431,54 +468,140 @@ const FacebookPages = () => {
                 </CardContent>
               </Card>
             ) : (
-              pages.map((page) => (
-                <Card key={page.id} className="hover:border-primary/50 transition-colors">
-                  <CardContent className="pt-6">
-                    <div className="flex items-start gap-4">
-                      <Avatar className="h-16 w-16">
-                        <AvatarImage src={page.picture} alt={page.name} />
-                        <AvatarFallback className="bg-primary/10 text-primary text-lg">
-                          {page.name.charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 space-y-2">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-semibold text-lg">{page.name}</h3>
-                            {page.synced && (
-                              <Badge variant="outline" className="text-green-600 border-green-600">
-                                <Database className="h-3 w-3 mr-1" />
-                                Synced
-                              </Badge>
+              pages.map((page) => {
+                // Find the matching db page for this page
+                const dbPage = dbPages.find(dp => dp.page_id === page.id);
+                
+                return (
+                  <Card key={page.id} className="hover:border-primary/50 transition-colors">
+                    <CardContent className="pt-6">
+                      <div className="flex items-start gap-4">
+                        <Avatar className="h-16 w-16">
+                          <AvatarImage src={page.picture} alt={page.name} />
+                          <AvatarFallback className="bg-primary/10 text-primary text-lg">
+                            {page.name.charAt(0).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 space-y-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-lg">{page.name}</h3>
+                              {page.synced && (
+                                <Badge variant="outline" className="text-green-600 border-green-600">
+                                  <Database className="h-3 w-3 mr-1" />
+                                  Synced
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground font-mono">
+                              ID: {page.id}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {page.category && (
+                              <Badge variant="secondary">{page.category}</Badge>
+                            )}
+                            <Badge variant="outline" className="gap-1">
+                              <MessageSquare className="h-3 w-3" />
+                              Messenger Active
+                            </Badge>
+                            {page.lastUpdated && (
+                              <span className="text-xs text-muted-foreground">
+                                Synced: {new Date(page.lastUpdated).toLocaleString()}
+                              </span>
                             )}
                           </div>
-                          <p className="text-sm text-muted-foreground font-mono">
-                            ID: {page.id}
-                          </p>
                         </div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {page.category && (
-                            <Badge variant="secondary">{page.category}</Badge>
-                          )}
-                          <Badge variant="outline" className="gap-1">
-                            <MessageSquare className="h-3 w-3" />
-                            Messenger Active
-                          </Badge>
-                          {page.lastUpdated && (
-                            <span className="text-xs text-muted-foreground">
-                              Synced: {new Date(page.lastUpdated).toLocaleString()}
-                            </span>
-                          )}
-                        </div>
+                        
+                        {/* Admin-only Update Token Button */}
+                        {isAdmin && dbPage && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleUpdateToken(dbPage)}
+                            className="gap-1"
+                          >
+                            <Key className="h-4 w-4" />
+                            Update Token
+                          </Button>
+                        )}
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
+                    </CardContent>
+                  </Card>
+                );
+              })
             )}
           </div>
         )}
+        
+        {/* Admin Token Management Section */}
+        {isAdmin && dbPages.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Token Management
+                <Badge variant="secondary" className="ml-2">Admin Only</Badge>
+              </CardTitle>
+              <CardDescription>
+                Update page access tokens for connected Facebook pages
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {dbPages.map((dbPage) => (
+                  <div
+                    key={dbPage.id}
+                    className="flex items-center justify-between p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      {dbPage.picture_url ? (
+                        <img
+                          src={dbPage.picture_url}
+                          alt={dbPage.name}
+                          className="h-8 w-8 rounded-full"
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                          <span className="text-primary text-sm font-medium">
+                            {dbPage.name.charAt(0)}
+                          </span>
+                        </div>
+                      )}
+                      <div>
+                        <div className="font-medium text-sm">{dbPage.name}</div>
+                        <div className="text-xs text-muted-foreground font-mono">
+                          {dbPage.page_id}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleUpdateToken(dbPage)}
+                      className="gap-1"
+                    >
+                      <Key className="h-3 w-3" />
+                      Update Token
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
+      
+      {/* Update Token Dialog */}
+      <UpdateTokenDialog
+        open={tokenDialogOpen}
+        onOpenChange={setTokenDialogOpen}
+        page={selectedPage}
+        onSuccess={() => {
+          fetchDbPages();
+          fetchPages();
+        }}
+      />
     </div>
   );
 };
