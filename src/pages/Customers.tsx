@@ -1602,38 +1602,37 @@ const Customers = () => {
                   ? selectedCustomer.messenger_name 
                   : `${selectedCustomer?.first_name || ''} ${selectedCustomer?.last_name || ''}`.trim() || 'Customer'}
               </span>
-              <Badge variant={selectedCustomer?.messenger_id ? 'default' : 'secondary'} className="ml-auto">
-                {selectedCustomer?.messenger_id ? (
-                  <><Facebook className="h-3 w-3 mr-1" /> Messenger</>
-                ) : (
-                  <>Telegram</>
-                )}
-              </Badge>
+              {/* Platform Selector in Header (for linked accounts) or Badge */}
+              {linkedCustomerIds.length > 1 ? (
+                <div className="ml-auto flex items-center gap-1">
+                  {Object.entries(linkedCustomersMap).map(([customerId, info]) => (
+                    <Button
+                      key={customerId}
+                      variant={platformFilter === info.platform ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setPlatformFilter(info.platform as 'telegram' | 'messenger')}
+                    >
+                      {info.platform === 'messenger' ? (
+                        <Facebook className="h-3 w-3 mr-1" />
+                      ) : (
+                        <Send className="h-3 w-3 mr-1" />
+                      )}
+                      {info.platform === 'messenger' ? 'Messenger' : 'Telegram'}
+                    </Button>
+                  ))}
+                </div>
+              ) : (
+                <Badge variant={selectedCustomer?.messenger_id ? 'default' : 'secondary'} className="ml-auto">
+                  {selectedCustomer?.messenger_id ? (
+                    <><Facebook className="h-3 w-3 mr-1" /> Messenger</>
+                  ) : (
+                    <>Telegram</>
+                  )}
+                </Badge>
+              )}
             </DialogTitle>
           </DialogHeader>
-
-          {/* Platform Toggle for Linked Accounts */}
-          {linkedCustomerIds.length > 1 && (
-            <div className="flex flex-wrap items-center gap-2 py-2 border-b flex-shrink-0">
-              <span className="text-xs text-muted-foreground">Platform:</span>
-              {Object.entries(linkedCustomersMap).map(([customerId, info]) => (
-                <Button
-                  key={customerId}
-                  variant={platformFilter === info.platform ? 'default' : 'outline'}
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setPlatformFilter(info.platform as 'telegram' | 'messenger')}
-                >
-                  {info.platform === 'messenger' ? (
-                    <Facebook className="h-3 w-3 mr-1" />
-                  ) : (
-                    <Send className="h-3 w-3 mr-1" />
-                  )}
-                  {info.name}
-                </Button>
-              ))}
-            </div>
-          )}
 
           {/* Scrollable Messages Area */}
           <div 
@@ -1817,19 +1816,7 @@ const Customers = () => {
                       <span className="font-medium"> Reply directly via Facebook Messenger</span> or wait for the customer to message you first.
                     </AlertDescription>
                   </Alert>
-                ) : (
-                  <Alert className="mb-3 border-primary/30 bg-primary/5">
-                    <Clock className="h-4 w-4 text-primary" />
-                    <AlertDescription className="text-sm text-muted-foreground">
-                      <strong className="text-foreground">
-                        {messengerWindowInfo.hoursRemaining > 0 
-                          ? `${messengerWindowInfo.hoursRemaining}h ${messengerWindowInfo.minutesRemaining}m left to reply`
-                          : `${messengerWindowInfo.minutesRemaining}m left to reply`}
-                      </strong>
-                      {' '}— Facebook's 24-hour messaging window
-                    </AlertDescription>
-                  </Alert>
-                )
+                ) : null
               )}
               
               {/* File Preview */}
