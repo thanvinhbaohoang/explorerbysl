@@ -22,6 +22,7 @@ import Auth from "./pages/Auth";
 import MondayImport from "./pages/MondayImport";
 import FacebookPages from "./pages/FacebookPages";
 import UserRoles from "./pages/UserRoles";
+import Docs from "./pages/Docs";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -54,6 +55,7 @@ const App = () => (
               <Route path="/monday-import" element={<ProtectedRoute><MondayImport /></ProtectedRoute>} />
               <Route path="/facebook-pages" element={<ProtectedRoute><FacebookPages /></ProtectedRoute>} />
               <Route path="/user-roles" element={<ProtectedRoute><UserRoles /></ProtectedRoute>} />
+              <Route path="/docs" element={<ProtectedRoute><Docs /></ProtectedRoute>} />
               
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
