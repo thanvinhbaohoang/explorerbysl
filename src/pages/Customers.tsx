@@ -997,8 +997,30 @@ const Customers = () => {
     setLinkedCustomerIds(allCustomerIds);
     setLinkedCustomersMap(linkedMap);
     
-    // Check cache first (only if not forcing refresh, offset is 0, and cache has actual messages)
     const cacheKey = allCustomerIds.sort().join("-");
+    
+    // ALWAYS mark messages as read on initial load (even when using cache)
+    if (offset === 0) {
+      const { error: markReadError } = await supabase
+        .from("messages")
+        .update({ is_read: true })
+        .in("customer_id", allCustomerIds)
+        .eq("sender_type", "customer")
+        .eq("is_read", false);
+
+      if (markReadError) {
+        console.error("Error marking messages as read:", markReadError);
+      } else {
+        // Reset unread count for all linked customer IDs
+        setUnreadCounts((prev) => {
+          const updated = { ...prev };
+          allCustomerIds.forEach(id => { updated[id] = 0; });
+          return updated;
+        });
+      }
+    }
+    
+    // Check cache (only if not forcing refresh, offset is 0, and cache has actual messages)
     if (offset === 0 && !forceRefresh && messagesCache[cacheKey] && messagesCache[cacheKey].length > 0) {
       setMessages(messagesCache[cacheKey]);
       const meta = messageMetaCache[cacheKey];
@@ -1020,27 +1042,6 @@ const Customers = () => {
     }
 
     try {
-      // Mark all unread messages as read for all linked customers (only on initial load)
-      if (offset === 0) {
-        const { error: markReadError } = await supabase
-          .from("messages")
-          .update({ is_read: true })
-          .in("customer_id", allCustomerIds)
-          .eq("sender_type", "customer")
-          .eq("is_read", false)
-          .select();
-
-        if (markReadError) {
-          console.error("Error marking messages as read:", markReadError);
-        } else {
-          // Only reset unread count if the update was successful
-          setUnreadCounts((prev) => {
-            const updated = { ...prev };
-            allCustomerIds.forEach(id => { updated[id] = 0; });
-            return updated;
-          });
-        }
-      }
 
       // Get total count for all linked customers
       const { count } = await supabase

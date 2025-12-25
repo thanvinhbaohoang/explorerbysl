@@ -77,14 +77,15 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10) => {
         // Build the map
         customersData.forEach(customer => {
           const linkedToThis = linkedCustomers?.filter(lc => lc.linked_customer_id === customer.id) || [];
-          const allIds = [customer.id, ...linkedToThis.map(lc => lc.id)];
+          // Only include linked IDs (not the primary customer ID) to avoid duplication
+          const linkedIds = linkedToThis.map(lc => lc.id);
           const hasTelegram = customer.telegram_id !== null || linkedToThis.some(lc => lc.telegram_id !== null);
           const hasMessenger = customer.messenger_id !== null || linkedToThis.some(lc => lc.messenger_id !== null);
 
           linkedPlatformsMap[customer.id] = {
             telegram: hasTelegram,
             messenger: hasMessenger,
-            linkedIds: allIds,
+            linkedIds: linkedIds,
           };
         });
 
