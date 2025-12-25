@@ -19,11 +19,11 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    const { user_ids } = await req.json();
+    const { user_ids, fetch_all } = await req.json();
 
-    if (!user_ids || !Array.isArray(user_ids)) {
+    if (!fetch_all && (!user_ids || !Array.isArray(user_ids))) {
       return new Response(
-        JSON.stringify({ error: "user_ids array is required" }),
+        JSON.stringify({ error: "user_ids array is required or set fetch_all: true" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -37,7 +37,8 @@ serve(async (req) => {
     const usersMap: Record<string, { email: string; name: string | null; avatar_url: string | null }> = {};
     
     for (const user of users) {
-      if (user_ids.includes(user.id)) {
+      // If fetch_all is true, include all users; otherwise filter by user_ids
+      if (fetch_all || user_ids.includes(user.id)) {
         usersMap[user.id] = {
           email: user.email || "",
           name: user.user_metadata?.full_name || user.user_metadata?.name || null,
