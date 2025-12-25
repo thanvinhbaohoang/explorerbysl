@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Users, Lock, Key, ChevronDown, ChevronUp, Globe, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -40,6 +40,11 @@ interface BusinessInfo {
   link?: string;
 }
 
+interface GranularScope {
+  scope: string;
+  target_ids?: string[];
+}
+
 interface TokenInfo {
   appId: string;
   userId: string;
@@ -47,7 +52,7 @@ interface TokenInfo {
   isValid: boolean;
   expiresAt: string;
   scopes: string[];
-  granularScopes?: any[];
+  granularScopes?: GranularScope[];
 }
 
 const FacebookPages = () => {
@@ -65,6 +70,7 @@ const FacebookPages = () => {
   const [business, setBusiness] = useState<BusinessInfo | null>(null);
   const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
   const [appInfoLoading, setAppInfoLoading] = useState(true);
+  const [scopesExpanded, setScopesExpanded] = useState(false);
 
   const fetchPages = async () => {
     setIsLoading(true);
@@ -224,7 +230,7 @@ const FacebookPages = () => {
               {appInfoLoading ? (
                 <div className="text-muted-foreground text-sm">Loading...</div>
               ) : appInfo ? (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div className="flex items-center gap-3">
                     <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
                       <Facebook className="h-6 w-6 text-primary" />
@@ -234,30 +240,107 @@ const FacebookPages = () => {
                       <div className="text-xs text-muted-foreground font-mono">ID: {appInfo.id}</div>
                     </div>
                   </div>
+                  
                   {appInfo.category && (
                     <Badge variant="secondary">{appInfo.category}</Badge>
                   )}
+
+                  {/* App Links */}
+                  <div className="flex flex-wrap gap-2">
+                    {appInfo.link && (
+                      <a 
+                        href={appInfo.link} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                      >
+                        <Globe className="h-3 w-3" />
+                        App Page
+                      </a>
+                    )}
+                    {appInfo.privacyPolicyUrl && (
+                      <a 
+                        href={appInfo.privacyPolicyUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                      >
+                        <FileText className="h-3 w-3" />
+                        Privacy Policy
+                      </a>
+                    )}
+                  </div>
+
+                  {/* Active Users */}
+                  {(appInfo.dailyActiveUsers || appInfo.weeklyActiveUsers || appInfo.monthlyActiveUsers) && (
+                    <div className="pt-2 border-t">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                        <Users className="h-4 w-4" />
+                        Active Users
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        {appInfo.dailyActiveUsers !== undefined && (
+                          <div>
+                            <div className="text-lg font-semibold">{appInfo.dailyActiveUsers.toLocaleString()}</div>
+                            <div className="text-xs text-muted-foreground">Daily</div>
+                          </div>
+                        )}
+                        {appInfo.weeklyActiveUsers !== undefined && (
+                          <div>
+                            <div className="text-lg font-semibold">{appInfo.weeklyActiveUsers.toLocaleString()}</div>
+                            <div className="text-xs text-muted-foreground">Weekly</div>
+                          </div>
+                        )}
+                        {appInfo.monthlyActiveUsers !== undefined && (
+                          <div>
+                            <div className="text-lg font-semibold">{appInfo.monthlyActiveUsers.toLocaleString()}</div>
+                            <div className="text-xs text-muted-foreground">Monthly</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Token Info */}
                   {tokenInfo && (
-                    <div className="pt-2 border-t space-y-1">
-                      <div className="flex items-center gap-2">
+                    <div className="pt-2 border-t space-y-2">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                        <Key className="h-4 w-4" />
+                        Token Details
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant={tokenInfo.isValid ? "default" : "destructive"} className="text-xs">
-                          {tokenInfo.isValid ? "Token Valid" : "Token Invalid"}
+                          {tokenInfo.isValid ? "Valid" : "Invalid"}
                         </Badge>
+                        {tokenInfo.type && (
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {tokenInfo.type}
+                          </Badge>
+                        )}
                         <span className="text-xs text-muted-foreground">
                           Expires: {tokenInfo.expiresAt === 'Never' ? 'Never' : new Date(tokenInfo.expiresAt).toLocaleDateString()}
                         </span>
                       </div>
+                      
+                      {/* Scopes */}
                       {tokenInfo.scopes && tokenInfo.scopes.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {tokenInfo.scopes.slice(0, 5).map((scope: string) => (
-                            <Badge key={scope} variant="outline" className="text-xs">
-                              {scope}
-                            </Badge>
-                          ))}
-                          {tokenInfo.scopes.length > 5 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{tokenInfo.scopes.length - 5} more
-                            </Badge>
+                        <div className="pt-1">
+                          <button 
+                            onClick={() => setScopesExpanded(!scopesExpanded)}
+                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <Lock className="h-3 w-3" />
+                            {tokenInfo.scopes.length} Permissions
+                            {scopesExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          </button>
+                          {scopesExpanded && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {tokenInfo.scopes.map((scope: string) => (
+                                <Badge key={scope} variant="outline" className="text-xs">
+                                  {scope}
+                                </Badge>
+                              ))}
+                            </div>
                           )}
                         </div>
                       )}
