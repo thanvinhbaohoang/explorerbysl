@@ -144,7 +144,7 @@ const Customers = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // Track customers where messaging window has expired (from API error)
   const [expiredWindowCustomers, setExpiredWindowCustomers] = useState<Set<string>>(new Set());
-  const messagesPerPage = 10;
+  const messagesPerPage = 20; // Fetch at least 20 messages to ensure enough context
 
   // Scroll to bottom of messages
   const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
@@ -997,9 +997,9 @@ const Customers = () => {
     setLinkedCustomerIds(allCustomerIds);
     setLinkedCustomersMap(linkedMap);
     
-    // Check cache first (only if not forcing refresh and offset is 0)
+    // Check cache first (only if not forcing refresh, offset is 0, and cache has actual messages)
     const cacheKey = allCustomerIds.sort().join("-");
-    if (offset === 0 && !forceRefresh && messagesCache[cacheKey]) {
+    if (offset === 0 && !forceRefresh && messagesCache[cacheKey] && messagesCache[cacheKey].length > 0) {
       setMessages(messagesCache[cacheKey]);
       const meta = messageMetaCache[cacheKey];
       if (meta) {
