@@ -33,6 +33,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square, Play, Pause, Trash2, Clock } from "lucide-react";
+import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -1643,6 +1644,20 @@ const Customers = () => {
                 </Badge>
               )}
             </DialogTitle>
+            {/* AI Summary Button */}
+            {selectedCustomer && (
+              <div className="flex items-center gap-2 pt-2">
+                <ChatSummaryDialog 
+                  customerId={selectedCustomer.id}
+                  linkedCustomerIds={linkedCustomerIds}
+                  customerName={
+                    selectedCustomer.messenger_id 
+                      ? selectedCustomer.messenger_name || 'Customer'
+                      : `${selectedCustomer.first_name || ''} ${selectedCustomer.last_name || ''}`.trim() || 'Customer'
+                  }
+                />
+              </div>
+            )}
           </DialogHeader>
 
           {/* Scrollable Messages Area */}
