@@ -10,6 +10,8 @@ import { Separator } from "@/components/ui/separator";
 import { MessageCircle, Send, Users, BarChart3, Link2, Globe } from "lucide-react";
 
 const Docs = () => {
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://yourdomain.com';
+  
   return (
     <div className="container mx-auto py-8 px-4 max-w-4xl">
       <div className="mb-8">
@@ -38,7 +40,7 @@ const Docs = () => {
                 <AccordionContent className="space-y-3">
                   <p>Use this URL format in your Facebook posts to track leads:</p>
                   <code className="block bg-muted p-3 rounded-md text-sm overflow-x-auto">
-                    https://yourdomain.com/telegram?p=[tag]&utm_source=facebook&utm_campaign=[campaign_name]
+                    {baseUrl}/telegram?p=[tag]&utm_source=facebook&utm_campaign=[campaign_name]
                   </code>
                   <div className="mt-3">
                     <p className="font-medium mb-2">Parameters:</p>
