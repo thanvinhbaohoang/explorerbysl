@@ -254,15 +254,15 @@ export function ChatSummaryDialog({ customerId, linkedCustomerIds, customerName 
               </InfoGrid>
             </Section>
 
-            {/* Conversation Status */}
+            {/* Conversation Overview */}
             <Section 
               icon={<MessageSquare className="h-4 w-4" />} 
-              title="Conversation Status"
+              title="Conversation Overview"
             >
               <div className="space-y-3">
                 {summary.conversationStatus.keyQuestions.length > 0 && (
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Key Questions</p>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Questions Addressed</p>
                     <ul className="list-disc list-inside text-sm space-y-1">
                       {summary.conversationStatus.keyQuestions.map((q, i) => (
                         <li key={i}>{q}</li>

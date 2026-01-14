@@ -186,8 +186,8 @@ Return a JSON object with the following structure (use null for missing info, em
     "budgetIndication": "Any budget or price expectations mentioned"
   },
   "conversationStatus": {
-    "keyQuestions": ["Important questions the customer has asked"],
-    "unansweredQuestions": ["Questions that still need answers"],
+    "keyQuestions": ["Questions that have been addressed/answered in the conversation"],
+    "unansweredQuestions": ["Questions from the customer that still need answers"],
     "actionItems": ["Things that need to be done/followed up on"],
     "sentiment": "positive/neutral/concerned - customer's overall mood"
   },
