@@ -23,6 +23,7 @@ export type Database = {
           id: string
           is_premium: boolean | null
           language_code: string | null
+          last_message_at: string | null
           last_name: string | null
           linked_customer_id: string | null
           locale: string | null
@@ -43,6 +44,7 @@ export type Database = {
           id?: string
           is_premium?: boolean | null
           language_code?: string | null
+          last_message_at?: string | null
           last_name?: string | null
           linked_customer_id?: string | null
           locale?: string | null
@@ -63,6 +65,7 @@ export type Database = {
           id?: string
           is_premium?: boolean | null
           language_code?: string | null
+          last_message_at?: string | null
           last_name?: string | null
           linked_customer_id?: string | null
           locale?: string | null

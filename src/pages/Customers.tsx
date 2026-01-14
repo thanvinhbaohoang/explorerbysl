@@ -1808,7 +1808,7 @@ const Customers = () => {
                       )}
                     </div>
                     <span className="text-xs text-muted-foreground">
-                      {formatDate(message.timestamp)}
+                      {formatDateGMT7(message.timestamp)}
                     </span>
                   </div>
 

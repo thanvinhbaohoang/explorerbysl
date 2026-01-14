@@ -65,7 +65,7 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10) => {
       if (error) throw error;
 
       let linkedPlatformsMap: LinkedPlatformsMap = {};
-      let customersWithLeads: Customer[] = customersData || [];
+      let customersWithLeads = (customersData || []) as Customer[];
 
       if (customersData && customersData.length > 0) {
         const customerIds = customersData.map(c => c.id);
