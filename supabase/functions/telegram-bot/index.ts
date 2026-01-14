@@ -642,33 +642,16 @@ serve(async (req) => {
         try {
           console.log("Sending message to:", telegram_id, "Text:", message_text);
           
-          // Check if this is the first employee message to this customer
-          let finalMessage = message_text;
-          if (customer_id && sent_by_name) {
-            const { data: previousMessages } = await supabase
-              .from('messages')
-              .select('id')
-              .eq('customer_id', customer_id)
-              .eq('sender_type', 'employee')
-              .limit(1);
-            
-            // If no previous employee messages, add introduction
-            if (!previousMessages || previousMessages.length === 0) {
-              finalMessage = `Hi! I'm ${sent_by_name} from ExplorerBySL. ${message_text}`;
-              console.log("First employee message - adding introduction");
-            }
-          }
-          
           // Send message to Telegram user
-          await sendMessage(telegram_id, finalMessage);
+          await sendMessage(telegram_id, message_text);
           
-          // Save original message to database (without the auto-prefix for cleaner logs)
+          // Save message to database
           const { error: dbError } = await supabase
             .from('messages')
             .insert({
               customer_id,
               telegram_id,
-              message_text: finalMessage,
+              message_text,
               message_type: 'text',
               sender_type: 'employee',
               sent_by_name: sent_by_name || null,
