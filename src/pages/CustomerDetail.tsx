@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { LinkCustomerDialog } from "@/components/LinkCustomerDialog";
+import { CustomerIdentityCard } from "@/components/CustomerIdentityCard";
 import { 
   ArrowLeft, 
   Facebook, 
@@ -41,6 +42,13 @@ interface Customer {
   locale: string | null;
   timezone_offset: number | null;
   linked_customer_id: string | null;
+  legal_first_name: string | null;
+  legal_middle_name: string | null;
+  legal_last_name: string | null;
+  sex: string | null;
+  passport_number: string | null;
+  nationality: string | null;
+  national_id: string | null;
 }
 
 interface LeadSource {
@@ -395,6 +403,21 @@ const CustomerDetail = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Identity Information */}
+        <CustomerIdentityCard
+          customerId={unifiedData.primaryCustomer.id}
+          identityData={{
+            legal_first_name: unifiedData.primaryCustomer.legal_first_name,
+            legal_middle_name: unifiedData.primaryCustomer.legal_middle_name,
+            legal_last_name: unifiedData.primaryCustomer.legal_last_name,
+            sex: unifiedData.primaryCustomer.sex,
+            passport_number: unifiedData.primaryCustomer.passport_number,
+            nationality: unifiedData.primaryCustomer.nationality,
+            national_id: unifiedData.primaryCustomer.national_id,
+          }}
+          onUpdate={() => id && fetchUnifiedCustomerData(id)}
+        />
 
         {/* Timeline */}
         <Card>
