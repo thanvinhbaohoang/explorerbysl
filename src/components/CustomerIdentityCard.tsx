@@ -12,8 +12,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { IdCard, Pencil, X, Save, Loader2 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { IdCard, Pencil, X, Save, Loader2, Check, ChevronsUpDown } from "lucide-react";
 import { countries } from "@/data/countries";
+import { cn } from "@/lib/utils";
 
 interface IdentityData {
   legal_first_name: string | null;
@@ -41,6 +55,7 @@ export const CustomerIdentityCard = ({
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<IdentityData>(identityData);
+  const [nationalityOpen, setNationalityOpen] = useState(false);
 
   const handleInputChange = (field: keyof IdentityData, value: string) => {
     setFormData((prev) => ({
@@ -177,21 +192,47 @@ export const CustomerIdentityCard = ({
             </div>
             <div className="space-y-2">
               <Label htmlFor="nationality">Nationality</Label>
-              <Select
-                value={formData.nationality || ""}
-                onValueChange={(value) => handleInputChange("nationality", value)}
-              >
-                <SelectTrigger id="nationality">
-                  <SelectValue placeholder="Select nationality" />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {countries.map((country) => (
-                    <SelectItem key={country} value={country}>
-                      {country}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={nationalityOpen} onOpenChange={setNationalityOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={nationalityOpen}
+                    className="w-full justify-between font-normal"
+                  >
+                    {formData.nationality || "Select nationality"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[300px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search country..." />
+                    <CommandList>
+                      <CommandEmpty>No country found.</CommandEmpty>
+                      <CommandGroup>
+                        {countries.map((country) => (
+                          <CommandItem
+                            key={country}
+                            value={country}
+                            onSelect={() => {
+                              handleInputChange("nationality", country);
+                              setNationalityOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                formData.nationality === country ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {country}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="national_id">National ID</Label>
