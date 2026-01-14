@@ -8,6 +8,7 @@ interface Customer {
   first_name: string | null;
   last_name: string | null;
   language_code: string | null;
+  detected_language: string | null;
   is_premium: boolean;
   first_message_at: string;
   created_at: string;

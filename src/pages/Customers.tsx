@@ -36,6 +36,7 @@ import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Papercli
 import { exportToCSV } from "@/lib/csv-export";
 import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
 import { TableSkeleton } from "@/components/TableSkeleton";
+import { detectLanguage, getLanguageLabel } from "@/lib/language-detection";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   DropdownMenu,
@@ -51,6 +52,7 @@ interface Customer {
   first_name: string | null;
   last_name: string | null;
   language_code: string | null;
+  detected_language: string | null;
   is_premium: boolean;
   first_message_at: string;
   created_at: string;
@@ -1071,6 +1073,27 @@ const Customers = () => {
       if (offset === 0) {
         setMessages(messagesData);
         
+        // Detect language from customer messages and update if needed
+        const customerMessages = messagesData
+          .filter((msg: Message) => msg.sender_type === 'customer' && msg.message_text)
+          .map((msg: Message) => msg.message_text as string);
+        
+        if (customerMessages.length > 0) {
+          const detectedLang = detectLanguage(customerMessages);
+          
+          // Update customer record if language differs
+          if (detectedLang !== customer.detected_language) {
+            supabase
+              .from('customer')
+              .update({ detected_language: detectedLang })
+              .eq('id', customer.id)
+              .then(() => {
+                // Invalidate the customers query to refresh the list
+                queryClient.invalidateQueries({ queryKey: ['customers'] });
+              });
+          }
+        }
+        
         // Cache the messages and metadata
         setMessagesCache((prev) => ({
           ...prev,
@@ -1391,7 +1414,7 @@ const Customers = () => {
                     { key: 'username', header: 'Username', getValue: (c) => c.username || '' },
                     { key: 'platform', header: 'Platform', getValue: (c) => c.messenger_id ? 'Messenger' : 'Telegram' },
                     { key: 'first_message_at', header: 'First Message', getValue: (c) => new Date(c.first_message_at).toLocaleString() },
-                    { key: 'language_code', header: 'Language', getValue: (c) => c.language_code || c.locale || '' },
+                    { key: 'detected_language', header: 'Language', getValue: (c) => getLanguageLabel(c.detected_language) },
                     { key: 'is_premium', header: 'Premium', getValue: (c) => c.is_premium ? 'Yes' : 'No' },
                   ],
                   'customers'
@@ -1511,10 +1534,11 @@ const Customers = () => {
                             )}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">
-                              {primaryPlatform === 'messenger' 
-                                ? (customer.locale || "Unknown")
-                                : (customer.language_code || "Unknown")}
+                            <Badge 
+                              variant="outline"
+                              className={customer.detected_language === 'km' ? 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-900/30 dark:text-orange-200 dark:border-orange-700' : ''}
+                            >
+                              {getLanguageLabel(customer.detected_language)}
                             </Badge>
                           </TableCell>
                           <TableCell>

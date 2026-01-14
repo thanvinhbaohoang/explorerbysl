@@ -17,6 +17,7 @@ export type Database = {
       customer: {
         Row: {
           created_at: string
+          detected_language: string | null
           first_message_at: string
           first_name: string | null
           id: string
@@ -36,6 +37,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          detected_language?: string | null
           first_message_at?: string
           first_name?: string | null
           id?: string
@@ -55,6 +57,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          detected_language?: string | null
           first_message_at?: string
           first_name?: string | null
           id?: string
