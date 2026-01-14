@@ -11,6 +11,7 @@ interface Customer {
   detected_language: string | null;
   is_premium: boolean;
   first_message_at: string;
+  last_message_at: string | null;
   created_at: string;
   messenger_id: string | null;
   messenger_name: string | null;

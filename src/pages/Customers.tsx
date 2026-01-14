@@ -55,6 +55,7 @@ interface Customer {
   detected_language: string | null;
   is_premium: boolean;
   first_message_at: string;
+  last_message_at: string | null;
   created_at: string;
   messenger_id: string | null;
   messenger_name: string | null;
@@ -1371,8 +1372,18 @@ const Customers = () => {
     };
   }, [selectedCustomer, customers, dialogOpen, linkedCustomerIds]);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+  // Format date in GMT+7 (Indochina Time)
+  const formatDateGMT7 = (dateString: string | null) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleString('en-GB', {
+      timeZone: 'Asia/Bangkok',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   // Pagination calculations (data is already paginated from DB)
@@ -1413,9 +1424,9 @@ const Customers = () => {
                     { key: 'last_name', header: 'Last Name', getValue: (c) => c.last_name || '' },
                     { key: 'username', header: 'Username', getValue: (c) => c.username || '' },
                     { key: 'platform', header: 'Platform', getValue: (c) => c.messenger_id ? 'Messenger' : 'Telegram' },
-                    { key: 'first_message_at', header: 'First Message', getValue: (c) => new Date(c.first_message_at).toLocaleString() },
+                    { key: 'first_message_at', header: 'First Message', getValue: (c) => formatDateGMT7(c.first_message_at) },
+                    { key: 'last_message_at', header: 'Last Message', getValue: (c) => formatDateGMT7(c.last_message_at) },
                     { key: 'detected_language', header: 'Language', getValue: (c) => getLanguageLabel(c.detected_language) },
-                    { key: 'is_premium', header: 'Premium', getValue: (c) => c.is_premium ? 'Yes' : 'No' },
                   ],
                   'customers'
                 );
@@ -1470,8 +1481,8 @@ const Customers = () => {
                       <TableHead>Username / ID</TableHead>
                       <TableHead>Language</TableHead>
                       <TableHead>Source</TableHead>
-                      <TableHead>Premium</TableHead>
                       <TableHead>First Message</TableHead>
+                      <TableHead>Last Message</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1564,15 +1575,11 @@ const Customers = () => {
                               <span className="text-xs text-muted-foreground">Direct</span>
                             )}
                           </TableCell>
-                          <TableCell>
-                            {customer.is_premium ? (
-                              <Badge variant="default">Premium</Badge>
-                            ) : (
-                              <Badge variant="secondary">Standard</Badge>
-                            )}
+                          <TableCell className="text-muted-foreground text-sm">
+                            {formatDateGMT7(customer.first_message_at)}
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">
-                            {formatDate(customer.first_message_at)}
+                            {formatDateGMT7(customer.last_message_at)}
                           </TableCell>
                           <TableCell>
                             <Button
