@@ -25,12 +25,19 @@ export type Database = {
           language_code: string | null
           last_message_at: string | null
           last_name: string | null
+          legal_first_name: string | null
+          legal_last_name: string | null
+          legal_middle_name: string | null
           linked_customer_id: string | null
           locale: string | null
           messenger_id: string | null
           messenger_name: string | null
           messenger_profile_pic: string | null
+          national_id: string | null
+          nationality: string | null
           page_id: string | null
+          passport_number: string | null
+          sex: string | null
           telegram_id: number | null
           timezone_offset: number | null
           updated_at: string
@@ -46,12 +53,19 @@ export type Database = {
           language_code?: string | null
           last_message_at?: string | null
           last_name?: string | null
+          legal_first_name?: string | null
+          legal_last_name?: string | null
+          legal_middle_name?: string | null
           linked_customer_id?: string | null
           locale?: string | null
           messenger_id?: string | null
           messenger_name?: string | null
           messenger_profile_pic?: string | null
+          national_id?: string | null
+          nationality?: string | null
           page_id?: string | null
+          passport_number?: string | null
+          sex?: string | null
           telegram_id?: number | null
           timezone_offset?: number | null
           updated_at?: string
@@ -67,12 +81,19 @@ export type Database = {
           language_code?: string | null
           last_message_at?: string | null
           last_name?: string | null
+          legal_first_name?: string | null
+          legal_last_name?: string | null
+          legal_middle_name?: string | null
           linked_customer_id?: string | null
           locale?: string | null
           messenger_id?: string | null
           messenger_name?: string | null
           messenger_profile_pic?: string | null
+          national_id?: string | null
+          nationality?: string | null
           page_id?: string | null
+          passport_number?: string | null
+          sex?: string | null
           telegram_id?: number | null
           timezone_offset?: number | null
           updated_at?: string
