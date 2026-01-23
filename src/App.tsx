@@ -10,6 +10,7 @@ import AppLayout from "@/components/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import Customers from "./pages/Customers";
 import CustomerDetail from "./pages/CustomerDetail";
+import Chat from "./pages/Chat";
 import Traffic from "./pages/Traffic";
 import AdsInsight from "./pages/AdsInsight";
 import AdDetail from "./pages/AdDetail";
@@ -49,6 +50,7 @@ const App = () => (
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
               <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetail /></ProtectedRoute>} />
+              <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
               <Route path="/traffic" element={<ProtectedRoute><Traffic /></ProtectedRoute>} />
               <Route path="/ads-insight" element={<ProtectedRoute><AdsInsight /></ProtectedRoute>} />
               <Route path="/ads-insight/:adId" element={<ProtectedRoute><AdDetail /></ProtectedRoute>} />
