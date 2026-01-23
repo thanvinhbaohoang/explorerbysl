@@ -18,7 +18,7 @@ const Auth = () => {
       (event, session) => {
         setSession(session);
         if (session) {
-          navigate("/");
+          navigate("/customers");
         }
       }
     );
@@ -27,7 +27,7 @@ const Auth = () => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) {
-        navigate("/");
+        navigate("/customers");
       }
     });
 
@@ -40,7 +40,7 @@ const Auth = () => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/`,
+          redirectTo: `${window.location.origin}/customers`,
         },
       });
 
