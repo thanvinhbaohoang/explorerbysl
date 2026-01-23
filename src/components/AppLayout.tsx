@@ -16,6 +16,7 @@ interface NavLink {
 }
 
 const navLinks: NavLink[] = [
+  { href: "/chat", label: "Chat" },
   { href: "/customers", label: "Customers" },
   { href: "/traffic", label: "Traffic" },
   { href: "/ads-insight", label: "Ads Insight" },
