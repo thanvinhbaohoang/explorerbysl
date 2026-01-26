@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.summarize-chat]
 verify_jwt = false
+
+[functions.capture-traffic]
+verify_jwt = false
