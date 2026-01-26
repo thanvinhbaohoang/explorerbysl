@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -72,47 +71,47 @@ const Redirect = () => {
         console.log("UTM parameters:", utmParams);
         console.log("Referrer:", referrer);
 
-        // Insert traffic data and generate token (id)
-        console.log("Attempting to insert into database with fbclid and UTM params:", fbclid, utmParams);
+        // Call edge function to insert traffic data (uses service role to bypass RLS)
+        console.log("Calling capture-traffic edge function...");
         
-        const insertData = {
-          facebook_click_id: fbclid || null,
-          utm_source: utmParams.utm_source || null,
-          utm_medium: utmParams.utm_medium || null,
-          utm_campaign: utmParams.utm_campaign || null,
-          utm_content: utmParams.utm_content || null,
-          utm_term: utmParams.utm_term || null,
-          utm_adset_id: utmParams.utm_adset_id || null,
-          utm_ad_id: utmParams.utm_ad_id || null,
-          utm_campaign_id: utmParams.utm_campaign_id || null,
-          referrer: referrer,
-        };
-        console.log("Insert data object:", insertData);
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/capture-traffic`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              facebook_click_id: fbclid || null,
+              utm_source: utmParams.utm_source || null,
+              utm_medium: utmParams.utm_medium || null,
+              utm_campaign: utmParams.utm_campaign || null,
+              utm_content: utmParams.utm_content || null,
+              utm_term: utmParams.utm_term || null,
+              utm_adset_id: utmParams.utm_adset_id || null,
+              utm_ad_id: utmParams.utm_ad_id || null,
+              utm_campaign_id: utmParams.utm_campaign_id || null,
+              referrer: referrer,
+              platform: 'telegram',
+            }),
+          }
+        );
 
-        const { data, error } = await supabase
-          .from("telegram_leads")
-          .insert(insertData)
-          .select("id, facebook_click_id")
-          .single();
-
-        console.log("Supabase response:", { data, error });
-
-        if (error) {
-          console.error("Error saving traffic data:", error);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("Error saving traffic data:", errorText);
           setStatus("error");
           return;
         }
+
+        const data = await response.json();
+        console.log("Edge function response:", data);
 
         if (!data?.id) {
-          console.error("No id returned from database");
+          console.error("No id returned from edge function");
           setStatus("error");
           return;
         }
 
-        console.log("Traffic saved successfully:", { 
-          id: data.id, 
-          facebook_click_id: data.facebook_click_id 
-        });
+        console.log("Traffic saved successfully:", { id: data.id });
         setStatus("ready");
 
         // Prepare Telegram URL
