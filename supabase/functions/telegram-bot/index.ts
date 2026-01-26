@@ -182,17 +182,18 @@ async function handleStart(message: any) {
 
   console.log("User started bot:", info);
 
-  // Format warm, human-like greeting message
-  const firstName = u.first_name || "there";
-  const msg = `👋 Hi ${escapeMd(firstName)}!
+  // Format bilingual Khmer/English welcome message
+  const msg = `ក្រុមហ៊ុនទេសចរណ៍ អុិចផ្លរឺ
 
-Thanks for reaching out to ExplorerBySL! ✨
+Explorer by SL
 
-One of our team members will be connected with you shortly to help with your inquiry.
-
-Feel free to send us a message anytime – we're here to help you plan your perfect adventure! 🌍
-
-Is there anything specific you'd like to know about our travel services?`;
+កញ្ចប់ធួរ | Tour Packages
+សំបុត្រយន្តហោះ | Flight Booking
+កក់សណ្ឋាគារ | Hotel Reservation
+ធ្វើវីសាគ្រប់ប្រទេស | Visa Abroad
+លិខិតឆ្លងដែន | Passport
+ជួលខុនដូគ្រប់ប្រទេស | Condo Rental
+អ្នកបកប្រែនិងនាំដើរលេង | Guide Service`;
 
   // Send warm greeting (no inline buttons - conversation starts here)
   await fetch(`${TELEGRAM_API}/sendMessage`, {
