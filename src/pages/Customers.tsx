@@ -130,10 +130,9 @@ const Customers = () => {
   const [linkedCustomerIds, setLinkedCustomerIds] = useState<string[]>([]);
   const [linkedCustomersMap, setLinkedCustomersMap] = useState<Record<string, { name: string; platform: string; telegram_id: number | null; messenger_id: string | null; page_id: string | null }>>({});
   const [platformFilter, setPlatformFilter] = useState<'telegram' | 'messenger' | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [filePreviews, setFilePreviews] = useState<string[]>([]);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
-  const fileInputRef = useState<HTMLInputElement | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -482,34 +481,54 @@ const Customers = () => {
     }
   };
 
-  // Handle file selection
+  // Handle file selection (multiple files)
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-    // Validate file size (max 25MB for Telegram, 25MB for Messenger)
     const maxSize = 25 * 1024 * 1024;
-    if (file.size > maxSize) {
-      toast.error("File is too large. Maximum size is 25MB.");
-      return;
-    }
+    const validFiles: File[] = [];
 
-    setSelectedFile(file);
+    Array.from(files).forEach((file) => {
+      if (file.size > maxSize) {
+        toast.error(`${file.name} is too large. Maximum size is 25MB.`);
+        return;
+      }
+      validFiles.push(file);
+    });
 
-    // Create preview for images and videos
-    if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => setFilePreview(e.target?.result as string);
-      reader.readAsDataURL(file);
-    } else {
-      setFilePreview(null);
-    }
+    if (validFiles.length === 0) return;
+
+    // Add to existing files
+    setSelectedFiles(prev => [...prev, ...validFiles]);
+
+    // Generate previews for images/videos
+    validFiles.forEach((file) => {
+      if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setFilePreviews(prev => [...prev, e.target?.result as string]);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        setFilePreviews(prev => [...prev, '']);
+      }
+    });
+
+    // Reset input to allow selecting the same file again
+    event.target.value = '';
   };
 
-  // Clear selected file
-  const clearSelectedFile = () => {
-    setSelectedFile(null);
-    setFilePreview(null);
+  // Remove a single file from selection
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setFilePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Clear all selected files
+  const clearAllFiles = () => {
+    setSelectedFiles([]);
+    setFilePreviews([]);
   };
 
   // Determine media type from file
@@ -545,15 +564,14 @@ const Customers = () => {
     return urlData.publicUrl;
   };
 
-  // Send media file
-  const sendMedia = async () => {
+  // Send a single media file
+  const sendSingleMedia = async (file: File, caption?: string): Promise<boolean> => {
     const customerToReply = replyCustomer || selectedCustomer;
-    if (!selectedFile || !customerToReply || isUploadingFile) return;
+    if (!file || !customerToReply) return false;
 
-    const mediaType = getMediaType(selectedFile);
+    const mediaType = getMediaType(file);
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
-    const tempId = `temp-media-${Date.now()}`;
-    const caption = replyText.trim() || undefined;
+    const tempId = `temp-media-${Date.now()}-${Math.random()}`;
     const employeeName = user?.email?.split('@')[0] || 'Employee';
 
     // Optimistically add message to UI
@@ -566,15 +584,15 @@ const Customers = () => {
       timestamp: new Date().toISOString(),
       created_at: new Date().toISOString(),
       photo_file_id: null,
-      photo_url: mediaType === 'photo' ? filePreview : null,
+      photo_url: null,
       voice_file_id: null,
       voice_duration: null,
       voice_transcription: null,
       voice_url: null,
       video_file_id: null,
-      video_url: mediaType === 'video' ? filePreview : null,
+      video_url: null,
       video_duration: null,
-      video_mime_type: selectedFile.type,
+      video_mime_type: file.type,
       sender_type: "employee",
       is_read: true,
       platform,
@@ -584,9 +602,6 @@ const Customers = () => {
     };
 
     setMessages((prev) => [...prev, optimisticMessage]);
-    setIsUploadingFile(true);
-    clearSelectedFile();
-    setReplyText("");
 
     // Scroll to bottom
     setTimeout(() => {
@@ -598,8 +613,7 @@ const Customers = () => {
 
     try {
       // Upload to storage first
-      const mediaUrl = await uploadFileToStorage(selectedFile);
-      console.log("File uploaded to storage:", mediaUrl);
+      const mediaUrl = await uploadFileToStorage(file);
 
       let response;
       const employeeName = user?.email?.split('@')[0] || 'Employee';
@@ -638,12 +652,8 @@ const Customers = () => {
       // Remove optimistic message - real-time subscription will add the real one
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
 
-      setLastMessageSender((prev) => ({
-        ...prev,
-        [customerToReply.id]: "employee",
-      }));
-
-      toast.success("Media sent successfully");
+      toast.success("Media sent");
+      return true;
     } catch (error: any) {
       console.error("Error sending media:", error);
       
@@ -659,7 +669,33 @@ const Customers = () => {
       }
       
       setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+      return false;
+    }
+  };
+
+  // Send all selected media files
+  const sendMedia = async () => {
+    if (selectedFiles.length === 0 || isUploadingFile) return;
+
+    setIsUploadingFile(true);
+    const caption = replyText.trim() || undefined;
+
+    try {
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const fileCaption = i === 0 ? caption : undefined;
+        await sendSingleMedia(selectedFiles[i], fileCaption);
+      }
+      
+      const customerToReply = replyCustomer || selectedCustomer;
+      if (customerToReply) {
+        setLastMessageSender((prev) => ({
+          ...prev,
+          [customerToReply.id]: "employee",
+        }));
+      }
     } finally {
+      clearAllFiles();
+      setReplyText("");
       setIsUploadingFile(false);
     }
   };
@@ -1917,29 +1953,37 @@ const Customers = () => {
                 ) : null
               )}
               
-              {/* File Preview */}
-              {selectedFile && (
-                <div className="mb-3 p-3 border rounded-lg bg-muted/50">
+              {/* File Previews */}
+              {selectedFiles.length > 0 && (
+                <div className="mb-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {getMediaType(selectedFile) === 'photo' && <Image className="h-4 w-4 text-muted-foreground" />}
-                      {getMediaType(selectedFile) === 'video' && <Video className="h-4 w-4 text-muted-foreground" />}
-                      {getMediaType(selectedFile) === 'document' && <Paperclip className="h-4 w-4 text-muted-foreground" />}
-                      <span className="text-sm truncate max-w-[200px]">{selectedFile.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
-                      </span>
-                    </div>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={clearSelectedFile}>
-                      <X className="h-4 w-4" />
+                    <span className="text-sm text-muted-foreground">{selectedFiles.length} file(s) selected</span>
+                    <Button variant="ghost" size="sm" onClick={clearAllFiles} className="h-7 text-xs">
+                      Clear all
                     </Button>
                   </div>
-                  {filePreview && getMediaType(selectedFile) === 'photo' && (
-                    <img src={filePreview} alt="Preview" className="mt-2 max-h-32 rounded object-contain" />
-                  )}
-                  {filePreview && getMediaType(selectedFile) === 'video' && (
-                    <video src={filePreview} className="mt-2 max-h-32 rounded" controls />
-                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {selectedFiles.map((file, index) => (
+                      <div key={index} className="relative group">
+                        {filePreviews[index] && file.type.startsWith('image/') ? (
+                          <img src={filePreviews[index]} alt="Preview" className="w-16 h-16 object-cover rounded border" />
+                        ) : (
+                          <div className="w-16 h-16 bg-muted rounded border flex flex-col items-center justify-center p-1">
+                            <Paperclip className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-[8px] text-muted-foreground truncate w-full text-center mt-1">
+                              {file.name.split('.').pop()?.toUpperCase()}
+                            </span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => removeFile(index)}
+                          className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
               
@@ -1949,6 +1993,7 @@ const Customers = () => {
                 id="image-upload"
                 className="hidden"
                 accept="image/*"
+                multiple
                 onChange={handleFileSelect}
               />
               <input
@@ -1956,12 +2001,14 @@ const Customers = () => {
                 id="video-upload"
                 className="hidden"
                 accept="video/*"
+                multiple
                 onChange={handleFileSelect}
               />
               <input
                 type="file"
                 id="file-upload"
                 className="hidden"
+                multiple
                 onChange={handleFileSelect}
               />
               
@@ -2083,14 +2130,14 @@ const Customers = () => {
                       variant="outline" 
                       size="icon"
                       onClick={startRecording}
-                      disabled={isMessengerOutsideWindow || isUploadingFile || !!selectedFile}
+                      disabled={isMessengerOutsideWindow || isUploadingFile || selectedFiles.length > 0}
                       title="Record voice message"
                     >
                       <Mic className="h-4 w-4" />
                     </Button>
                     
                     <Input
-                      placeholder={isMessengerOutsideWindow ? "Chat disabled - 24h window expired" : selectedFile ? "Add a caption (optional)..." : "Type your reply..."}
+                      placeholder={isMessengerOutsideWindow ? "Chat disabled - 24h window expired" : selectedFiles.length > 0 ? "Add a caption (optional)..." : "Type your reply..."}
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
                       onKeyPress={(e) => {
@@ -2102,7 +2149,7 @@ const Customers = () => {
                             });
                             return;
                           }
-                          if (selectedFile) {
+                          if (selectedFiles.length > 0) {
                             sendMedia();
                           } else {
                             sendReply();
@@ -2114,8 +2161,8 @@ const Customers = () => {
                       className="flex-1"
                     />
                     <Button 
-                      onClick={selectedFile ? sendMedia : sendReply} 
-                      disabled={((!replyText.trim() && !selectedFile) || isSending || isUploadingFile || isMessengerOutsideWindow)}
+                      onClick={selectedFiles.length > 0 ? sendMedia : sendReply} 
+                      disabled={((!replyText.trim() && selectedFiles.length === 0) || isSending || isUploadingFile || isMessengerOutsideWindow)}
                       size="icon"
                     >
                       {isUploadingFile ? (
