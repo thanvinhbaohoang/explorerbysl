@@ -40,8 +40,8 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [replyText, setReplyText] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [filePreviews, setFilePreviews] = useState<string[]>([]);
 
   const {
     filteredMessages,
@@ -91,41 +91,67 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
     }
   }, [filteredMessages.length, isLoadingMessages, platformFilter]);
 
-  // Handle file selection
+  // Handle file selection (multiple files)
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
     const maxSize = 25 * 1024 * 1024;
-    if (file.size > maxSize) {
-      toast.error("File is too large. Maximum size is 25MB.");
-      return;
-    }
+    const validFiles: File[] = [];
+    const previews: string[] = [];
 
-    setSelectedFile(file);
+    Array.from(files).forEach((file) => {
+      if (file.size > maxSize) {
+        toast.error(`${file.name} is too large. Maximum size is 25MB.`);
+        return;
+      }
+      validFiles.push(file);
+    });
 
-    if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => setFilePreview(e.target?.result as string);
-      reader.readAsDataURL(file);
-    } else {
-      setFilePreview(null);
-    }
+    if (validFiles.length === 0) return;
+
+    // Add to existing files
+    setSelectedFiles(prev => [...prev, ...validFiles]);
+
+    // Generate previews for images/videos
+    validFiles.forEach((file) => {
+      if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setFilePreviews(prev => [...prev, e.target?.result as string]);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        setFilePreviews(prev => [...prev, '']);
+      }
+    });
+
+    // Reset input to allow selecting the same file again
+    event.target.value = '';
   };
 
-  const clearSelectedFile = () => {
-    setSelectedFile(null);
-    setFilePreview(null);
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setFilePreviews(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSend = () => {
+  const clearAllFiles = () => {
+    setSelectedFiles([]);
+    setFilePreviews([]);
+  };
+
+  const handleSend = async () => {
     if (isMessengerOutsideWindow) {
       toast.error("Cannot send message: The 24-hour messaging window has expired.");
       return;
     }
-    if (selectedFile) {
-      sendMedia(selectedFile, replyText.trim() || undefined);
-      clearSelectedFile();
+    if (selectedFiles.length > 0) {
+      // Send files sequentially with caption only on the first one
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const caption = i === 0 ? replyText.trim() || undefined : undefined;
+        await sendMedia(selectedFiles[i], caption);
+      }
+      clearAllFiles();
       setReplyText("");
     } else if (replyText.trim()) {
       sendReply(replyText);
@@ -275,26 +301,42 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
 
       {/* Input area */}
       <div className="flex-shrink-0 border-t p-4">
-        {/* Hidden file inputs */}
-        <input type="file" id="chat-image-upload" className="hidden" accept="image/*" onChange={handleFileSelect} />
-        <input type="file" id="chat-video-upload" className="hidden" accept="video/*" onChange={handleFileSelect} />
-        <input type="file" id="chat-file-upload" className="hidden" onChange={handleFileSelect} />
+        {/* Hidden file inputs - now with multiple */}
+        <input type="file" id="chat-image-upload" className="hidden" accept="image/*" multiple onChange={handleFileSelect} />
+        <input type="file" id="chat-video-upload" className="hidden" accept="video/*" multiple onChange={handleFileSelect} />
+        <input type="file" id="chat-file-upload" className="hidden" multiple onChange={handleFileSelect} />
 
-        {/* File preview */}
-        {selectedFile && (
-          <div className="mb-3 p-3 bg-muted rounded-lg flex items-center gap-3">
-            {filePreview && selectedFile.type.startsWith('image/') && (
-              <img src={filePreview} alt="Preview" className="w-16 h-16 object-cover rounded" />
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{selectedFile.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-              </p>
+        {/* File previews */}
+        {selectedFiles.length > 0 && (
+          <div className="mb-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{selectedFiles.length} file(s) selected</span>
+              <Button variant="ghost" size="sm" onClick={clearAllFiles} className="h-7 text-xs">
+                Clear all
+              </Button>
             </div>
-            <Button variant="ghost" size="icon" onClick={clearSelectedFile}>
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {selectedFiles.map((file, index) => (
+                <div key={index} className="relative group">
+                  {filePreviews[index] && file.type.startsWith('image/') ? (
+                    <img src={filePreviews[index]} alt="Preview" className="w-16 h-16 object-cover rounded border" />
+                  ) : (
+                    <div className="w-16 h-16 bg-muted rounded border flex flex-col items-center justify-center p-1">
+                      <Paperclip className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-[8px] text-muted-foreground truncate w-full text-center mt-1">
+                        {file.name.split('.').pop()?.toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => removeFile(index)}
+                    className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -379,17 +421,17 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
                 </DropdownMenuContent>
               </DropdownMenu>
               
-              <Button 
-                variant="outline" 
-                size="icon"
-                onClick={startRecording}
-                disabled={isMessengerOutsideWindow || isUploadingFile || !!selectedFile}
-              >
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={startRecording}
+                  disabled={isMessengerOutsideWindow || isUploadingFile || selectedFiles.length > 0}
+                >
                 <Mic className="h-4 w-4" />
               </Button>
               
               <Input
-                placeholder={isMessengerOutsideWindow ? "24h window expired" : selectedFile ? "Add caption..." : "Type a message..."}
+                placeholder={isMessengerOutsideWindow ? "24h window expired" : selectedFiles.length > 0 ? "Add caption..." : "Type a message..."}
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
                 onKeyPress={handleKeyPress}
@@ -400,7 +442,7 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
               
               <Button 
                 onClick={handleSend} 
-                disabled={(!replyText.trim() && !selectedFile) || isSending || isUploadingFile || isMessengerOutsideWindow}
+                disabled={(!replyText.trim() && selectedFiles.length === 0) || isSending || isUploadingFile || isMessengerOutsideWindow}
                 size="icon"
               >
                 {isUploadingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
