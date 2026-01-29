@@ -266,6 +266,9 @@ export type Database = {
         Row: {
           created_at: string
           customer_id: string | null
+          document_mime_type: string | null
+          document_name: string | null
+          document_url: string | null
           id: string
           is_read: boolean | null
           message_text: string | null
@@ -290,6 +293,9 @@ export type Database = {
         Insert: {
           created_at?: string
           customer_id?: string | null
+          document_mime_type?: string | null
+          document_name?: string | null
+          document_url?: string | null
           id?: string
           is_read?: boolean | null
           message_text?: string | null
@@ -314,6 +320,9 @@ export type Database = {
         Update: {
           created_at?: string
           customer_id?: string | null
+          document_mime_type?: string | null
+          document_name?: string | null
+          document_url?: string | null
           id?: string
           is_read?: boolean | null
           message_text?: string | null

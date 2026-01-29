@@ -465,6 +465,9 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
   let voiceUrl = null;
   let voiceFileId = null;
   let voiceDuration = null;
+  let documentUrl: string | null = null;
+  let documentName: string | null = null;
+  let documentMimeType: string | null = null;
   
   if (message.text) {
     messageType = 'text';
@@ -492,8 +495,16 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
       voiceFileId = 'fb_audio';
       console.log(`Voice stored: ${voiceUrl}`);
     } else if (attachment.type === 'file') {
-      messageType = 'text';
-      messageText = `[File: ${attachment.payload.url}]`;
+      messageType = 'document';
+      const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo'); // reuse download logic
+      const fileName = attachment.payload.name || 'document';
+      // Store document info - we'll add to insert below
+      photoUrl = null; // Clear since this is a document
+      documentUrl = storedUrl || attachment.payload.url;
+      documentName = fileName;
+      documentMimeType = 'application/octet-stream';
+      messageText = `[Document: ${fileName}]`;
+      console.log(`Document stored: ${documentUrl}`);
     }
   }
   
@@ -515,6 +526,9 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
       voice_url: voiceUrl,
       voice_file_id: voiceFileId,
       voice_duration: voiceDuration,
+      document_url: documentUrl,
+      document_name: documentName,
+      document_mime_type: documentMimeType,
       sender_type: 'customer',
       is_read: false,
       timestamp,
@@ -1014,7 +1028,7 @@ serve(async (req) => {
     
     // Handle send_media action for attachments
     if (data.psid && data.media_url && data.media_type && !data.object) {
-      const { psid, media_url, media_type, caption, sent_by_name, page_id } = data;
+      const { psid, media_url, media_type, caption, sent_by_name, page_id, document_name, document_mime_type } = data;
       
       if (!psid || !media_url || !media_type) {
         return new Response(JSON.stringify({ error: 'Missing psid, media_url, or media_type' }), {
@@ -1119,6 +1133,12 @@ serve(async (req) => {
         if (media_type === 'photo') insertData.photo_url = media_url;
         else if (media_type === 'video') insertData.video_url = media_url;
         else if (media_type === 'audio' || media_type === 'voice') insertData.voice_url = media_url;
+        else if (media_type === 'document') {
+          insertData.document_url = media_url;
+          const urlParts = media_url.split('/');
+          insertData.document_name = document_name || urlParts[urlParts.length - 1] || 'document';
+          insertData.document_mime_type = document_mime_type || 'application/octet-stream';
+        }
         
         await supabase.from('messages').insert(insertData);
       }

@@ -289,6 +289,76 @@ async function downloadAndStoreFile(fileId: string, fileType: 'photo' | 'voice' 
   }
 }
 
+// Download document from Telegram and upload to Supabase Storage
+async function downloadAndStoreDocument(fileId: string, fileName: string): Promise<string | null> {
+  try {
+    // Get file path from Telegram
+    const response = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
+    const data = await response.json();
+    
+    if (!data.ok || !data.result.file_path) {
+      console.error("Failed to get document path from Telegram");
+      return null;
+    }
+    
+    const telegramFileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
+    
+    // Download the file
+    const fileResponse = await fetch(telegramFileUrl);
+    if (!fileResponse.ok) {
+      console.error("Failed to download document from Telegram");
+      return null;
+    }
+    
+    const fileBuffer = await fileResponse.arrayBuffer();
+    
+    // Get extension from original filename or file path
+    const extension = fileName.split('.').pop() || data.result.file_path.split('.').pop() || 'bin';
+    
+    // Generate unique filename
+    const storedFileName = `telegram-document/${Date.now()}_${Math.random().toString(36).substring(7)}.${extension}`;
+    
+    // Determine content type from extension
+    const contentTypeMap: Record<string, string> = {
+      'pdf': 'application/pdf',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls': 'application/vnd.ms-excel',
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'txt': 'text/plain',
+      'zip': 'application/zip',
+      'rar': 'application/x-rar-compressed',
+    };
+    const contentType = contentTypeMap[extension.toLowerCase()] || 'application/octet-stream';
+    
+    // Upload to Supabase Storage
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('chat-attachments')
+      .upload(storedFileName, fileBuffer, {
+        contentType,
+        cacheControl: '3600',
+        upsert: false,
+      });
+    
+    if (uploadError) {
+      console.error("Failed to upload document to storage:", uploadError);
+      // Fallback to temporary Telegram URL
+      return telegramFileUrl;
+    }
+    
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('chat-attachments')
+      .getPublicUrl(storedFileName);
+    
+    console.log("Document stored permanently:", urlData.publicUrl);
+    return urlData.publicUrl;
+  } catch (error) {
+    console.error("Error downloading and storing document:", error);
+    return null;
+  }
+}
+
 // Save message to database
 async function saveMessage(message: any) {
   try {
@@ -433,7 +503,37 @@ async function saveMessage(message: any) {
       // Handle document messages
       if (message.document) {
         messageType = 'document';
-        messageText = message.caption || `[Document: ${message.document.file_name || 'file'}]`;
+        const docFileId = message.document.file_id;
+        const docFileName = message.document.file_name || 'document';
+        const docMimeType = message.document.mime_type || 'application/octet-stream';
+        
+        // Download and store the document
+        const docUrl = await downloadAndStoreDocument(docFileId, docFileName);
+        messageText = message.caption || `[Document: ${docFileName}]`;
+        
+        console.log("Document captured and stored:", { docFileId, docUrl, fileName: docFileName, mimeType: docMimeType });
+        
+        // Save with document fields
+        const { error } = await supabase
+          .from('messages')
+          .insert({
+            customer_id: customer.id,
+            telegram_id: message.from.id,
+            message_text: messageText,
+            message_type: messageType,
+            document_url: docUrl,
+            document_name: docFileName,
+            document_mime_type: docMimeType,
+            sender_type: 'customer',
+            timestamp: new Date(message.date * 1000).toISOString(),
+          });
+
+        if (error) {
+          console.error("Error saving document message:", error);
+        } else {
+          console.log("Document message saved successfully");
+        }
+        return; // Early return for document messages
       }
 
       // Save the message
@@ -734,6 +834,13 @@ serve(async (req) => {
             insertData.video_url = media_url;
           } else if (media_type === 'voice' || media_type === 'audio') {
             insertData.voice_url = media_url;
+          } else if (media_type === 'document') {
+            insertData.document_url = media_url;
+            // Extract filename from URL or use default
+            const urlParts = media_url.split('/');
+            const fileName = urlParts[urlParts.length - 1] || 'document';
+            insertData.document_name = body.document_name || fileName;
+            insertData.document_mime_type = body.document_mime_type || 'application/octet-stream';
           }
           
           const { error: dbError } = await supabase
