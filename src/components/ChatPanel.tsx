@@ -29,6 +29,7 @@ import {
   Pause,
   Trash2,
   Download,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -545,6 +546,26 @@ const MessageBubble = ({
             <source src={message.video_url} type={message.video_mime_type || 'video/mp4'} />
           </video>
         </div>
+      )}
+
+      {/* Document/File */}
+      {message.message_type === 'document' && message.document_url && (
+        <a
+          href={message.document_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          download={message.document_name || 'file'}
+          className="flex items-center gap-3 p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors group"
+        >
+          <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+            <FileText className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium truncate">{message.document_name || 'Document'}</div>
+            <div className="text-xs text-muted-foreground">{message.document_mime_type || 'File'}</div>
+          </div>
+          <Download className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+        </a>
       )}
 
       {/* Text */}

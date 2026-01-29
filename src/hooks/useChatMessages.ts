@@ -23,6 +23,9 @@ export interface Message {
   video_url: string | null;
   video_duration: number | null;
   video_mime_type: string | null;
+  document_url: string | null;
+  document_name: string | null;
+  document_mime_type: string | null;
   sender_type: string;
   is_read: boolean;
   platform: string;
@@ -350,6 +353,9 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       video_url: null,
       video_duration: null,
       video_mime_type: null,
+      document_url: null,
+      document_name: null,
+      document_mime_type: null,
       sender_type: "employee",
       is_read: true,
       platform,
@@ -442,6 +448,9 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       video_url: null,
       video_duration: null,
       video_mime_type: file.type,
+      document_url: mediaType === 'document' ? null : null,
+      document_name: mediaType === 'document' ? file.name : null,
+      document_mime_type: mediaType === 'document' ? file.type : null,
       sender_type: "employee",
       is_read: true,
       platform,
@@ -466,6 +475,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
             caption,
             sent_by_name: employeeName,
             page_id: customerToReply.page_id,
+            document_name: mediaType === 'document' ? file.name : undefined,
+            document_mime_type: mediaType === 'document' ? file.type : undefined,
           },
         });
       } else {
@@ -478,6 +489,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
             media_type: mediaType,
             caption,
             sent_by_name: employeeName,
+            document_name: mediaType === 'document' ? file.name : undefined,
+            document_mime_type: mediaType === 'document' ? file.type : undefined,
           },
         });
       }
@@ -632,6 +645,9 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       video_url: null,
       video_duration: null,
       video_mime_type: null,
+      document_url: null,
+      document_name: null,
+      document_mime_type: null,
       sender_type: "employee",
       is_read: true,
       platform,
