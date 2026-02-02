@@ -3,6 +3,7 @@ import { ChatConversationList } from "@/components/ChatConversationList";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { MessageSquare } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface Customer {
   id: string;
@@ -26,8 +27,29 @@ interface Customer {
 }
 
 const Chat = () => {
+  const isMobile = useIsMobile();
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
+  // Mobile: Full-screen switching between list and chat
+  if (isMobile) {
+    return (
+      <div className="h-[calc(100vh-3.5rem)]">
+        {selectedCustomer ? (
+          <ChatPanel 
+            customer={selectedCustomer} 
+            onBack={() => setSelectedCustomer(null)}
+          />
+        ) : (
+          <ChatConversationList 
+            selectedId={null}
+            onSelect={setSelectedCustomer}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Desktop: Keep resizable side-by-side layout
   return (
     <div className="h-[calc(100vh-3.5rem)]">
       <ResizablePanelGroup direction="horizontal">
