@@ -1,155 +1,160 @@
 
+# Multi-Media Carousel/Album Send Feature
 
-## Fix: Traffic Not Recording for Telegram `?p=[tag]` Visits
+## Overview
+Enable sending multiple images/videos as a single grouped message (album) instead of individual messages. This creates a cleaner chat experience similar to native Telegram/Messenger galleries.
 
-### Problem
-The `/telegram` page uses the client-side Supabase SDK (anon key) to insert into `telegram_leads`, but the RLS policy only allows **service role** to insert. This causes all inserts to fail silently with:
-```
-"new row violates row-level security policy for table 'telegram_leads'"
-```
+## Current Behavior
+- Users can select multiple files in the chat interface
+- Files are sent **one by one** as separate messages
+- Each file triggers a separate API call to Telegram/Messenger
 
-### Solution
-Create a backend function to handle the traffic capture, since edge functions can use the service role key.
-
----
-
-### Files to Create/Modify
-
-| File | Action | Description |
-|------|--------|-------------|
-| `supabase/functions/capture-traffic/index.ts` | Create | New edge function to insert traffic data |
-| `src/pages/Telegram.tsx` | Modify | Call edge function instead of direct insert |
-| `src/pages/Redirect.tsx` | Modify | Call edge function instead of direct insert |
+## Proposed Behavior
+- Multiple images/videos are sent as a single **album/media group**
+- On Telegram: Uses `sendMediaGroup` API (up to 10 items)
+- On Messenger: Falls back to sequential sends (Messenger carousels require buttons/titles which aren't suitable for simple photo sharing)
+- Caption appears only on the first item
+- All items share a common `media_group_id` for UI grouping
 
 ---
 
-### 1. Create Edge Function: `capture-traffic`
+## Implementation Plan
 
+### 1. Database Changes
+Add a column to group related media messages together for display.
+
+**New Column:**
+- `media_group_id` (TEXT, nullable) - Links messages that belong to the same album
+
+### 2. Backend - Telegram Edge Function
+Add a new `sendMediaGroup` function.
+
+**New Action:** `send_media_group`
+- Accepts an array of media items (up to 10)
+- Uses Telegram's `sendMediaGroup` API
+- Creates one database entry per media item, all sharing the same `media_group_id`
+
+### 3. Backend - Messenger Edge Function
+Add batch media handling (sequential with grouping).
+
+**New Action:** `send_media_batch`
+- Accepts an array of media items
+- Sends each individually via existing `sendAttachment` function
+- Creates database entries with shared `media_group_id`
+
+### 4. Frontend - useChatMessages Hook
+Add a new `sendMediaBatch` function.
+
+**Changes:**
+- New `sendMediaBatch(files: File[], caption?: string)` function
+- Uploads all files to storage first
+- Calls appropriate edge function with all URLs
+- Creates optimistic UI messages grouped together
+
+### 5. Frontend - ChatPanel & Customers
+Update send handlers to use batch sending.
+
+**Changes:**
+- Replace sequential `sendMedia` calls with single `sendMediaBatch` call
+- Update optimistic message display for grouped media
+
+### 6. Frontend - Message Display
+Update message bubbles to show grouped media as a gallery.
+
+**Changes:**
+- Detect messages with matching `media_group_id`
+- Render as a grid/carousel instead of individual bubbles
+- Show caption only once for the group
+
+---
+
+## Technical Details
+
+### Telegram sendMediaGroup API
 ```typescript
-// supabase/functions/capture-traffic/index.ts
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    const body = await req.json();
-    
-    const { data, error } = await supabase
-      .from('telegram_leads')
-      .insert({
-        facebook_click_id: body.facebook_click_id || null,
-        utm_source: body.utm_source || null,
-        utm_medium: body.utm_medium || null,
-        utm_campaign: body.utm_campaign || null,
-        utm_content: body.utm_content || null,
-        utm_term: body.utm_term || null,
-        utm_adset_id: body.utm_adset_id || null,
-        utm_ad_id: body.utm_ad_id || null,
-        utm_campaign_id: body.utm_campaign_id || null,
-        referrer: body.referrer || null,
-        messenger_ref: body.messenger_ref || null,
-        platform: body.platform || 'telegram',
-      })
-      .select('id')
-      .single();
-
-    if (error) throw error;
-
-    return new Response(JSON.stringify({ id: data.id }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-});
-```
-
----
-
-### 2. Update `Telegram.tsx`
-
-Replace the direct Supabase insert with a call to the edge function:
-
-```typescript
-// Before (fails due to RLS):
-const { data: insertedData, error: insertError } = await supabase
-  .from("telegram_leads")
-  .insert({...})
-  .select('id')
-  .single();
-
-// After (uses service role via edge function):
-const response = await fetch(
-  `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/capture-traffic`,
-  {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+async function sendMediaGroup(chatId: number, media: Array<{
+  type: 'photo' | 'video',
+  media: string,
+  caption?: string
+}>) {
+  const response = await fetch(`${TELEGRAM_API}/sendMediaGroup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      facebook_click_id: fbclid,
-      utm_source: utmSource,
-      utm_medium: utmMedium,
-      utm_campaign: utmCampaign,
-      utm_content: utmContent,
-      utm_term: utmTerm,
-      utm_adset_id: utmAdsetId,
-      utm_ad_id: utmAdId,
-      utm_campaign_id: utmCampaignId,
-      referrer: referrer || null,
-      messenger_ref: productRef,
-      platform: 'telegram',
+      chat_id: chatId,
+      media: media.map((item, i) => ({
+        ...item,
+        caption: i === 0 ? item.caption : undefined
+      }))
     }),
+  });
+  return response.json();
+}
+```
+
+### Media Group ID Generation
+```typescript
+const mediaGroupId = `mg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+```
+
+### Message Display Grouping
+```typescript
+// Group consecutive messages with same media_group_id
+const groupedMessages = useMemo(() => {
+  const result = [];
+  let currentGroup = null;
+  
+  for (const msg of filteredMessages) {
+    if (msg.media_group_id && currentGroup?.media_group_id === msg.media_group_id) {
+      currentGroup.items.push(msg);
+    } else if (msg.media_group_id) {
+      currentGroup = { media_group_id: msg.media_group_id, items: [msg] };
+      result.push(currentGroup);
+    } else {
+      currentGroup = null;
+      result.push(msg);
+    }
   }
-);
-const insertedData = await response.json();
+  return result;
+}, [filteredMessages]);
 ```
 
 ---
 
-### 3. Update `Redirect.tsx`
+## Files to Modify
 
-Same change - replace direct insert with edge function call.
+| File | Changes |
+|------|---------|
+| `supabase/functions/telegram-bot/index.ts` | Add `sendMediaGroup` function and `send_media_group` action handler |
+| `supabase/functions/messenger-webhook/index.ts` | Add `send_media_batch` action handler |
+| `src/hooks/useChatMessages.ts` | Add `sendMediaBatch` function |
+| `src/components/ChatPanel.tsx` | Update `handleSend` to use batch, add gallery display |
+| `src/pages/Customers.tsx` | Update `sendMedia` to use batch, add gallery display |
 
----
-
-### 4. Config Update
-
-Add to `supabase/config.toml`:
-```toml
-[functions.capture-traffic]
-verify_jwt = false
+### Database Migration
+```sql
+ALTER TABLE public.messages 
+ADD COLUMN IF NOT EXISTS media_group_id TEXT;
 ```
 
-This allows unauthenticated requests (ad clicks from anonymous visitors).
+---
+
+## Limitations and Notes
+
+1. **Telegram Limit**: Maximum 10 items per media group
+2. **Mixed Types**: Telegram allows mixing photos and videos in one group
+3. **Documents**: Documents cannot be grouped - will be sent individually
+4. **Messenger**: True carousels require buttons/titles, so we'll use visual grouping only in the UI while sending sequentially
+5. **Captions**: Only the first item shows a caption (Telegram API requirement)
 
 ---
 
-### Why This Fix Works
+## User Experience Flow
 
-1. **Edge functions use service role key** - bypasses RLS restrictions
-2. **No authentication required** - visitors clicking ads aren't logged in
-3. **Same data captured** - all UTM params, fbclid, and messenger_ref preserved
-4. **Bot linking still works** - the returned `id` is passed to Telegram as start parameter
-
----
-
-### Security Note
-
-The edge function only allows INSERT operations with a fixed set of fields - no arbitrary data access. This is safe for public traffic tracking.
-
+1. User selects 5 photos in chat
+2. User types optional caption
+3. User clicks Send
+4. All 5 photos upload to storage
+5. Single API call sends all as album
+6. Chat displays as a grid/gallery view
+7. Recipient sees album on Telegram/individual photos on Messenger (but grouped in our UI)
