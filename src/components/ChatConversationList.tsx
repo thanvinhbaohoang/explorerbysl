@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Facebook, Send, Users, Bell } from "lucide-react";
+import { Facebook, Send, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -34,6 +34,16 @@ interface ChatConversationListProps {
   selectedId: string | null;
   onSelect: (customer: Customer) => void;
 }
+
+// Helper function to get initials from name
+const getInitials = (name: string): string => {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(word => word[0]?.toUpperCase() || '')
+    .join('') || '?';
+};
 
 export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationListProps) => {
   const [page, setPage] = useState(1);
@@ -253,7 +263,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   }
 
   return (
-    <div className="h-full flex flex-col border-r bg-background">
+    <div className="h-full flex flex-col md:border-r bg-background">
       <div className="p-4 border-b flex-shrink-0">
         <h2 className="font-semibold">Conversations</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
@@ -285,8 +295,8 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                 <div className="relative">
                   <Avatar className="h-10 w-10">
                     <AvatarImage src={customer.messenger_profile_pic || undefined} />
-                    <AvatarFallback>
-                      <Users className="h-4 w-4" />
+                    <AvatarFallback className="bg-primary/10 text-primary font-medium text-sm">
+                      {getInitials(displayName)}
                     </AvatarFallback>
                   </Avatar>
                   {/* Platform indicator */}

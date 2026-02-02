@@ -30,14 +30,26 @@ import {
   Trash2,
   Download,
   FileText,
+  ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 
 interface ChatPanelProps {
   customer: Customer;
+  onBack?: () => void;
 }
 
-export const ChatPanel = ({ customer }: ChatPanelProps) => {
+// Helper function to get initials from name
+const getInitials = (name: string): string => {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(word => word[0]?.toUpperCase() || '')
+    .join('');
+};
+
+export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [replyText, setReplyText] = useState("");
@@ -312,10 +324,15 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
       <div className="flex-shrink-0 border-b p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {onBack && (
+              <Button variant="ghost" size="icon" onClick={onBack} className="mr-1 -ml-2">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            )}
             <Avatar className="h-10 w-10">
               <AvatarImage src={customer.messenger_profile_pic || undefined} />
-              <AvatarFallback>
-                <Users className="h-5 w-5" />
+              <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                {getInitials(displayName)}
               </AvatarFallback>
             </Avatar>
             <div>
@@ -619,8 +636,8 @@ const MessageBubble = ({
               {customer.messenger_profile_pic ? (
                 <img src={customer.messenger_profile_pic} alt="" className="w-6 h-6 rounded-full" />
               ) : (
-                <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center">
-                  <Users className="h-3 w-3" />
+                <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-medium text-primary">
+                  {getInitials(customerName)}
                 </div>
               )}
               <span className="text-sm font-medium">{customerName}</span>
