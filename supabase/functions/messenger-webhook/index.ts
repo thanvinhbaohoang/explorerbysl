@@ -469,73 +469,118 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
   let documentName: string | null = null;
   let documentMimeType: string | null = null;
   
+  const timestamp = message.timestamp ? new Date(message.timestamp).toISOString() : new Date().toISOString();
+
   if (message.text) {
     messageType = 'text';
     messageText = message.text;
-  } else if (message.attachments && message.attachments.length > 0) {
-    const attachment = message.attachments[0];
     
-    if (attachment.type === 'image') {
-      messageType = 'photo';
-      const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo');
-      photoUrl = storedUrl || attachment.payload.url;
-      photoFileId = attachment.payload.sticker_id || 'fb_image';
-      console.log(`Photo stored: ${photoUrl}`);
-    } else if (attachment.type === 'video') {
-      messageType = 'video';
-      const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'video');
-      videoUrl = storedUrl || attachment.payload.url;
-      videoFileId = 'fb_video';
-      videoMimeType = 'video/mp4';
-      console.log(`Video stored: ${videoUrl}`);
-    } else if (attachment.type === 'audio') {
-      messageType = 'voice';
-      const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'voice');
-      voiceUrl = storedUrl || attachment.payload.url;
-      voiceFileId = 'fb_audio';
-      console.log(`Voice stored: ${voiceUrl}`);
-    } else if (attachment.type === 'file') {
-      messageType = 'document';
-      const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo'); // reuse download logic
-      const fileName = attachment.payload.name || 'document';
-      // Store document info - we'll add to insert below
-      photoUrl = null; // Clear since this is a document
-      documentUrl = storedUrl || attachment.payload.url;
-      documentName = fileName;
-      documentMimeType = 'application/octet-stream';
-      messageText = `[Document: ${fileName}]`;
-      console.log(`Document stored: ${documentUrl}`);
+    // Insert single text message
+    const { error: messageError } = await supabase
+      .from('messages')
+      .insert({
+        customer_id: customer.id,
+        messenger_mid: message.mid,
+        platform: 'messenger',
+        message_type: messageType,
+        message_text: messageText,
+        sender_type: 'customer',
+        is_read: false,
+        timestamp,
+      });
+    
+    if (messageError) {
+      console.error("Error saving text message:", messageError);
     }
-  }
-  
-  const timestamp = message.timestamp ? new Date(message.timestamp).toISOString() : new Date().toISOString();
-  
-  const { error: messageError } = await supabase
-    .from('messages')
-    .insert({
-      customer_id: customer.id,
-      messenger_mid: message.mid,
-      platform: 'messenger',
-      message_type: messageType,
-      message_text: messageText,
-      photo_url: photoUrl,
-      photo_file_id: photoFileId,
-      video_url: videoUrl,
-      video_file_id: videoFileId,
-      video_mime_type: videoMimeType,
-      voice_url: voiceUrl,
-      voice_file_id: voiceFileId,
-      voice_duration: voiceDuration,
-      document_url: documentUrl,
-      document_name: documentName,
-      document_mime_type: documentMimeType,
-      sender_type: 'customer',
-      is_read: false,
-      timestamp,
-    });
-  
-  if (messageError) {
-    console.error("Error saving message:", messageError);
+  } else if (message.attachments && message.attachments.length > 0) {
+    // Generate a media_group_id if there are multiple attachments
+    const mediaGroupId = message.attachments.length > 1 
+      ? `messenger-${Date.now()}-${Math.random().toString(36).substring(7)}`
+      : null;
+    
+    console.log(`Processing ${message.attachments.length} attachments, mediaGroupId: ${mediaGroupId}`);
+    
+    // Process each attachment separately
+    for (let i = 0; i < message.attachments.length; i++) {
+      const attachment = message.attachments[i];
+      let attPhotoUrl: string | null = null;
+      let attPhotoFileId: string | null = null;
+      let attVideoUrl: string | null = null;
+      let attVideoFileId: string | null = null;
+      let attVideoMimeType: string | null = null;
+      let attVoiceUrl: string | null = null;
+      let attVoiceFileId: string | null = null;
+      let attDocumentUrl: string | null = null;
+      let attDocumentName: string | null = null;
+      let attDocumentMimeType: string | null = null;
+      let attMessageType = 'text';
+      let attMessageText: string | null = null;
+      
+      if (attachment.type === 'image') {
+        attMessageType = 'photo';
+        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo');
+        attPhotoUrl = storedUrl || attachment.payload.url;
+        attPhotoFileId = attachment.payload.sticker_id || 'fb_image';
+        // Only set caption text for the first attachment
+        attMessageText = i === 0 ? (message.text || null) : null;
+        console.log(`Photo ${i + 1} stored: ${attPhotoUrl}`);
+      } else if (attachment.type === 'video') {
+        attMessageType = 'video';
+        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'video');
+        attVideoUrl = storedUrl || attachment.payload.url;
+        attVideoFileId = 'fb_video';
+        attVideoMimeType = 'video/mp4';
+        attMessageText = i === 0 ? (message.text || null) : null;
+        console.log(`Video ${i + 1} stored: ${attVideoUrl}`);
+      } else if (attachment.type === 'audio') {
+        attMessageType = 'voice';
+        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'voice');
+        attVoiceUrl = storedUrl || attachment.payload.url;
+        attVoiceFileId = 'fb_audio';
+        console.log(`Voice stored: ${attVoiceUrl}`);
+      } else if (attachment.type === 'file') {
+        attMessageType = 'document';
+        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo'); // reuse download logic
+        const fileName = attachment.payload.name || 'document';
+        attDocumentUrl = storedUrl || attachment.payload.url;
+        attDocumentName = fileName;
+        attDocumentMimeType = 'application/octet-stream';
+        attMessageText = `[Document: ${fileName}]`;
+        console.log(`Document stored: ${attDocumentUrl}`);
+      }
+      
+      // Insert each attachment as a message
+      const { error: attachmentError } = await supabase
+        .from('messages')
+        .insert({
+          customer_id: customer.id,
+          messenger_mid: `${message.mid}-${i}`,
+          platform: 'messenger',
+          message_type: attMessageType,
+          message_text: attMessageText,
+          photo_url: attPhotoUrl,
+          photo_file_id: attPhotoFileId,
+          video_url: attVideoUrl,
+          video_file_id: attVideoFileId,
+          video_mime_type: attVideoMimeType,
+          voice_url: attVoiceUrl,
+          voice_file_id: attVoiceFileId,
+          voice_duration: voiceDuration,
+          document_url: attDocumentUrl,
+          document_name: attDocumentName,
+          document_mime_type: attDocumentMimeType,
+          media_group_id: mediaGroupId,
+          sender_type: 'customer',
+          is_read: false,
+          timestamp,
+        });
+      
+      if (attachmentError) {
+        console.error(`Error saving attachment ${i + 1}:`, attachmentError);
+      } else {
+        console.log(`Attachment ${i + 1} saved successfully`);
+      }
+    }
   }
 }
 

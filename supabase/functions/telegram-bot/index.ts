@@ -372,6 +372,9 @@ async function saveMessage(message: any) {
     if (customer) {
       let messageType = 'text';
       let messageText = message.text || message.caption || null;
+      
+      // Capture media_group_id for album grouping (Telegram sends this for multi-photo/video albums)
+      const mediaGroupId = message.media_group_id || null;
       let photoFileId = null;
       let photoUrl = null;
       let voiceFileId = null;
@@ -433,7 +436,7 @@ async function saveMessage(message: any) {
         const videoMimeType = message.video.mime_type || 'video/mp4';
         messageText = message.caption || '[Video]';
         
-        console.log("Video captured and stored:", { videoFileId, videoUrl, duration: videoDuration });
+        console.log("Video captured and stored:", { videoFileId, videoUrl, duration: videoDuration, mediaGroupId });
         
         // Save with video URL
         const { error } = await supabase
@@ -447,6 +450,7 @@ async function saveMessage(message: any) {
             video_url: videoUrl,
             video_duration: videoDuration,
             video_mime_type: videoMimeType,
+            media_group_id: mediaGroupId,
             sender_type: 'customer',
             timestamp: new Date(message.date * 1000).toISOString(),
           });
@@ -468,7 +472,7 @@ async function saveMessage(message: any) {
         const videoUrl = await downloadAndStoreFile(videoFileId, 'video');
         messageText = '[Video Note]';
         
-        console.log("Video note captured and stored:", { videoFileId, videoUrl, duration: videoDuration });
+        console.log("Video note captured and stored:", { videoFileId, videoUrl, duration: videoDuration, mediaGroupId });
         
         // Save with video URL
         const { error } = await supabase
@@ -482,6 +486,7 @@ async function saveMessage(message: any) {
             video_url: videoUrl,
             video_duration: videoDuration,
             video_mime_type: 'video/mp4',
+            media_group_id: mediaGroupId,
             sender_type: 'customer',
             timestamp: new Date(message.date * 1000).toISOString(),
           });
@@ -536,7 +541,7 @@ async function saveMessage(message: any) {
         return; // Early return for document messages
       }
 
-      // Save the message
+      // Save the message (for photos and text)
       const { error } = await supabase
         .from('messages')
         .insert({
@@ -549,6 +554,7 @@ async function saveMessage(message: any) {
           voice_file_id: voiceFileId,
           voice_duration: voiceDuration,
           voice_url: null, // Will be null for non-voice messages
+          media_group_id: mediaGroupId,
           sender_type: 'customer',
           timestamp: new Date(message.date * 1000).toISOString(),
         });
@@ -556,7 +562,7 @@ async function saveMessage(message: any) {
       if (error) {
         console.error("Error saving message:", error);
       } else {
-        console.log("Message saved successfully:", { messageType, photoUrl, messageText });
+        console.log("Message saved successfully:", { messageType, photoUrl, messageText, mediaGroupId });
       }
     }
   } catch (error) {

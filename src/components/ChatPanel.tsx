@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useChatMessages, Customer, Message } from "@/hooks/useChatMessages";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
 import { MediaGroupBubble } from "@/components/MediaGroupBubble";
@@ -198,11 +198,12 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
+    // Shift+Enter naturally creates a new line
   };
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -479,13 +480,14 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
                 <Mic className="h-4 w-4" />
               </Button>
               
-              <Input
+              <Textarea
                 placeholder={isMessengerOutsideWindow ? "24h window expired" : selectedFiles.length > 0 ? "Add caption..." : "Type a message..."}
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onKeyDown={handleKeyDown}
                 disabled={isMessengerOutsideWindow}
-                className="flex-1"
+                className="flex-1 min-h-[40px] max-h-[120px] resize-none py-2"
+                rows={1}
                 autoFocus
               />
               
