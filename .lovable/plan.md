@@ -1,60 +1,161 @@
 
 
-# Easy Media Adding: Drag & Drop and Paste Support
+# Fix Profile Photos and Mobile Chat Layout
 
-## Summary
+## Overview
 
-Currently, employees must click the attachment icon every time to add files, which is inconvenient and disrupts the workflow. This plan adds two modern, intuitive ways to attach files:
-
-1. **Drag and Drop**: Drop files directly onto the chat area
-2. **Clipboard Paste**: Paste images from clipboard with Ctrl+V / Cmd+V
-
-Both methods work seamlessly with the existing multi-file upload system.
+This plan addresses two issues in the `/chat` page:
+1. Profile photos not displaying for customers
+2. Poor mobile experience with cramped side-by-side panels
 
 ---
 
-## What You'll Get
+## Issue 1: Profile Photos Not Showing
 
-| Feature | How It Works |
-|---------|--------------|
-| **Drag & Drop** | Drag files from your computer and drop them on the chat area. A visual indicator shows when you're dragging |
-| **Paste Images** | Copy an image (screenshot, from web, etc.) and paste with Ctrl+V / Cmd+V in the chat input |
-| **Visual Feedback** | Drop zone highlights with a dashed border and icon when dragging files over |
-| **Works with existing flow** | Dropped/pasted files appear in the preview area just like clicking the attachment icon |
+### Current Situation
+
+The avatar component correctly uses `customer.messenger_profile_pic`, but most customers don't have profile pictures stored:
+
+| Platform | Count | With Profile Pic |
+|----------|-------|-----------------|
+| Telegram | 60 | 0 |
+| Messenger | 3 | 1 |
+
+**Why photos are missing:**
+
+- **Telegram**: The bot API doesn't include profile pictures in standard message updates. We need to explicitly call `getUserProfilePhotos` API.
+- **Messenger**: Requires `pages_messaging` permission which may not be fully granted for all users.
+
+### Solution: Fetch Telegram Profile Photos
+
+**Backend Changes (telegram-bot edge function):**
+
+When creating a new customer or when profile photo is missing, call Telegram's `getUserProfilePhotos` API:
+
+```text
+GET https://api.telegram.org/bot<token>/getUserProfilePhotos?user_id=<telegram_id>&limit=1
+```
+
+If photos exist, download the first photo using `getFile` and store it in Supabase Storage, then save the URL to `messenger_profile_pic` (or a new `profile_photo_url` column).
+
+**Frontend Changes:**
+
+Update the avatar to use a universal `profile_photo_url` field that works for both platforms:
+
+```text
+<AvatarImage src={customer.profile_photo_url || customer.messenger_profile_pic || undefined} />
+```
+
+Also, use initials as a fallback instead of a generic icon:
+
+```text
+<AvatarFallback className="bg-primary/10 text-primary font-medium">
+  {getInitials(displayName)}
+</AvatarFallback>
+```
 
 ---
 
-## Implementation Details
+## Issue 2: Mobile Layout
 
-### 1. Drag & Drop Zone
+### Current Problem
 
-Add drag-and-drop handling to the chat container:
+The chat page uses `ResizablePanelGroup` which shows both the conversation list and chat panel side-by-side. On mobile screens:
+- Both panels are visible but cramped
+- Even with the resize handle, there's not enough room
+- The experience doesn't match standard chat apps
 
-- **dragenter/dragover**: Show visual drop indicator
-- **dragleave**: Hide indicator when leaving
-- **drop**: Process files and add to selected files list
+### Solution: Full-Screen Navigation Pattern
 
-Visual feedback when dragging:
-- Dashed border around chat area
-- "Drop files here" overlay with icon
-- Semi-transparent background
+On mobile, use a full-screen switching pattern like Telegram/WhatsApp/Messenger:
 
-### 2. Clipboard Paste
+**Mobile behavior:**
+1. Show only the conversation list (full-screen)
+2. When a conversation is selected, show the chat panel (full-screen) with a back button
+3. Tapping the back button returns to the conversation list
 
-Add paste event listener to the textarea:
+**Desktop behavior:**
+- Keep the current resizable side-by-side layout (unchanged)
 
-- Detect `paste` event on the input
-- Check for image data in `clipboardData.items`
-- Convert clipboard image to File object
-- Add to selected files with preview generation
+### Implementation
 
-### 3. Shared File Processing
+**File: `src/pages/Chat.tsx`**
 
-Reuse the existing `handleFileSelect` logic:
+```text
+import { useIsMobile } from "@/hooks/use-mobile";
 
-- 25MB file size limit check
-- Preview generation for images/videos
-- Add to `selectedFiles` and `filePreviews` state
+const Chat = () => {
+  const isMobile = useIsMobile();
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+
+  // Mobile: Full-screen switching between list and chat
+  if (isMobile) {
+    return (
+      <div className="h-[calc(100vh-3.5rem)]">
+        {selectedCustomer ? (
+          <ChatPanel 
+            customer={selectedCustomer} 
+            onBack={() => setSelectedCustomer(null)}
+          />
+        ) : (
+          <ChatConversationList 
+            selectedId={null}
+            onSelect={setSelectedCustomer}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Desktop: Keep resizable side-by-side layout
+  return (
+    <div className="h-[calc(100vh-3.5rem)]">
+      <ResizablePanelGroup direction="horizontal">
+        {/* ... existing desktop layout ... */}
+      </ResizablePanelGroup>
+    </div>
+  );
+};
+```
+
+**File: `src/components/ChatPanel.tsx`**
+
+Add a back button in the header for mobile:
+
+```text
+interface ChatPanelProps {
+  customer: Customer;
+  onBack?: () => void;  // Optional - only provided on mobile
+}
+
+// In the header section:
+<div className="flex items-center gap-3">
+  {onBack && (
+    <Button variant="ghost" size="icon" onClick={onBack} className="mr-1">
+      <ArrowLeft className="h-5 w-5" />
+    </Button>
+  )}
+  <Avatar className="h-10 w-10">
+    {/* ... */}
+  </Avatar>
+  {/* ... */}
+</div>
+```
+
+**File: `src/components/ChatConversationList.tsx`**
+
+Improve the mobile layout with better touch targets and padding:
+
+```text
+// Larger touch targets on mobile
+<button
+  className={cn(
+    "w-full flex items-center gap-3 p-3 md:p-3 rounded-lg hover:bg-muted/50",
+    // Larger padding on mobile
+    "sm:p-4"
+  )}
+>
+```
 
 ---
 
@@ -62,145 +163,55 @@ Reuse the existing `handleFileSelect` logic:
 
 | File | Changes |
 |------|---------|
-| `src/components/ChatPanel.tsx` | Add drag-drop zone wrapper, drop state, paste handler on textarea |
-| `src/pages/Customers.tsx` | Same changes for the Customers dialog chat |
+| `src/pages/Chat.tsx` | Add mobile detection, implement full-screen switching |
+| `src/components/ChatPanel.tsx` | Add `onBack` prop and back button for mobile |
+| `src/components/ChatConversationList.tsx` | Improve mobile touch targets and remove border on mobile |
+| `supabase/functions/telegram-bot/index.ts` | Fetch and store Telegram user profile photos |
 
 ---
 
-## Code Changes
+## User Experience After Changes
 
-### ChatPanel.tsx
+### Mobile
+1. Open `/chat` - see full-screen conversation list
+2. Tap a conversation - chat opens full-screen with back arrow
+3. Tap back arrow - return to conversation list
+4. Profile photos visible (when available), initials shown as fallback
 
-**New state:**
-```typescript
-const [isDragging, setIsDragging] = useState(false);
-```
-
-**New handlers:**
-```typescript
-// Handle drag events
-const handleDragEnter = (e: React.DragEvent) => {
-  e.preventDefault();
-  e.stopPropagation();
-  setIsDragging(true);
-};
-
-const handleDragLeave = (e: React.DragEvent) => {
-  e.preventDefault();
-  e.stopPropagation();
-  // Only hide if leaving the container (not entering a child)
-  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-    setIsDragging(false);
-  }
-};
-
-const handleDrop = (e: React.DragEvent) => {
-  e.preventDefault();
-  e.stopPropagation();
-  setIsDragging(false);
-  
-  const files = Array.from(e.dataTransfer.files);
-  processFiles(files);
-};
-
-// Handle paste from clipboard
-const handlePaste = (e: React.ClipboardEvent) => {
-  const items = e.clipboardData.items;
-  const files: File[] = [];
-  
-  for (const item of items) {
-    if (item.type.startsWith('image/')) {
-      const file = item.getAsFile();
-      if (file) files.push(file);
-    }
-  }
-  
-  if (files.length > 0) {
-    processFiles(files);
-  }
-};
-
-// Shared file processing (extracted from handleFileSelect)
-const processFiles = (files: File[]) => {
-  const maxSize = 25 * 1024 * 1024;
-  const validFiles: File[] = [];
-  
-  files.forEach((file) => {
-    if (file.size > maxSize) {
-      toast.error(`${file.name} is too large. Maximum size is 25MB.`);
-      return;
-    }
-    validFiles.push(file);
-  });
-  
-  if (validFiles.length === 0) return;
-  
-  setSelectedFiles(prev => [...prev, ...validFiles]);
-  
-  // Generate previews
-  validFiles.forEach((file) => {
-    if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setFilePreviews(prev => [...prev, e.target?.result as string]);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setFilePreviews(prev => [...prev, '']);
-    }
-  });
-};
-```
-
-**Updated JSX:**
-```tsx
-// Wrap the chat container with drag handlers
-<div 
-  className="h-full flex flex-col bg-background relative"
-  onDragEnter={handleDragEnter}
-  onDragOver={(e) => e.preventDefault()}
-  onDragLeave={handleDragLeave}
-  onDrop={handleDrop}
->
-  {/* Drop zone overlay */}
-  {isDragging && (
-    <div className="absolute inset-0 bg-primary/10 border-2 border-dashed border-primary rounded-lg z-50 flex items-center justify-center">
-      <div className="text-center">
-        <Paperclip className="h-12 w-12 mx-auto text-primary mb-2" />
-        <p className="text-lg font-medium text-primary">Drop files here</p>
-      </div>
-    </div>
-  )}
-  
-  {/* ... existing content ... */}
-  
-  {/* Textarea with paste handler */}
-  <Textarea
-    onPaste={handlePaste}
-    // ... existing props
-  />
-</div>
-```
-
-### Customers.tsx
-
-Apply the same pattern to the Dialog component for the chat messages area.
+### Desktop
+- Same as current behavior with side-by-side panels
+- Profile photos visible with initials fallback
 
 ---
 
-## User Experience
+## Technical Details
 
-1. **Drag files from desktop** → Drop on chat → Files appear in preview → Send
-2. **Screenshot (Cmd+Shift+4)** → Paste in chat → Image appears in preview → Send
-3. **Copy image from browser** → Paste in chat → Image appears in preview → Send
-4. **Works together** → Drag 3 photos, paste 1 screenshot → All 4 in preview → Send as album
+### Telegram Profile Photo API
 
----
+```text
+// Step 1: Get profile photos
+GET https://api.telegram.org/bot<token>/getUserProfilePhotos?user_id=123456&limit=1
 
-## Edge Cases Handled
+// Response:
+{
+  "ok": true,
+  "result": {
+    "total_count": 1,
+    "photos": [[
+      { "file_id": "...", "width": 160, "height": 160 },
+      { "file_id": "...", "width": 320, "height": 320 }
+    ]]
+  }
+}
 
-- Dragging over child elements doesn't break the drop zone
-- Non-image files from clipboard are ignored (text paste still works normally)
-- File size validation applies to dropped/pasted files
-- Works alongside the existing attachment button (users can still use that if preferred)
+// Step 2: Get file path
+GET https://api.telegram.org/bot<token>/getFile?file_id=<file_id>
+
+// Step 3: Download file
+GET https://api.telegram.org/file/bot<token>/<file_path>
+```
+
+### Mobile Breakpoint
+
+Using the existing `useIsMobile` hook which triggers at 768px width.
 
