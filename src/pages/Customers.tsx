@@ -1473,18 +1473,22 @@ const Customers = () => {
           if (isForCurrentDialog) {
             // Replace pending message or add new message
             setMessages((prev) => {
-              const hasPending = prev.some((msg) => msg.isPending && msg.sender_type === "employee");
+              // Prevent duplicates - skip if message already exists
+              if (prev.some((msg) => msg.id === newMessage.id)) {
+                return prev;
+              }
               
               let newMessages;
-              if (hasPending && newMessage.sender_type === "employee") {
-                // Replace the first pending employee message
-                newMessages = [...prev];
-                const pendingIndex = newMessages.findIndex((msg) => msg.isPending && msg.sender_type === "employee");
+              // Replace pending message for sender's UI
+              if (newMessage.sender_type === "employee") {
+                const pendingIndex = prev.findIndex((msg) => msg.isPending);
                 if (pendingIndex !== -1) {
+                  newMessages = [...prev];
                   newMessages[pendingIndex] = newMessage;
+                } else {
+                  newMessages = [...prev, newMessage];
                 }
               } else {
-                // Otherwise just add the message (for customer messages or if no pending)
                 newMessages = [...prev, newMessage];
               }
               

@@ -873,14 +873,21 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
           
           if (linkedCustomerIds.includes(newMessage.customer_id)) {
             setMessages(prev => {
-              const hasPending = prev.some(msg => msg.isPending && msg.sender_type === "employee");
-              
-              if (hasPending && newMessage.sender_type === "employee") {
-                const newMessages = [...prev];
-                const pendingIndex = newMessages.findIndex(msg => msg.isPending && msg.sender_type === "employee");
-                if (pendingIndex !== -1) newMessages[pendingIndex] = newMessage;
-                return newMessages;
+              // Prevent duplicates - skip if message already exists
+              if (prev.some(msg => msg.id === newMessage.id)) {
+                return prev;
               }
+              
+              // Replace pending message for sender's UI
+              if (newMessage.sender_type === "employee") {
+                const pendingIndex = prev.findIndex(msg => msg.isPending);
+                if (pendingIndex !== -1) {
+                  const updated = [...prev];
+                  updated[pendingIndex] = newMessage;
+                  return updated;
+                }
+              }
+              
               return [...prev, newMessage];
             });
 
