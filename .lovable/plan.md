@@ -1,116 +1,60 @@
 
-# Chat Improvements: Media Grouping and Text Formatting
 
-## Summary of Issues
+# Easy Media Adding: Drag & Drop and Paste Support
 
-The user has identified three main problems with the chat behavior:
+## Summary
 
-1. **Customer-sent images appear as separate messages** instead of grouped albums
-2. **Staff-sent images are not rendering as a single grouped post** - they appear as individual messages
-3. **Text formatting (line breaks, bullet points)** is not preserved in messages
+Currently, employees must click the attachment icon every time to add files, which is inconvenient and disrupts the workflow. This plan adds two modern, intuitive ways to attach files:
 
----
+1. **Drag and Drop**: Drop files directly onto the chat area
+2. **Clipboard Paste**: Paste images from clipboard with Ctrl+V / Cmd+V
 
-## Root Cause Analysis
-
-### Issue 1: Customer Images Not Grouped
-
-**Problem**: When Telegram sends a media group (album), each photo/video comes as a separate webhook call with a shared `media_group_id`. The current `saveMessage` function in the Telegram edge function does not capture this `media_group_id` from the incoming message.
-
-**Code Location**: `supabase/functions/telegram-bot/index.ts` lines 362-565
-
-**Current behavior**:
-- Photo messages are saved without `media_group_id`
-- Video messages are saved without `media_group_id`  
-- The frontend `MediaGroupBubble` component can already group messages with the same `media_group_id`, but this field is never set for incoming customer messages
-
-**Same issue in Messenger**: The messenger webhook only captures the first attachment (`message.attachments[0]`) and ignores additional attachments sent together.
-
-### Issue 2: Staff-Sent Images Appearing Separately
-
-**Problem**: Looking at the code, the backend correctly:
-- Uses Telegram's `sendMediaGroup` API
-- Saves each item with a shared `media_group_id`
-
-However, the frontend grouping logic in `ChatPanel.tsx` may have issues with how it processes the grouped messages. The current implementation builds groups correctly but there may be timing issues with real-time updates where individual messages arrive before they're all saved with the same `media_group_id`.
-
-### Issue 3: Line Breaks Not Preserved
-
-**Problem**: The chat input uses a single-line `<Input>` component instead of a `<Textarea>`. Single-line inputs:
-- Only allow single line of text
-- Submit on Enter key (no shift+enter for new lines)
-- Cannot preserve multi-line formatting
-
-The message display (`whitespace-pre-wrap`) is correct and would show line breaks if they were present in the data.
+Both methods work seamlessly with the existing multi-file upload system.
 
 ---
 
-## Implementation Plan
+## What You'll Get
 
-### Step 1: Capture Customer Media Groups (Telegram)
+| Feature | How It Works |
+|---------|--------------|
+| **Drag & Drop** | Drag files from your computer and drop them on the chat area. A visual indicator shows when you're dragging |
+| **Paste Images** | Copy an image (screenshot, from web, etc.) and paste with Ctrl+V / Cmd+V in the chat input |
+| **Visual Feedback** | Drop zone highlights with a dashed border and icon when dragging files over |
+| **Works with existing flow** | Dropped/pasted files appear in the preview area just like clicking the attachment icon |
 
-**File**: `supabase/functions/telegram-bot/index.ts`
+---
 
-Update the `saveMessage` function to include `media_group_id`:
+## Implementation Details
 
-```text
-// Add at the start of saveMessage:
-const mediaGroupId = message.media_group_id || null;
+### 1. Drag & Drop Zone
 
-// Include in all insert calls:
-{
-  ...existing fields,
-  media_group_id: mediaGroupId,
-}
-```
+Add drag-and-drop handling to the chat container:
 
-This applies to:
-- Photo message insert (line 540-554)
-- Video message insert (line 439-452)
-- Video note insert (line 474-487)
+- **dragenter/dragover**: Show visual drop indicator
+- **dragleave**: Hide indicator when leaving
+- **drop**: Process files and add to selected files list
 
-### Step 2: Capture Multiple Attachments (Messenger)
+Visual feedback when dragging:
+- Dashed border around chat area
+- "Drop files here" overlay with icon
+- Semi-transparent background
 
-**File**: `supabase/functions/messenger-webhook/index.ts`
+### 2. Clipboard Paste
 
-Update the `handleMessage` function to:
-1. Loop through all attachments instead of just the first
-2. Generate a `media_group_id` if multiple attachments exist
-3. Save each attachment as a separate message with the shared group ID
+Add paste event listener to the textarea:
 
-### Step 3: Replace Input with Textarea
+- Detect `paste` event on the input
+- Check for image data in `clipboardData.items`
+- Convert clipboard image to File object
+- Add to selected files with preview generation
 
-**Files**: 
-- `src/components/ChatPanel.tsx`
-- `src/pages/Customers.tsx`
+### 3. Shared File Processing
 
-Replace the single-line `<Input>` with `<Textarea>`:
+Reuse the existing `handleFileSelect` logic:
 
-```text
-Before:
-<Input
-  placeholder={...}
-  value={replyText}
-  onChange={(e) => setReplyText(e.target.value)}
-  onKeyPress={handleKeyPress}
-  ...
-/>
-
-After:
-<Textarea
-  placeholder={...}
-  value={replyText}
-  onChange={(e) => setReplyText(e.target.value)}
-  onKeyDown={handleKeyDown}  // Change to support Shift+Enter
-  className="min-h-[40px] max-h-[120px] resize-none flex-1"
-  rows={1}
-  ...
-/>
-```
-
-Also update key handler:
-- `Enter` alone: Send message
-- `Shift+Enter`: Insert new line
+- 25MB file size limit check
+- Preview generation for images/videos
+- Add to `selectedFiles` and `filePreviews` state
 
 ---
 
@@ -118,57 +62,145 @@ Also update key handler:
 
 | File | Changes |
 |------|---------|
-| `supabase/functions/telegram-bot/index.ts` | Add `media_group_id` capture from incoming messages |
-| `supabase/functions/messenger-webhook/index.ts` | Handle multiple attachments with shared group ID |
-| `src/components/ChatPanel.tsx` | Replace Input with Textarea, update key handler |
-| `src/pages/Customers.tsx` | Replace Input with Textarea, update key handler |
+| `src/components/ChatPanel.tsx` | Add drag-drop zone wrapper, drop state, paste handler on textarea |
+| `src/pages/Customers.tsx` | Same changes for the Customers dialog chat |
 
 ---
 
-## Technical Details
+## Code Changes
 
-### Telegram Media Group ID
+### ChatPanel.tsx
 
-When a user sends multiple photos as an album in Telegram, each message object contains:
-- `media_group_id`: A unique string (e.g., "13462567890123456")
-- This ID is the same for all photos in the album
-
-### Messenger Multiple Attachments
-
-Messenger sends multiple attachments in a single webhook as:
-```text
-message.attachments = [
-  { type: 'image', payload: { url: '...' } },
-  { type: 'image', payload: { url: '...' } },
-  ...
-]
+**New state:**
+```typescript
+const [isDragging, setIsDragging] = useState(false);
 ```
 
-### Textarea Key Handling
+**New handlers:**
+```typescript
+// Handle drag events
+const handleDragEnter = (e: React.DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  setIsDragging(true);
+};
 
-```text
-const handleKeyDown = (e: React.KeyboardEvent) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    handleSend();
+const handleDragLeave = (e: React.DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  // Only hide if leaving the container (not entering a child)
+  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+    setIsDragging(false);
   }
-  // Shift+Enter will naturally create a new line
+};
+
+const handleDrop = (e: React.DragEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  setIsDragging(false);
+  
+  const files = Array.from(e.dataTransfer.files);
+  processFiles(files);
+};
+
+// Handle paste from clipboard
+const handlePaste = (e: React.ClipboardEvent) => {
+  const items = e.clipboardData.items;
+  const files: File[] = [];
+  
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+  }
+  
+  if (files.length > 0) {
+    processFiles(files);
+  }
+};
+
+// Shared file processing (extracted from handleFileSelect)
+const processFiles = (files: File[]) => {
+  const maxSize = 25 * 1024 * 1024;
+  const validFiles: File[] = [];
+  
+  files.forEach((file) => {
+    if (file.size > maxSize) {
+      toast.error(`${file.name} is too large. Maximum size is 25MB.`);
+      return;
+    }
+    validFiles.push(file);
+  });
+  
+  if (validFiles.length === 0) return;
+  
+  setSelectedFiles(prev => [...prev, ...validFiles]);
+  
+  // Generate previews
+  validFiles.forEach((file) => {
+    if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setFilePreviews(prev => [...prev, e.target?.result as string]);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setFilePreviews(prev => [...prev, '']);
+    }
+  });
 };
 ```
 
+**Updated JSX:**
+```tsx
+// Wrap the chat container with drag handlers
+<div 
+  className="h-full flex flex-col bg-background relative"
+  onDragEnter={handleDragEnter}
+  onDragOver={(e) => e.preventDefault()}
+  onDragLeave={handleDragLeave}
+  onDrop={handleDrop}
+>
+  {/* Drop zone overlay */}
+  {isDragging && (
+    <div className="absolute inset-0 bg-primary/10 border-2 border-dashed border-primary rounded-lg z-50 flex items-center justify-center">
+      <div className="text-center">
+        <Paperclip className="h-12 w-12 mx-auto text-primary mb-2" />
+        <p className="text-lg font-medium text-primary">Drop files here</p>
+      </div>
+    </div>
+  )}
+  
+  {/* ... existing content ... */}
+  
+  {/* Textarea with paste handler */}
+  <Textarea
+    onPaste={handlePaste}
+    // ... existing props
+  />
+</div>
+```
+
+### Customers.tsx
+
+Apply the same pattern to the Dialog component for the chat messages area.
+
 ---
 
-## Expected Results After Changes
+## User Experience
 
-1. **Customer albums grouped**: Photos/videos sent by customers as albums will appear as a single grouped message with grid layout
-2. **Staff albums grouped**: Multiple photos sent by staff will render as a single carousel/grid
-3. **Text formatting preserved**: Staff can type multi-line messages with bullet points and sections that display correctly
+1. **Drag files from desktop** → Drop on chat → Files appear in preview → Send
+2. **Screenshot (Cmd+Shift+4)** → Paste in chat → Image appears in preview → Send
+3. **Copy image from browser** → Paste in chat → Image appears in preview → Send
+4. **Works together** → Drag 3 photos, paste 1 screenshot → All 4 in preview → Send as album
 
 ---
 
 ## Edge Cases Handled
 
-- **Single photo**: Still displays normally (no grouping needed)
-- **Mixed media + documents**: Documents sent separately (already working)
-- **Empty text with media**: Caption field remains optional
-- **Long messages**: Textarea has max-height with scroll
+- Dragging over child elements doesn't break the drop zone
+- Non-image files from clipboard are ignored (text paste still works normally)
+- File size validation applies to dropped/pasted files
+- Works alongside the existing attachment button (users can still use that if preferred)
+
