@@ -43,6 +43,7 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
   const [replyText, setReplyText] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
 
   const {
     filteredMessages,
@@ -133,16 +134,12 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
     }
   }, [filteredMessages.length, isLoadingMessages, platformFilter]);
 
-  // Handle file selection (multiple files)
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
+  // Shared file processing function
+  const processFiles = (files: File[]) => {
     const maxSize = 25 * 1024 * 1024;
     const validFiles: File[] = [];
-    const previews: string[] = [];
 
-    Array.from(files).forEach((file) => {
+    files.forEach((file) => {
       if (file.size > maxSize) {
         toast.error(`${file.name} is too large. Maximum size is 25MB.`);
         return;
@@ -167,9 +164,72 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
         setFilePreviews(prev => [...prev, '']);
       }
     });
+  };
 
+  // Handle file selection (multiple files)
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    processFiles(Array.from(files));
     // Reset input to allow selecting the same file again
     event.target.value = '';
+  };
+
+  // Drag and drop handlers
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isMessengerOutsideWindow) return;
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only hide if leaving the container (not entering a child)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    if (isMessengerOutsideWindow) {
+      toast.error("Cannot attach files: The 24-hour messaging window has expired.");
+      return;
+    }
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      processFiles(files);
+    }
+  };
+
+  // Handle paste from clipboard
+  const handlePaste = (e: React.ClipboardEvent) => {
+    if (isMessengerOutsideWindow) return;
+    
+    const items = e.clipboardData.items;
+    const files: File[] = [];
+    
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    
+    if (files.length > 0) {
+      processFiles(files);
+    }
   };
 
   const removeFile = (index: number) => {
@@ -231,7 +291,23 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
     `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Customer';
 
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div 
+      className="h-full flex flex-col bg-background relative"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drop zone overlay */}
+      {isDragging && (
+        <div className="absolute inset-0 bg-primary/10 border-2 border-dashed border-primary rounded-lg z-50 flex items-center justify-center pointer-events-none">
+          <div className="text-center">
+            <Paperclip className="h-12 w-12 mx-auto text-primary mb-2" />
+            <p className="text-lg font-medium text-primary">Drop files here</p>
+            <p className="text-sm text-muted-foreground">Images, videos, or documents</p>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex-shrink-0 border-b p-4">
         <div className="flex items-center justify-between">
@@ -485,6 +561,7 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 disabled={isMessengerOutsideWindow}
                 className="flex-1 min-h-[40px] max-h-[120px] resize-none py-2"
                 rows={1}
