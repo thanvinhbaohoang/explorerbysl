@@ -1148,6 +1148,108 @@ serve(async (req) => {
       });
     }
     
+    // Handle send_media_batch action for multiple attachments with shared media_group_id
+    if (data.action === 'send_media_batch' && data.psid && data.media_items && !data.object) {
+      const { psid, media_items, caption, sent_by_name, page_id, media_group_id } = data;
+      
+      if (!psid || !media_items || !Array.isArray(media_items) || media_items.length === 0) {
+        return new Response(JSON.stringify({ error: 'Missing psid or media_items' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      if (!page_id) {
+        return new Response(JSON.stringify({ error: 'Missing page_id - required to send media batch' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Check 24-hour window
+      const { data: customerRecord } = await supabase
+        .from('customer')
+        .select('id')
+        .eq('messenger_id', psid)
+        .single();
+      
+      if (customerRecord) {
+        const { data: lastMessage } = await supabase
+          .from('messages')
+          .select('timestamp')
+          .eq('customer_id', customerRecord.id)
+          .eq('sender_type', 'customer')
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (lastMessage) {
+          const hoursSinceLastMessage = (Date.now() - new Date(lastMessage.timestamp).getTime()) / (1000 * 60 * 60);
+          
+          if (hoursSinceLastMessage > 24) {
+            return new Response(JSON.stringify({ 
+              error: 'Cannot send media batch: 24-hour messaging window has expired.',
+              code: 'MESSAGING_WINDOW_EXPIRED',
+              hoursSinceLastMessage: Math.floor(hoursSinceLastMessage)
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+      }
+      
+      // Send each media item sequentially (Messenger doesn't support media groups like Telegram)
+      for (let i = 0; i < media_items.length; i++) {
+        const item = media_items[i];
+        let fbAttachmentType = 'file';
+        let dbMediaType = item.type;
+        
+        if (item.type === 'photo') fbAttachmentType = 'image';
+        else if (item.type === 'video') fbAttachmentType = 'video';
+        
+        const result = await sendAttachment(psid, fbAttachmentType, item.url, page_id);
+        
+        if (result?.error) {
+          const fbError = result.error.error;
+          if (fbError?.code === 10 && fbError?.error_subcode === 2018278) {
+            return new Response(JSON.stringify({ 
+              error: 'Cannot send media batch: 24-hour messaging window has expired.',
+              code: 'MESSAGING_WINDOW_EXPIRED'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+        
+        // Save each item to DB with shared media_group_id
+        if (customerRecord) {
+          const insertData: any = {
+            customer_id: customerRecord.id,
+            messenger_mid: result?.message_id || null,
+            platform: 'messenger',
+            message_type: dbMediaType,
+            message_text: i === 0 && caption ? caption : `[${dbMediaType.charAt(0).toUpperCase() + dbMediaType.slice(1)}]`,
+            sender_type: 'employee',
+            sent_by_name: sent_by_name || null,
+            is_read: true,
+            timestamp: new Date().toISOString(),
+            media_group_id: media_group_id,
+          };
+          
+          if (item.type === 'photo') insertData.photo_url = item.url;
+          else if (item.type === 'video') insertData.video_url = item.url;
+          
+          await supabase.from('messages').insert(insertData);
+        }
+      }
+      
+      return new Response(JSON.stringify({ success: true, media_group_id }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    
     // Process webhook events from Facebook
     if (data.object === 'page') {
       console.log(`Processing ${data.entry.length} page entries`);

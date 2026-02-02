@@ -585,6 +585,40 @@ async function sendPhoto(chatId: number, photoUrl: string, caption?: string) {
   return await response.json();
 }
 
+// Send media group (album) to Telegram
+async function sendMediaGroup(chatId: number, media: Array<{
+  type: 'photo' | 'video',
+  media: string,
+  caption?: string
+}>) {
+  // Telegram's sendMediaGroup allows up to 10 items
+  const limitedMedia = media.slice(0, 10);
+  
+  // Only first item should have caption
+  const formattedMedia = limitedMedia.map((item, index) => ({
+    type: item.type,
+    media: item.media,
+    caption: index === 0 ? item.caption : undefined,
+  }));
+
+  const response = await fetch(`${TELEGRAM_API}/sendMediaGroup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      media: formattedMedia,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error("Telegram API error (sendMediaGroup):", error);
+    throw new Error(`Failed to send media group: ${error}`);
+  }
+
+  return await response.json();
+}
+
 // Send video to Telegram
 async function sendVideo(chatId: number, videoUrl: string, caption?: string) {
   const response = await fetch(`${TELEGRAM_API}/sendVideo`, {
@@ -863,6 +897,83 @@ serve(async (req) => {
           );
         } catch (error: any) {
           console.error("Error sending media:", error);
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 500,
+            }
+          );
+        }
+      }
+
+      // Handle send_media_group action from frontend (album)
+      if (body.action === "send_media_group") {
+        const { telegram_id, customer_id, media_items, caption, sent_by_name, media_group_id } = body;
+        
+        if (!telegram_id || !media_items || !Array.isArray(media_items) || media_items.length === 0) {
+          return new Response(
+            JSON.stringify({ error: "Missing required fields for media group" }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 400,
+            }
+          );
+        }
+
+        try {
+          console.log("Sending media group to:", telegram_id, "Items:", media_items.length);
+          
+          // Build media array for Telegram API
+          const mediaForTelegram = media_items.map((item: any, index: number) => ({
+            type: item.type as 'photo' | 'video',
+            media: item.url,
+            caption: index === 0 ? caption : undefined,
+          }));
+          
+          // Send media group to Telegram
+          await sendMediaGroup(telegram_id, mediaForTelegram);
+          
+          // Save each media item as a separate message in DB with shared media_group_id
+          for (let i = 0; i < media_items.length; i++) {
+            const item = media_items[i];
+            const insertData: any = {
+              customer_id,
+              telegram_id,
+              message_text: i === 0 && caption ? caption : `[${item.type.charAt(0).toUpperCase() + item.type.slice(1)}]`,
+              message_type: item.type,
+              sender_type: 'employee',
+              sent_by_name: sent_by_name || null,
+              timestamp: new Date().toISOString(),
+              media_group_id: media_group_id,
+            };
+            
+            if (item.type === 'photo') {
+              insertData.photo_url = item.url;
+            } else if (item.type === 'video') {
+              insertData.video_url = item.url;
+            }
+            
+            const { error: dbError } = await supabase
+              .from('messages')
+              .insert(insertData);
+
+            if (dbError) {
+              console.error("Error saving media group item:", dbError);
+            }
+          }
+
+          console.log("Media group sent and saved successfully");
+          
+          return new Response(
+            JSON.stringify({ success: true, media_group_id }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 200,
+            }
+          );
+        } catch (error: any) {
+          console.error("Error sending media group:", error);
           return new Response(
             JSON.stringify({ error: error.message }),
             {

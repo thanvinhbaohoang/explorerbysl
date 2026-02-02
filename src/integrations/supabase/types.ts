@@ -271,6 +271,7 @@ export type Database = {
           document_url: string | null
           id: string
           is_read: boolean | null
+          media_group_id: string | null
           message_text: string | null
           message_type: string | null
           messenger_mid: string | null
@@ -298,6 +299,7 @@ export type Database = {
           document_url?: string | null
           id?: string
           is_read?: boolean | null
+          media_group_id?: string | null
           message_text?: string | null
           message_type?: string | null
           messenger_mid?: string | null
@@ -325,6 +327,7 @@ export type Database = {
           document_url?: string | null
           id?: string
           is_read?: boolean | null
+          media_group_id?: string | null
           message_text?: string | null
           message_type?: string | null
           messenger_mid?: string | null

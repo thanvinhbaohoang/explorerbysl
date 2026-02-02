@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useChatMessages, Customer, Message } from "@/hooks/useChatMessages";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
+import { MediaGroupBubble } from "@/components/MediaGroupBubble";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,6 +67,7 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
     loadMessages,
     sendReply,
     sendMedia,
+    sendMediaBatch,
     startRecording,
     stopRecording,
     cancelRecording,
@@ -75,6 +76,46 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
     togglePreviewPlayback,
     formatDuration,
   } = useChatMessages(customer);
+
+  // Group messages by media_group_id
+  type GroupedMessage = { type: 'single'; message: Message } | { type: 'group'; messages: Message[]; id: string };
+  
+  const groupedMessages = useMemo((): GroupedMessage[] => {
+    const result: GroupedMessage[] = [];
+    const groupMap = new Map<string, Message[]>();
+    
+    for (const msg of filteredMessages) {
+      if (msg.media_group_id) {
+        const existing = groupMap.get(msg.media_group_id);
+        if (existing) {
+          existing.push(msg);
+        } else {
+          groupMap.set(msg.media_group_id, [msg]);
+        }
+      } else {
+        // Flush any pending group before this message
+        result.push({ type: 'single', message: msg });
+      }
+    }
+    
+    // Now rebuild with proper order
+    const finalResult: GroupedMessage[] = [];
+    const processedGroups = new Set<string>();
+    
+    for (const msg of filteredMessages) {
+      if (msg.media_group_id) {
+        if (!processedGroups.has(msg.media_group_id)) {
+          processedGroups.add(msg.media_group_id);
+          const group = groupMap.get(msg.media_group_id)!;
+          finalResult.push({ type: 'group', messages: group, id: msg.media_group_id });
+        }
+      } else {
+        finalResult.push({ type: 'single', message: msg });
+      }
+    }
+    
+    return finalResult;
+  }, [filteredMessages]);
 
   // Load messages when customer changes
   useEffect(() => {
@@ -147,11 +188,8 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
       return;
     }
     if (selectedFiles.length > 0) {
-      // Send files sequentially with caption only on the first one
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const caption = i === 0 ? replyText.trim() || undefined : undefined;
-        await sendMedia(selectedFiles[i], caption);
-      }
+      // Use batch send for multiple media files
+      await sendMediaBatch(selectedFiles, replyText.trim() || undefined);
       clearAllFiles();
       setReplyText("");
     } else if (replyText.trim()) {
@@ -286,14 +324,24 @@ export const ChatPanel = ({ customer }: ChatPanelProps) => {
               </div>
             )}
             
-            {filteredMessages.map((message) => (
-              <MessageBubble 
-                key={message.id} 
-                message={message} 
-                customer={customer}
-                formatDateGMT7={formatDateGMT7}
-                formatDuration={formatDuration}
-              />
+            {groupedMessages.map((item) => (
+              item.type === 'group' ? (
+                <MediaGroupBubble
+                  key={item.id}
+                  messages={item.messages}
+                  customer={customer}
+                  formatDateGMT7={formatDateGMT7}
+                  formatDuration={formatDuration}
+                />
+              ) : (
+                <MessageBubble 
+                  key={item.message.id} 
+                  message={item.message} 
+                  customer={customer}
+                  formatDateGMT7={formatDateGMT7}
+                  formatDuration={formatDuration}
+                />
+              )
             ))}
             <div ref={messagesEndRef} />
           </div>

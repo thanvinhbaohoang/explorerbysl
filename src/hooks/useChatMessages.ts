@@ -31,6 +31,7 @@ export interface Message {
   platform: string;
   messenger_mid: string | null;
   sent_by_name: string | null;
+  media_group_id: string | null;
   isPending?: boolean;
 }
 
@@ -361,6 +362,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       platform,
       messenger_mid: null,
       sent_by_name: employeeName,
+      media_group_id: null,
       isPending: true,
     };
 
@@ -456,6 +458,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       platform,
       messenger_mid: null,
       sent_by_name: employeeName,
+      media_group_id: null,
       isPending: true,
     };
 
@@ -516,6 +519,134 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
     } finally {
       setIsUploadingFile(false);
+    }
+  };
+
+  // Send multiple media files as a batch (album)
+  const sendMediaBatch = async (files: File[], caption?: string) => {
+    const customerToReply = replyCustomer || selectedCustomer;
+    if (!files.length || !customerToReply || isUploadingFile) return;
+
+    // Filter to only photos and videos for album (documents sent individually)
+    const albumFiles = files.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
+    const documentFiles = files.filter(f => !f.type.startsWith('image/') && !f.type.startsWith('video/'));
+    
+    // If only documents or single media, use individual sends
+    if (albumFiles.length <= 1) {
+      for (let i = 0; i < files.length; i++) {
+        await sendMedia(files[i], i === 0 ? caption : undefined);
+      }
+      return;
+    }
+
+    const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
+    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const mediaGroupId = `mg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const tempIds: string[] = [];
+
+    // Create optimistic messages for all album items
+    const optimisticMessages: Message[] = albumFiles.map((file, index) => {
+      const tempId = `temp-album-${Date.now()}-${index}`;
+      tempIds.push(tempId);
+      const mediaType = file.type.startsWith('image/') ? 'photo' : 'video';
+      
+      return {
+        id: tempId,
+        customer_id: customerToReply.id,
+        telegram_id: customerToReply.telegram_id,
+        message_text: index === 0 && caption ? caption : `[${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)}]`,
+        message_type: mediaType,
+        timestamp: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        photo_file_id: null,
+        photo_url: null,
+        voice_file_id: null,
+        voice_duration: null,
+        voice_transcription: null,
+        voice_url: null,
+        video_file_id: null,
+        video_url: null,
+        video_duration: null,
+        video_mime_type: mediaType === 'video' ? file.type : null,
+        document_url: null,
+        document_name: null,
+        document_mime_type: null,
+        sender_type: "employee",
+        is_read: true,
+        platform,
+        messenger_mid: null,
+        sent_by_name: employeeName,
+        media_group_id: mediaGroupId,
+        isPending: true,
+      } as Message;
+    });
+
+    setMessages(prev => [...prev, ...optimisticMessages]);
+    setIsUploadingFile(true);
+
+    try {
+      // Upload all files to storage first
+      const uploadedMedia: Array<{ type: 'photo' | 'video'; url: string }> = [];
+      for (const file of albumFiles) {
+        const url = await uploadFileToStorage(file);
+        const type = file.type.startsWith('image/') ? 'photo' : 'video';
+        uploadedMedia.push({ type, url });
+      }
+
+      let response;
+      if (platform === 'messenger') {
+        response = await supabase.functions.invoke("messenger-webhook", {
+          body: {
+            action: 'send_media_batch',
+            psid: customerToReply.messenger_id,
+            media_items: uploadedMedia,
+            caption,
+            sent_by_name: employeeName,
+            page_id: customerToReply.page_id,
+            media_group_id: mediaGroupId,
+          },
+        });
+      } else {
+        response = await supabase.functions.invoke("telegram-bot", {
+          body: {
+            action: "send_media_group",
+            telegram_id: customerToReply.telegram_id,
+            customer_id: customerToReply.id,
+            media_items: uploadedMedia,
+            caption,
+            sent_by_name: employeeName,
+            media_group_id: mediaGroupId,
+          },
+        });
+      }
+
+      if (response.error) throw response.error;
+      if (response.data?.error && response.data?.code === 'MESSAGING_WINDOW_EXPIRED') {
+        throw new Error(response.data.error);
+      }
+
+      // Remove optimistic messages - real-time subscription will add the real ones
+      setMessages(prev => prev.filter(msg => !tempIds.includes(msg.id)));
+      toast.success(`Album sent (${albumFiles.length} items)`);
+    } catch (error: any) {
+      console.error("Error sending media batch:", error);
+      
+      const isWindowExpired = error.message?.includes('24-hour messaging window');
+      if (isWindowExpired && customerToReply) {
+        setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
+        toast.error("Cannot send album: The 24-hour messaging window has expired.", { duration: 8000 });
+      } else {
+        toast.error("Failed to send album: " + error.message);
+      }
+      
+      setMessages(prev => prev.filter(msg => !tempIds.includes(msg.id)));
+    } finally {
+      setIsUploadingFile(false);
+    }
+
+    // Send documents individually (not part of album)
+    for (const doc of documentFiles) {
+      await sendMedia(doc);
     }
   };
 
@@ -653,6 +784,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       platform,
       messenger_mid: null,
       sent_by_name: employeeName,
+      media_group_id: null,
       isPending: true,
     };
 
@@ -815,6 +947,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     loadMessages,
     sendReply,
     sendMedia,
+    sendMediaBatch,
     startRecording,
     stopRecording,
     cancelRecording,
@@ -823,5 +956,6 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     togglePreviewPlayback,
     formatDuration,
     setMessages,
+    uploadFileToStorage,
   };
 };
