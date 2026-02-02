@@ -16,7 +16,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -2280,11 +2280,11 @@ const Customers = () => {
                       <Mic className="h-4 w-4" />
                     </Button>
                     
-                    <Input
+                    <Textarea
                       placeholder={isMessengerOutsideWindow ? "Chat disabled - 24h window expired" : selectedFiles.length > 0 ? "Add a caption (optional)..." : "Type your reply..."}
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
-                      onKeyPress={(e) => {
+                      onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
                           if (isMessengerOutsideWindow) {
@@ -2299,10 +2299,12 @@ const Customers = () => {
                             sendReply();
                           }
                         }
+                        // Shift+Enter naturally creates a new line
                       }}
                       autoFocus
                       disabled={isMessengerOutsideWindow}
-                      className="flex-1"
+                      className="flex-1 min-h-[40px] max-h-[120px] resize-none py-2"
+                      rows={1}
                     />
                     <Button 
                       onClick={selectedFiles.length > 0 ? sendMedia : sendReply} 
