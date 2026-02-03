@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState } from "react";
+import { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useCustomersData } from "@/hooks/useCustomersData";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Facebook, Send, Bell } from "lucide-react";
+import { Facebook, Send, Bell, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
@@ -55,11 +55,47 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   const [page, setPage] = useState(1);
   const itemsPerPage = 50;
   const { data: customersData, isLoading, refetch } = useCustomersData(page, itemsPerPage);
-  const customers = (customersData?.customers || []) as Customer[];
-  const linkedPlatformsMap = customersData?.linkedPlatformsMap || {};
+  
+  // Infinite scroll state
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
+  const [allLinkedPlatformsMap, setAllLinkedPlatformsMap] = useState<Record<string, { telegram: boolean; messenger: boolean; linkedIds: string[] }>>({});
+  const [hasMore, setHasMore] = useState(true);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
   
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [lastMessages, setLastMessages] = useState<Record<string, { text: string; timestamp: string }>>({});
+
+  // Accumulate customers across pages
+  useEffect(() => {
+    if (customersData?.customers) {
+      if (page === 1) {
+        setAllCustomers(customersData.customers as Customer[]);
+        setAllLinkedPlatformsMap(customersData.linkedPlatformsMap || {});
+      } else {
+        setAllCustomers(prev => {
+          const existingIds = new Set(prev.map(c => c.id));
+          const newCustomers = (customersData.customers as Customer[]).filter(c => !existingIds.has(c.id));
+          return [...prev, ...newCustomers];
+        });
+        setAllLinkedPlatformsMap(prev => ({ ...prev, ...(customersData.linkedPlatformsMap || {}) }));
+      }
+      setHasMore(customersData.customers.length === itemsPerPage);
+    }
+  }, [customersData, page]);
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoading) {
+          setPage(prev => prev + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    if (loadMoreRef.current) observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, isLoading]);
 
   // Fetch unread counts
   const fetchUnreadCounts = async () => {
@@ -80,10 +116,10 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
 
   // Fetch last messages for preview
   const fetchLastMessages = async () => {
-    if (customers.length === 0) return;
+    if (allCustomers.length === 0) return;
     
-    const customerIds = customers.map(c => c.id);
-    const linkedIds = customers.flatMap(c => linkedPlatformsMap[c.id]?.linkedIds || []);
+    const customerIds = allCustomers.map(c => c.id);
+    const linkedIds = allCustomers.flatMap(c => allLinkedPlatformsMap[c.id]?.linkedIds || []);
     const allIds = [...new Set([...customerIds, ...linkedIds])];
     
     // Get last message for each customer
@@ -116,7 +152,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
 
   useEffect(() => {
     fetchLastMessages();
-  }, [customers]);
+  }, [allCustomers]);
 
   // Real-time subscription for new messages
   useEffect(() => {
@@ -138,8 +174,8 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
               [newMessage.customer_id]: (prev[newMessage.customer_id] || 0) + 1,
             }));
             
-            // Find customer name for toast
-            const customer = customers.find(c => c.id === newMessage.customer_id);
+          // Find customer name for toast
+          const customer = allCustomers.find(c => c.id === newMessage.customer_id);
             const customerName = customer?.messenger_name || 
               `${customer?.first_name || ''} ${customer?.last_name || ''}`.trim() || 
               'Customer';
@@ -178,7 +214,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [refetch, customers, isOnChatPage, navigate, onSelect]);
+  }, [refetch, allCustomers, isOnChatPage, navigate, onSelect]);
 
   // Real-time subscription for new customers
   useEffect(() => {
@@ -221,9 +257,9 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
 
   // Sort customers: unread first, then by last activity
   const sortedCustomers = useMemo(() => {
-    return [...customers].sort((a, b) => {
-      const linkedIdsA = linkedPlatformsMap[a.id]?.linkedIds || [];
-      const linkedIdsB = linkedPlatformsMap[b.id]?.linkedIds || [];
+    return [...allCustomers].sort((a, b) => {
+      const linkedIdsA = allLinkedPlatformsMap[a.id]?.linkedIds || [];
+      const linkedIdsB = allLinkedPlatformsMap[b.id]?.linkedIds || [];
       const aUnread = [a.id, ...linkedIdsA].reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
       const bUnread = [b.id, ...linkedIdsB].reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
       
@@ -236,7 +272,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
       return bTime - aTime;
     });
-  }, [customers, unreadCounts, linkedPlatformsMap]);
+  }, [allCustomers, unreadCounts, allLinkedPlatformsMap]);
 
   // Format relative time
   const formatRelativeTime = (dateString: string | null) => {
@@ -257,7 +293,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
 
   // Get last message for customer (including linked)
   const getLastMessage = (customer: Customer) => {
-    const linkedIds = linkedPlatformsMap[customer.id]?.linkedIds || [];
+    const linkedIds = allLinkedPlatformsMap[customer.id]?.linkedIds || [];
     const allIds = [customer.id, ...linkedIds];
     
     let latest: { text: string; timestamp: string } | null = null;
@@ -272,13 +308,13 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
 
   // Get unread count for customer (including linked)
   const getUnreadCount = (customer: Customer) => {
-    const linkedIds = linkedPlatformsMap[customer.id]?.linkedIds || [];
+    const linkedIds = allLinkedPlatformsMap[customer.id]?.linkedIds || [];
     return [customer.id, ...linkedIds].reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
   };
 
   // Mark messages as read when selecting a conversation
   const handleSelect = async (customer: Customer) => {
-    const linkedIds = linkedPlatformsMap[customer.id]?.linkedIds || [];
+    const linkedIds = allLinkedPlatformsMap[customer.id]?.linkedIds || [];
     const allIds = [customer.id, ...linkedIds];
     
     // Update local state immediately for responsive UI
@@ -325,7 +361,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       <div className="p-4 border-b flex-shrink-0">
         <h2 className="font-semibold">Conversations</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {customers.length} customers
+          {allCustomers.length} customers{hasMore ? '+' : ''}
         </p>
       </div>
       <ScrollArea className="flex-1">
@@ -334,8 +370,8 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
             const displayName = customer.messenger_name || 
               `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
               'Unknown';
-            const hasBothPlatforms = linkedPlatformsMap[customer.id]?.telegram && 
-                                     linkedPlatformsMap[customer.id]?.messenger;
+              const hasBothPlatforms = allLinkedPlatformsMap[customer.id]?.telegram && 
+                                     allLinkedPlatformsMap[customer.id]?.messenger;
             const primaryPlatform = customer.messenger_id ? 'messenger' : 'telegram';
             const unreadCount = getUnreadCount(customer);
             const lastMessage = getLastMessage(customer);
@@ -409,6 +445,14 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
               </button>
             );
           })}
+          {/* Infinite scroll trigger */}
+          <div ref={loadMoreRef} className="py-2">
+            {isLoading && page > 1 && (
+              <div className="flex justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+          </div>
         </div>
       </ScrollArea>
     </div>
