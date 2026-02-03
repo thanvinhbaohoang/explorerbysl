@@ -1,145 +1,139 @@
 
-# Fix Google OAuth on Custom Domain (app.explorerbysl.com)
+# Fix Album Sending: Unsupported Image Format (AVIF)
 
 ## Problem Identified
 
-The Lovable Cloud managed OAuth (`@lovable.dev/cloud-auth-js`) is designed to work with Lovable domains (`*.lovable.app`, `*.lovableproject.com`). When using a custom domain like `app.explorerbysl.com`, the OAuth flow fails because:
+The error `Failed to send album: Edge Function returned a non-2xx status code` occurs because Telegram's API cannot process AVIF images.
 
-1. User clicks "Sign in with Google" on `app.explorerbysl.com`
-2. Lovable auth broker initiates OAuth with Google
-3. Google completes auth and sends tokens back to the broker
-4. Broker attempts to redirect/set session for your custom domain
-5. Session is not properly established on the custom domain
-6. User gets redirected back to `/auth` because `getSession()` returns null
+Looking at the edge function logs:
+- "Sending media group to: 8547115444 Items: 2"
+- Error: `WEBPAGE_CURL_FAILED` on message #2
 
----
-
-## Solution Options
-
-### Option A: Use Your Own Google OAuth Credentials (Recommended)
-
-Configure Google OAuth directly in Lovable Cloud's Authentication Settings with your own credentials, which will work with custom domains.
-
-**Steps:**
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create OAuth 2.0 credentials (Web application type)
-3. Add authorized redirect URLs:
-   - `https://ddaybkxhpvlpvgnphahp.supabase.co/auth/v1/callback`
-4. Add authorized JavaScript origins:
-   - `https://app.explorerbysl.com`
-   - `https://haroldtest.lovable.app` (if you want both to work)
-5. In Lovable Cloud Dashboard → Users → Authentication Settings → Google:
-   - Enter your Client ID and Client Secret
-6. Update the code to use standard Supabase OAuth instead of Lovable broker
-
-### Option B: Keep Using Lovable Domain
-
-Continue using `haroldtest.lovable.app` as your primary domain for authentication, and the managed OAuth will continue to work.
+The 2nd file uploaded was `1770093893387_bcw00d.avif` - an **AVIF format image**. Telegram does not support AVIF for photo uploads, only JPEG, PNG, GIF, and WebP.
 
 ---
 
-## Implementation Plan (Option A)
+## Solution: Convert Images Before Upload
 
-### Step 1: Update Auth.tsx to Use Direct Supabase OAuth
+We need to convert unsupported image formats (AVIF, HEIC, BMP, TIFF) to JPEG before uploading to storage.
 
-Replace the Lovable auth broker with standard Supabase OAuth for custom domain compatibility:
-
-**File: `src/pages/Auth.tsx`**
-
-```typescript
-// Change from:
-import { lovable } from "@/integrations/lovable";
-
-// To using direct Supabase OAuth:
-const handleGoogleLogin = async () => {
-  setLoading(true);
-  try {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/customers`,
-      },
-    });
-
-    if (error) {
-      toast({
-        title: "Login failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  } catch (error) {
-    toast({
-      title: "Login failed",
-      description: "An unexpected error occurred",
-      variant: "destructive",
-    });
-  } finally {
-    setLoading(false);
-  }
-};
-```
-
-### Step 2: Configure Google OAuth in Lovable Cloud
-
-1. Open Lovable Cloud Dashboard
-2. Navigate to **Users → Authentication Settings → Sign In Methods → Google**
-3. Add your Google Client ID and Client Secret
-4. Save the configuration
-
-### Step 3: Configure Google Cloud Console
-
-In your Google Cloud project:
-
-1. **Authorized JavaScript origins:**
-   - `https://app.explorerbysl.com`
-   - `https://haroldtest.lovable.app`
-
-2. **Authorized redirect URIs:**
-   - `https://ddaybkxhpvlpvgnphahp.supabase.co/auth/v1/callback`
-
----
-
-## Files to Modify
+### Files to Modify
 
 | File | Changes |
 |------|---------|
-| `src/pages/Auth.tsx` | Replace `lovable.auth.signInWithOAuth` with `supabase.auth.signInWithOAuth` |
+| `src/hooks/useChatMessages.ts` | Add image format conversion before upload |
+| `src/pages/Customers.tsx` | Add same conversion logic to the duplicate upload function |
+| `src/components/ChatPanel.tsx` | Add format validation/conversion in processFiles |
 
 ---
 
-## Important Notes
+## Implementation Details
 
-- The Lovable broker (`@lovable.dev/cloud-auth-js`) is excellent for preview environments but has limitations with custom domains
-- Using your own Google OAuth credentials gives you full control over authorized domains
-- Both the Lovable domain and custom domain can work simultaneously with proper Google Console configuration
-- The session handling in `AuthContext.tsx` and `ProtectedRoute.tsx` will work correctly once OAuth is properly configured
+### Step 1: Create Image Conversion Utility
 
----
-
-## Alternative: Hybrid Approach
-
-If you want to keep the Lovable broker for preview but use direct Supabase for custom domains:
+Add a new utility function that converts images to JPEG using Canvas API:
 
 ```typescript
-const handleGoogleLogin = async () => {
-  const isLovableDomain = window.location.hostname.includes('lovable');
+// Convert image to JPEG if it's an unsupported format
+const convertToJpegIfNeeded = async (file: File): Promise<File> => {
+  const unsupportedFormats = ['image/avif', 'image/heic', 'image/heif', 'image/bmp', 'image/tiff'];
   
-  if (isLovableDomain) {
-    // Use Lovable managed OAuth for preview
-    await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
-    });
-  } else {
-    // Use direct Supabase OAuth for custom domains
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/customers`,
-      },
-    });
+  if (!unsupportedFormats.includes(file.type)) {
+    return file; // Already supported format
   }
+  
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx?.drawImage(img, 0, 0);
+      
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            const newFileName = file.name.replace(/\.[^.]+$/, '.jpg');
+            resolve(new File([blob], newFileName, { type: 'image/jpeg' }));
+          } else {
+            reject(new Error('Failed to convert image'));
+          }
+        },
+        'image/jpeg',
+        0.9 // Quality
+      );
+    };
+    
+    img.onerror = () => reject(new Error('Failed to load image for conversion'));
+    img.src = URL.createObjectURL(file);
+  });
 };
 ```
 
-This gives you the best of both worlds - managed OAuth in preview and custom domain support for production.
+### Step 2: Integrate Conversion in Upload Flow
+
+Modify `uploadFileToStorage` to convert unsupported formats:
+
+```typescript
+const uploadFileToStorage = async (file: File): Promise<string> => {
+  // Convert unsupported image formats to JPEG
+  const processedFile = file.type.startsWith('image/') 
+    ? await convertToJpegIfNeeded(file) 
+    : file;
+  
+  const fileExt = processedFile.name.split('.').pop();
+  const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+  const filePath = `chat-media/${fileName}`;
+
+  const { error } = await supabase.storage
+    .from('chat-attachments')
+    .upload(filePath, processedFile, { cacheControl: '3600', upsert: false });
+
+  if (error) throw new Error(`Failed to upload file: ${error.message}`);
+
+  const { data: urlData } = supabase.storage
+    .from('chat-attachments')
+    .getPublicUrl(filePath);
+
+  return urlData.publicUrl;
+};
+```
+
+### Step 3: Add User Feedback for Format Conversion
+
+Optionally show a toast notification when conversion happens:
+
+```typescript
+if (unsupportedFormats.includes(file.type)) {
+  console.log(`Converting ${file.name} from ${file.type} to JPEG`);
+  // Optional: toast.info(`Converting ${file.name} to compatible format...`);
+}
+```
+
+---
+
+## Technical Notes
+
+- **Canvas API Limitations**: The Canvas API can read most image formats if the browser supports them. Most modern browsers support AVIF rendering, so conversion to JPEG will work.
+- **Quality Setting**: Using 0.9 (90%) quality for JPEG conversion maintains good image quality while reducing file size.
+- **Video Files**: No conversion needed - Telegram supports MP4, MOV, and most common video formats.
+- **Fallback**: If conversion fails, the original file will be used (and will likely fail on Telegram's side with a clearer error).
+
+---
+
+## Alternative Approach
+
+If Canvas API doesn't work for certain formats (HEIC on some browsers), we could:
+1. Add a validation that rejects unsupported formats with a user-friendly error message
+2. Or use a library like `browser-image-compression` for more robust conversion
+
+---
+
+## Expected Outcome
+
+After this fix:
+- AVIF, HEIC, BMP, TIFF images will be automatically converted to JPEG before upload
+- Album sending will work reliably with any image format the browser can display
+- No user action required - conversion happens transparently
