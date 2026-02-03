@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useCustomersData } from "@/hooks/useCustomersData";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -8,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Facebook, Send, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
 
 interface Customer {
   id: string;
@@ -46,6 +48,10 @@ const getInitials = (name: string): string => {
 };
 
 export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationListProps) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isOnChatPage = location.pathname === '/chat';
+  
   const [page, setPage] = useState(1);
   const itemsPerPage = 50;
   const { data: customersData, isLoading, refetch } = useCustomersData(page, itemsPerPage);
@@ -122,12 +128,37 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         (payload) => {
           const newMessage = payload.new as any;
           
-          // Update unread count for customer messages
+          // Update unread count and play sound for customer messages
           if (newMessage.sender_type === "customer") {
+            // Play notification sound
+            playMessageNotification();
+            
             setUnreadCounts(prev => ({
               ...prev,
               [newMessage.customer_id]: (prev[newMessage.customer_id] || 0) + 1,
             }));
+            
+            // Find customer name for toast
+            const customer = customers.find(c => c.id === newMessage.customer_id);
+            const customerName = customer?.messenger_name || 
+              `${customer?.first_name || ''} ${customer?.last_name || ''}`.trim() || 
+              'Customer';
+            
+            // Show toast with click-to-navigate action
+            toast.success("New message", {
+              description: `${customerName} sent a message`,
+              icon: <Bell className="h-4 w-4" />,
+              action: {
+                label: isOnChatPage ? "View" : "Open Chat",
+                onClick: () => {
+                  if (isOnChatPage && customer) {
+                    onSelect(customer);
+                  } else {
+                    navigate(`/chat?customer=${newMessage.customer_id}`);
+                  }
+                },
+              },
+            });
           }
           
           // Update last message preview
@@ -147,7 +178,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [refetch]);
+  }, [refetch, customers, isOnChatPage, navigate, onSelect]);
 
   // Real-time subscription for new customers
   useEffect(() => {
@@ -158,8 +189,27 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         { event: "INSERT", schema: "public", table: "customer" },
         (payload) => {
           const newCustomer = payload.new as Customer;
-          toast.success(`New customer: ${newCustomer.messenger_name || newCustomer.first_name || "Unknown"}`, {
+          
+          // Play new customer notification sound
+          playNewCustomerNotification();
+          
+          const customerName = newCustomer.messenger_name || newCustomer.first_name || "Unknown";
+          
+          toast.success(`New customer: ${customerName}`, {
             icon: <Bell className="h-4 w-4" />,
+            duration: 8000, // Longer duration for new customers
+            action: {
+              label: "Chat Now",
+              onClick: () => {
+                refetch().then(() => {
+                  if (isOnChatPage) {
+                    onSelect(newCustomer);
+                  } else {
+                    navigate(`/chat?customer=${newCustomer.id}`);
+                  }
+                });
+              },
+            },
           });
           refetch();
         }
@@ -167,7 +217,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [refetch]);
+  }, [refetch, isOnChatPage, navigate, onSelect]);
 
   // Sort customers: unread first, then by last activity
   const sortedCustomers = useMemo(() => {

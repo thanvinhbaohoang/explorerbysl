@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ChatConversationList } from "@/components/ChatConversationList";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { MessageSquare } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useCustomersData } from "@/hooks/useCustomersData";
 
 interface Customer {
   id: string;
@@ -29,6 +31,24 @@ interface Customer {
 const Chat = () => {
   const isMobile = useIsMobile();
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const customerId = searchParams.get('customer');
+  
+  // Fetch customers data to enable URL-based customer selection
+  const { data: customersData } = useCustomersData(1, 100);
+  const customers = (customersData?.customers || []) as Customer[];
+
+  // Auto-select customer from URL parameter
+  useEffect(() => {
+    if (customerId && customers.length > 0) {
+      const customer = customers.find(c => c.id === customerId);
+      if (customer) {
+        setSelectedCustomer(customer);
+        // Clear the URL parameter after selecting
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [customerId, customers, setSearchParams]);
 
   // Mobile: Full-screen switching between list and chat
   if (isMobile) {

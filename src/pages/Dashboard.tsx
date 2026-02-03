@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
 import {
   Table,
   TableBody,
@@ -36,7 +38,6 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Users, Bell, MessageSquare, Send, TrendingUp, BarChart3 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { TableSkeleton } from "@/components/TableSkeleton";
 
 interface Customer {
@@ -368,17 +369,23 @@ const Dashboard = () => {
           const newCustomer = payload.new as Customer;
           console.log("New customer joined:", newCustomer);
           
+          // Play new customer notification sound
+          playNewCustomerNotification();
+          
           setHasNewCustomers(true);
           
-          // Show notification with refresh option
+          const customerName = `${newCustomer.first_name || "Unknown"} ${newCustomer.last_name || ""}`.trim();
+          
+          // Show notification with navigate-to-chat action
           toast.success(
-            `New customer: ${newCustomer.first_name || "Unknown"} ${newCustomer.last_name || ""}`,
+            `New customer: ${customerName}`,
             {
-              description: "Click to refresh the customer list",
+              description: "Click to start chatting",
               icon: <Bell className="h-4 w-4" />,
+              duration: 8000,
               action: {
-                label: "Refresh",
-                onClick: () => fetchCustomers(customersPage),
+                label: "Chat Now",
+                onClick: () => navigate(`/chat?customer=${newCustomer.id}`),
               },
             }
           );
@@ -389,7 +396,7 @@ const Dashboard = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [customersPage]);
+  }, [navigate]);
 
   // Real-time subscription for ALL new customer messages
   useEffect(() => {
@@ -406,6 +413,9 @@ const Dashboard = () => {
         (payload) => {
           const newMessage = payload.new as Message;
           console.log("New customer message received:", newMessage);
+          
+          // Play notification sound
+          playMessageNotification();
           
           // Update unread count
           setUnreadCounts((prev) => ({
@@ -424,14 +434,18 @@ const Dashboard = () => {
               },
             });
           } else {
-            // Show toast notification for messages from other customers
+            // Show toast notification for messages from other customers with navigate action
             const customer = customers.find((c) => c.id === newMessage.customer_id);
-            if (customer) {
-              toast.success("New message received", {
-                description: `${customer.first_name || "Customer"} sent a message`,
-                icon: <Bell className="h-4 w-4" />,
-              });
-            }
+            const customerName = customer?.first_name || "Customer";
+            
+            toast.success("New message received", {
+              description: `${customerName} sent a message`,
+              icon: <Bell className="h-4 w-4" />,
+              action: {
+                label: "Open Chat",
+                onClick: () => navigate(`/chat?customer=${newMessage.customer_id}`),
+              },
+            });
           }
         }
       )
@@ -440,7 +454,7 @@ const Dashboard = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedCustomer, customers]);
+  }, [selectedCustomer, customers, navigate]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
