@@ -1,139 +1,120 @@
 
-# Fix Album Sending: Unsupported Image Format (AVIF)
+# Fix Chat Page: Load All Customers
 
-## Problem Identified
+## Problem
 
-The error `Failed to send album: Edge Function returned a non-2xx status code` occurs because Telegram's API cannot process AVIF images.
+The `/chat` page only shows 50 customers because:
+1. `ChatConversationList.tsx` hardcodes `itemsPerPage = 50`
+2. There is no pagination or infinite scroll to load more customers
+3. You have 63 total customers, so customers #51-63 (including "Harold Than") are never loaded
 
-Looking at the edge function logs:
-- "Sending media group to: 8547115444 Items: 2"
-- Error: `WEBPAGE_CURL_FAILED` on message #2
+## Solution Options
 
-The 2nd file uploaded was `1770093893387_bcw00d.avif` - an **AVIF format image**. Telegram does not support AVIF for photo uploads, only JPEG, PNG, GIF, and WebP.
+### Option A: Increase the Limit (Simple Fix)
+
+Increase the hardcoded limit from 50 to a higher number (e.g., 200 or 500) to capture all customers.
+
+**Pros:** Simple one-line change
+**Cons:** May become an issue again as customer count grows; performance impact with large customer lists
+
+### Option B: Add Infinite Scroll (Recommended)
+
+Add infinite scrolling to the conversation list so it automatically loads more customers when scrolling near the bottom.
+
+**Pros:** Scales to any number of customers; better UX
+**Cons:** More complex implementation
 
 ---
 
-## Solution: Convert Images Before Upload
+## Implementation Plan (Option B - Recommended)
 
-We need to convert unsupported image formats (AVIF, HEIC, BMP, TIFF) to JPEG before uploading to storage.
+### Step 1: Add Infinite Scroll to ChatConversationList
 
-### Files to Modify
+Modify `src/components/ChatConversationList.tsx`:
+
+1. Add state for tracking loading more customers
+2. Add a scroll event listener or use Intersection Observer
+3. When user scrolls near bottom, increment page and fetch more
+4. Append new customers to existing list instead of replacing
+
+```typescript
+// State changes
+const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
+const [hasMore, setHasMore] = useState(true);
+const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+// Effect to append customers from paginated query
+useEffect(() => {
+  if (customersData?.customers) {
+    if (page === 1) {
+      setAllCustomers(customersData.customers);
+    } else {
+      setAllCustomers(prev => [...prev, ...customersData.customers]);
+    }
+    setHasMore(customersData.customers.length === itemsPerPage);
+  }
+}, [customersData, page]);
+
+// Intersection Observer for infinite scroll
+const loadMoreRef = useRef<HTMLDivElement>(null);
+useEffect(() => {
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (entries[0].isIntersecting && hasMore && !isLoading) {
+        setPage(prev => prev + 1);
+      }
+    },
+    { threshold: 0.1 }
+  );
+  if (loadMoreRef.current) observer.observe(loadMoreRef.current);
+  return () => observer.disconnect();
+}, [hasMore, isLoading]);
+```
+
+### Step 2: Add Loading Indicator at Bottom
+
+Add a loading skeleton or "Load more" indicator at the bottom of the list:
+
+```tsx
+{/* At the end of the customer list */}
+<div ref={loadMoreRef} className="py-2">
+  {isLoadingMore && (
+    <div className="flex justify-center">
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    </div>
+  )}
+</div>
+```
+
+---
+
+## Files to Modify
 
 | File | Changes |
 |------|---------|
-| `src/hooks/useChatMessages.ts` | Add image format conversion before upload |
-| `src/pages/Customers.tsx` | Add same conversion logic to the duplicate upload function |
-| `src/components/ChatPanel.tsx` | Add format validation/conversion in processFiles |
+| `src/components/ChatConversationList.tsx` | Add infinite scroll with Intersection Observer, accumulate customers across pages |
 
 ---
 
-## Implementation Details
+## Alternative Quick Fix (Option A)
 
-### Step 1: Create Image Conversion Utility
-
-Add a new utility function that converts images to JPEG using Canvas API:
+If you prefer a simple immediate fix, just change line 56 in `ChatConversationList.tsx`:
 
 ```typescript
-// Convert image to JPEG if it's an unsupported format
-const convertToJpegIfNeeded = async (file: File): Promise<File> => {
-  const unsupportedFormats = ['image/avif', 'image/heic', 'image/heif', 'image/bmp', 'image/tiff'];
-  
-  if (!unsupportedFormats.includes(file.type)) {
-    return file; // Already supported format
-  }
-  
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    img.onload = () => {
-      canvas.width = img.width;
-      canvas.height = img.height;
-      ctx?.drawImage(img, 0, 0);
-      
-      canvas.toBlob(
-        (blob) => {
-          if (blob) {
-            const newFileName = file.name.replace(/\.[^.]+$/, '.jpg');
-            resolve(new File([blob], newFileName, { type: 'image/jpeg' }));
-          } else {
-            reject(new Error('Failed to convert image'));
-          }
-        },
-        'image/jpeg',
-        0.9 // Quality
-      );
-    };
-    
-    img.onerror = () => reject(new Error('Failed to load image for conversion'));
-    img.src = URL.createObjectURL(file);
-  });
-};
+// From:
+const itemsPerPage = 50;
+
+// To:
+const itemsPerPage = 200;  // or higher
 ```
 
-### Step 2: Integrate Conversion in Upload Flow
-
-Modify `uploadFileToStorage` to convert unsupported formats:
-
-```typescript
-const uploadFileToStorage = async (file: File): Promise<string> => {
-  // Convert unsupported image formats to JPEG
-  const processedFile = file.type.startsWith('image/') 
-    ? await convertToJpegIfNeeded(file) 
-    : file;
-  
-  const fileExt = processedFile.name.split('.').pop();
-  const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-  const filePath = `chat-media/${fileName}`;
-
-  const { error } = await supabase.storage
-    .from('chat-attachments')
-    .upload(filePath, processedFile, { cacheControl: '3600', upsert: false });
-
-  if (error) throw new Error(`Failed to upload file: ${error.message}`);
-
-  const { data: urlData } = supabase.storage
-    .from('chat-attachments')
-    .getPublicUrl(filePath);
-
-  return urlData.publicUrl;
-};
-```
-
-### Step 3: Add User Feedback for Format Conversion
-
-Optionally show a toast notification when conversion happens:
-
-```typescript
-if (unsupportedFormats.includes(file.type)) {
-  console.log(`Converting ${file.name} from ${file.type} to JPEG`);
-  // Optional: toast.info(`Converting ${file.name} to compatible format...`);
-}
-```
-
----
-
-## Technical Notes
-
-- **Canvas API Limitations**: The Canvas API can read most image formats if the browser supports them. Most modern browsers support AVIF rendering, so conversion to JPEG will work.
-- **Quality Setting**: Using 0.9 (90%) quality for JPEG conversion maintains good image quality while reducing file size.
-- **Video Files**: No conversion needed - Telegram supports MP4, MOV, and most common video formats.
-- **Fallback**: If conversion fails, the original file will be used (and will likely fail on Telegram's side with a clearer error).
-
----
-
-## Alternative Approach
-
-If Canvas API doesn't work for certain formats (HEIC on some browsers), we could:
-1. Add a validation that rejects unsupported formats with a user-friendly error message
-2. Or use a library like `browser-image-compression` for more robust conversion
+This is a one-line change but may need to be increased again as your customer base grows.
 
 ---
 
 ## Expected Outcome
 
 After this fix:
-- AVIF, HEIC, BMP, TIFF images will be automatically converted to JPEG before upload
-- Album sending will work reliably with any image format the browser can display
-- No user action required - conversion happens transparently
+- All 63+ customers will be accessible in the `/chat` page
+- "Harold Than" chat will appear in the list
+- The list will automatically load more customers as you scroll down
