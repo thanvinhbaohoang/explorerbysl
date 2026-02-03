@@ -1,217 +1,288 @@
 
-
-# Fix Profile Photos and Mobile Chat Layout
+# Discord-Style Role Management System
 
 ## Overview
 
-This plan addresses two issues in the `/chat` page:
-1. Profile photos not displaying for customers
-2. Poor mobile experience with cramped side-by-side panels
+This plan implements a flexible, Discord-like role system where admins can:
+1. **Create custom roles** with unique names and colors
+2. **Define granular permissions** for each role (CSV export, page access, etc.)
+3. **Assign roles to users** and edit their display names
+4. **Control feature visibility** based on role permissions
 
 ---
 
-## Issue 1: Profile Photos Not Showing
+## Database Design
 
-### Current Situation
+### New Tables
 
-The avatar component correctly uses `customer.messenger_profile_pic`, but most customers don't have profile pictures stored:
+**1. `roles` table** - Custom role definitions (like Discord roles)
 
-| Platform | Count | With Profile Pic |
-|----------|-------|-----------------|
-| Telegram | 60 | 0 |
-| Messenger | 3 | 1 |
+| Column | Type | Description |
+|--------|------|-------------|
+| id | uuid | Primary key |
+| name | text | Role name (e.g., "Sales Team", "Manager") |
+| color | text | Hex color for badge display |
+| permissions | jsonb | Permission flags object |
+| priority | integer | Role hierarchy (higher = more authority) |
+| is_system | boolean | True for built-in roles (Admin, Staff) |
+| created_at | timestamp | When created |
 
-**Why photos are missing:**
+**2. Modify `user_roles` table** - Add display name and link to new roles
 
-- **Telegram**: The bot API doesn't include profile pictures in standard message updates. We need to explicitly call `getUserProfilePhotos` API.
-- **Messenger**: Requires `pages_messaging` permission which may not be fully granted for all users.
+| Column | Type | Description |
+|--------|------|-------------|
+| display_name | text | Custom display name for the user |
+| role_id | uuid | Foreign key to `roles` table |
 
-### Solution: Fetch Telegram Profile Photos
-
-**Backend Changes (telegram-bot edge function):**
-
-When creating a new customer or when profile photo is missing, call Telegram's `getUserProfilePhotos` API:
-
-```text
-GET https://api.telegram.org/bot<token>/getUserProfilePhotos?user_id=<telegram_id>&limit=1
-```
-
-If photos exist, download the first photo using `getFile` and store it in Supabase Storage, then save the URL to `messenger_profile_pic` (or a new `profile_photo_url` column).
-
-**Frontend Changes:**
-
-Update the avatar to use a universal `profile_photo_url` field that works for both platforms:
+### Permission Structure
 
 ```text
-<AvatarImage src={customer.profile_photo_url || customer.messenger_profile_pic || undefined} />
-```
-
-Also, use initials as a fallback instead of a generic icon:
-
-```text
-<AvatarFallback className="bg-primary/10 text-primary font-medium">
-  {getInitials(displayName)}
-</AvatarFallback>
-```
-
----
-
-## Issue 2: Mobile Layout
-
-### Current Problem
-
-The chat page uses `ResizablePanelGroup` which shows both the conversation list and chat panel side-by-side. On mobile screens:
-- Both panels are visible but cramped
-- Even with the resize handle, there's not enough room
-- The experience doesn't match standard chat apps
-
-### Solution: Full-Screen Navigation Pattern
-
-On mobile, use a full-screen switching pattern like Telegram/WhatsApp/Messenger:
-
-**Mobile behavior:**
-1. Show only the conversation list (full-screen)
-2. When a conversation is selected, show the chat panel (full-screen) with a back button
-3. Tapping the back button returns to the conversation list
-
-**Desktop behavior:**
-- Keep the current resizable side-by-side layout (unchanged)
-
-### Implementation
-
-**File: `src/pages/Chat.tsx`**
-
-```text
-import { useIsMobile } from "@/hooks/use-mobile";
-
-const Chat = () => {
-  const isMobile = useIsMobile();
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-
-  // Mobile: Full-screen switching between list and chat
-  if (isMobile) {
-    return (
-      <div className="h-[calc(100vh-3.5rem)]">
-        {selectedCustomer ? (
-          <ChatPanel 
-            customer={selectedCustomer} 
-            onBack={() => setSelectedCustomer(null)}
-          />
-        ) : (
-          <ChatConversationList 
-            selectedId={null}
-            onSelect={setSelectedCustomer}
-          />
-        )}
-      </div>
-    );
-  }
-
-  // Desktop: Keep resizable side-by-side layout
-  return (
-    <div className="h-[calc(100vh-3.5rem)]">
-      <ResizablePanelGroup direction="horizontal">
-        {/* ... existing desktop layout ... */}
-      </ResizablePanelGroup>
-    </div>
-  );
-};
-```
-
-**File: `src/components/ChatPanel.tsx`**
-
-Add a back button in the header for mobile:
-
-```text
-interface ChatPanelProps {
-  customer: Customer;
-  onBack?: () => void;  // Optional - only provided on mobile
+{
+  "canExportCustomers": true,
+  "canExportTraffic": true,
+  "canExportAds": true,
+  "canViewFacebookPages": true,
+  "canViewMondayImport": true,
+  "canViewUserRoles": false,
+  "canManageRoles": false
 }
-
-// In the header section:
-<div className="flex items-center gap-3">
-  {onBack && (
-    <Button variant="ghost" size="icon" onClick={onBack} className="mr-1">
-      <ArrowLeft className="h-5 w-5" />
-    </Button>
-  )}
-  <Avatar className="h-10 w-10">
-    {/* ... */}
-  </Avatar>
-  {/* ... */}
-</div>
 ```
 
-**File: `src/components/ChatConversationList.tsx`**
+### Built-in Roles (System Roles)
 
-Improve the mobile layout with better touch targets and padding:
+| Role | Permissions |
+|------|-------------|
+| **Admin** | All permissions enabled (full access) |
+| **Staff** | Default staff role - no exports, no admin pages |
 
-```text
-// Larger touch targets on mobile
-<button
-  className={cn(
-    "w-full flex items-center gap-3 p-3 md:p-3 rounded-lg hover:bg-muted/50",
-    // Larger padding on mobile
-    "sm:p-4"
-  )}
->
-```
+Admins can create additional custom roles with any combination of permissions.
 
 ---
 
-## Files to Modify
+## Frontend Changes
+
+### 1. New Role Management Page (`/user-roles`)
+
+**Tab 1: Users**
+- List all users with their assigned role and display name
+- Inline editing for display name
+- Dropdown to change role assignment
+- Pending users section (no role yet)
+
+**Tab 2: Roles**
+- List all roles with permission toggles
+- Create new role button (opens dialog)
+- Edit role permissions inline with checkboxes
+- Delete custom roles (system roles protected)
+- Color picker for role badges
+
+### 2. Role Creation Dialog
+
+Fields:
+- Role name (text input)
+- Role color (color picker)
+- Permission toggles (checkboxes):
+  - Export customer data (CSV)
+  - Export traffic data (CSV)
+  - Export ads data (CSV)
+  - View Facebook Pages
+  - View Monday Import
+  - Manage User Roles
+
+### 3. Permission-Gated Features
+
+Update these pages to check permissions:
+
+| Page | Permission Check |
+|------|-----------------|
+| `/customers` | Export button: `canExportCustomers` |
+| `/traffic` | Export button: `canExportTraffic` |
+| `/ads-insight` | Export button: `canExportAds` |
+| `/facebook-pages` | Page access: `canViewFacebookPages` |
+| `/monday-import` | Page access: `canViewMondayImport` |
+| `/user-roles` | Page access: `canViewUserRoles` |
+
+### 4. Navigation Updates
+
+Update `AppLayout.tsx` to dynamically show/hide nav links based on user's role permissions (not just `isAdmin`).
+
+### 5. Display Name in Messages
+
+Update all places that use `user?.email?.split('@')[0]` to instead use the display name from `user_roles`:
+
+- `src/hooks/useChatMessages.ts`
+- `src/pages/Customers.tsx`
+- `src/components/CustomerNotesSection.tsx`
+- `src/components/QuickActionsPanel.tsx`
+
+---
+
+## Implementation Files
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `src/hooks/useUserPermissions.ts` | Fetch user's role + permissions + display name |
+| `src/hooks/useRolesData.ts` | CRUD operations for roles table |
+| `src/components/RoleManagementTab.tsx` | Roles management UI with permission toggles |
+| `src/components/CreateRoleDialog.tsx` | Dialog for creating new roles |
+
+### Modified Files
 
 | File | Changes |
 |------|---------|
-| `src/pages/Chat.tsx` | Add mobile detection, implement full-screen switching |
-| `src/components/ChatPanel.tsx` | Add `onBack` prop and back button for mobile |
-| `src/components/ChatConversationList.tsx` | Improve mobile touch targets and remove border on mobile |
-| `supabase/functions/telegram-bot/index.ts` | Fetch and store Telegram user profile photos |
+| `src/pages/UserRoles.tsx` | Add tabs for Users/Roles, integrate new components |
+| `src/components/AppLayout.tsx` | Use permissions for nav link visibility |
+| `src/pages/Customers.tsx` | Gate export button with permissions |
+| `src/pages/Traffic.tsx` | Gate export button with permissions |
+| `src/pages/AdsInsight.tsx` | Gate export button with permissions |
+| `src/pages/FacebookPages.tsx` | Gate page access with permissions |
+| `src/pages/MondayImport.tsx` | Gate page access with permissions |
+| `src/hooks/useChatMessages.ts` | Use display name for sent_by_name |
+| `src/components/CustomerNotesSection.tsx` | Use display name |
+| `src/components/QuickActionsPanel.tsx` | Use display name |
 
 ---
 
-## User Experience After Changes
+## Database Migration
 
-### Mobile
-1. Open `/chat` - see full-screen conversation list
-2. Tap a conversation - chat opens full-screen with back arrow
-3. Tap back arrow - return to conversation list
-4. Profile photos visible (when available), initials shown as fallback
+```sql
+-- 1. Create roles table
+CREATE TABLE public.roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  color TEXT DEFAULT '#6366f1',
+  permissions JSONB NOT NULL DEFAULT '{}',
+  priority INTEGER NOT NULL DEFAULT 0,
+  is_system BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
 
-### Desktop
-- Same as current behavior with side-by-side panels
-- Profile photos visible with initials fallback
+-- 2. Enable RLS on roles
+ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
 
----
+-- 3. RLS policies for roles table
+CREATE POLICY "Authenticated users can read roles"
+  ON public.roles FOR SELECT
+  TO authenticated
+  USING (true);
 
-## Technical Details
+CREATE POLICY "Admins can manage roles"
+  ON public.roles FOR ALL
+  TO authenticated
+  USING (has_role(auth.uid(), 'admin'))
+  WITH CHECK (has_role(auth.uid(), 'admin'));
 
-### Telegram Profile Photo API
+-- 4. Insert system roles
+INSERT INTO public.roles (name, color, permissions, priority, is_system) VALUES
+('Admin', '#ef4444', '{"canExportCustomers":true,"canExportTraffic":true,"canExportAds":true,"canViewFacebookPages":true,"canViewMondayImport":true,"canViewUserRoles":true,"canManageRoles":true}', 100, true),
+('Staff', '#6b7280', '{"canExportCustomers":false,"canExportTraffic":false,"canExportAds":false,"canViewFacebookPages":false,"canViewMondayImport":false,"canViewUserRoles":false,"canManageRoles":false}', 10, true);
 
-```text
-// Step 1: Get profile photos
-GET https://api.telegram.org/bot<token>/getUserProfilePhotos?user_id=123456&limit=1
+-- 5. Add columns to user_roles
+ALTER TABLE public.user_roles 
+ADD COLUMN display_name TEXT,
+ADD COLUMN role_id UUID REFERENCES public.roles(id);
 
-// Response:
-{
-  "ok": true,
-  "result": {
-    "total_count": 1,
-    "photos": [[
-      { "file_id": "...", "width": 160, "height": 160 },
-      { "file_id": "...", "width": 320, "height": 320 }
-    ]]
-  }
-}
-
-// Step 2: Get file path
-GET https://api.telegram.org/bot<token>/getFile?file_id=<file_id>
-
-// Step 3: Download file
-GET https://api.telegram.org/file/bot<token>/<file_path>
+-- 6. Migrate existing roles to new system
+UPDATE public.user_roles SET role_id = (
+  SELECT id FROM public.roles WHERE name = 
+    CASE 
+      WHEN role = 'admin' THEN 'Admin'
+      ELSE 'Staff'
+    END
+);
 ```
 
-### Mobile Breakpoint
+---
 
-Using the existing `useIsMobile` hook which triggers at 768px width.
+## User Interface Mockup
 
+### Roles Tab
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│ Roles Management                          [+ Create Role] │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  ● Admin (System)                                       │
+│    ✓ Export Customers  ✓ Export Traffic  ✓ Export Ads  │
+│    ✓ View Pages  ✓ View Import  ✓ Manage Roles         │
+│                                                         │
+│  ● Staff (System)                                       │
+│    ✗ Export Customers  ✗ Export Traffic  ✗ Export Ads  │
+│    ✗ View Pages  ✗ View Import  ✗ Manage Roles         │
+│                                                         │
+│  ● Sales Manager                              [Edit] [🗑]│
+│    ✓ Export Customers  ✓ Export Traffic  ✗ Export Ads  │
+│    ✗ View Pages  ✗ View Import  ✗ Manage Roles         │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Users Tab
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│ User                     │ Display Name   │ Role        │
+├─────────────────────────────────────────────────────────┤
+│ harold@gmail.com         │ [Harold ✏️]    │ Admin ▼     │
+│ staff1@explorerbysl.com  │ [Sarah ✏️]     │ Staff ▼     │
+│ manager@company.com      │ [Mike ✏️]      │ Sales Mgr ▼ │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Permission Flow
+
+```text
+User opens app
+       ↓
+useUserPermissions() hook
+       ↓
+Fetch user_roles.role_id + display_name
+       ↓
+Fetch roles.permissions for that role_id
+       ↓
+Return { role, displayName, permissions }
+       ↓
+┌─────────────────────────────────────────┐
+│                                         │
+│  Navigation: Show/hide links based on   │
+│  permissions.canView*                   │
+│                                         │
+│  Export buttons: Show/hide based on     │
+│  permissions.canExport*                 │
+│                                         │
+│  Messages: Use displayName for          │
+│  sent_by_name field                     │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## Security Considerations
+
+1. **RLS on roles table**: Only admins can create/edit/delete roles
+2. **System roles protected**: `is_system = true` roles cannot be deleted
+3. **Priority hierarchy**: Higher priority roles can manage lower priority ones
+4. **Permissions stored server-side**: Never trust client-side permission checks for sensitive operations
+5. **Backward compatible**: Existing `app_role` enum kept for RLS policies; new system layers on top
+
+---
+
+## Future Extensibility
+
+The JSONB permissions field allows adding new permissions without database migrations:
+
+```text
+{
+  "canExportCustomers": true,
+  "canDeleteMessages": false,     // Future
+  "canViewAnalytics": true,       // Future
+  "canBulkImport": false,         // Future
+  "maxDailyExports": 100          // Future numeric limits
+}
+```
