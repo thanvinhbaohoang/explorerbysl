@@ -1879,7 +1879,7 @@ const Customers = () => {
         if (!open) setIsDragging(false);
       }}>
         <DialogContent 
-          className="max-w-3xl h-[80vh] flex flex-col overflow-hidden relative"
+          className="w-[95vw] max-w-3xl h-[85vh] sm:h-[80vh] flex flex-col overflow-hidden relative"
           onDragEnter={handleDragEnter}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -2020,10 +2020,10 @@ const Customers = () => {
                   return (
                 <div
                   key={message.id}
-                  className={`border rounded-lg p-4 space-y-3 transition-opacity ${
+                  className={`border rounded-lg p-3 sm:p-4 space-y-3 transition-opacity ${
                     message.sender_type === 'employee' 
-                      ? 'bg-primary/5 ml-8' 
-                      : 'mr-8'
+                      ? 'bg-primary/5 ml-4 sm:ml-8' 
+                      : 'mr-4 sm:mr-8'
                   } ${message.isPending ? 'opacity-50' : 'opacity-100'}`}
                 >
                   <div className="flex items-center justify-between">
