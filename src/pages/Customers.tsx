@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCustomersData } from "@/hooks/useCustomersData";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { toast } from "sonner";
+import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
 import {
   Table,
   TableBody,
@@ -1469,17 +1470,23 @@ const Customers = () => {
           const newCustomer = payload.new as Customer;
           console.log("New customer joined:", newCustomer);
           
+          // Play new customer notification sound
+          playNewCustomerNotification();
+          
           setHasNewCustomers(true);
           
-          // Show notification with refresh option
+          const customerName = newCustomer.messenger_name || newCustomer.first_name || "Unknown";
+          
+          // Show notification with navigate-to-chat action
           toast.success(
-            `New customer: ${newCustomer.messenger_name || newCustomer.first_name || "Unknown"} ${newCustomer.last_name || ""}`,
+            `New customer: ${customerName} ${newCustomer.last_name || ""}`.trim(),
             {
-              description: "Click to refresh the customer list",
+              description: "Click to start chatting",
               icon: <Bell className="h-4 w-4" />,
+              duration: 8000,
               action: {
-                label: "Refresh",
-                onClick: () => refetchCustomers(),
+                label: "Chat Now",
+                onClick: () => navigate(`/chat?customer=${newCustomer.id}`),
               },
             }
           );
@@ -1493,7 +1500,7 @@ const Customers = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [customersPage]);
+  }, [navigate]);
 
   // Real-time subscription for ALL new messages (both customer and employee)
   useEffect(() => {
@@ -1518,6 +1525,9 @@ const Customers = () => {
           
           // Update unread count only for customer messages
           if (newMessage.sender_type === "customer") {
+            // Play notification sound for customer messages
+            playMessageNotification();
+            
             setUnreadCounts((prev) => ({
               ...prev,
               [newMessage.customer_id]: (prev[newMessage.customer_id] || 0) + 1,
@@ -1598,12 +1608,16 @@ const Customers = () => {
             // Show toast notification for customer messages
             if (newMessage.sender_type === "customer") {
               const customer = customers.find((c) => c.id === newMessage.customer_id);
-              if (customer) {
-                toast.success("New message received", {
-                  description: `${customer.first_name || customer.messenger_name || "Customer"} sent a message`,
-                  icon: <Bell className="h-4 w-4" />,
-                });
-              }
+              const customerName = customer?.first_name || customer?.messenger_name || "Customer";
+              
+              toast.success("New message received", {
+                description: `${customerName} sent a message`,
+                icon: <Bell className="h-4 w-4" />,
+                action: {
+                  label: "Open Chat",
+                  onClick: () => navigate(`/chat?customer=${newMessage.customer_id}`),
+                },
+              });
             }
           }
         }
@@ -1613,7 +1627,7 @@ const Customers = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedCustomer, customers, dialogOpen, linkedCustomerIds]);
+  }, [selectedCustomer, customers, dialogOpen, linkedCustomerIds, navigate]);
 
   // Format date in GMT+7 (Indochina Time)
   const formatDateGMT7 = (dateString: string | null) => {

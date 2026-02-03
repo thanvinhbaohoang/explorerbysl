@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserRole } from "@/hooks/useUserRole";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -11,13 +12,26 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut } from "lucide-react";
+import { LogOut, Volume2, VolumeX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { isSoundEnabled, setSoundEnabled } from "@/lib/notification-sound";
 
 const UserNav = () => {
   const { user, signOut } = useAuth();
   const { isAdmin, isLoading } = useUserRole();
   const navigate = useNavigate();
+  const [soundOn, setSoundOn] = useState(isSoundEnabled());
+
+  // Sync state with localStorage on mount
+  useEffect(() => {
+    setSoundOn(isSoundEnabled());
+  }, []);
+
+  const toggleSound = () => {
+    const newState = !soundOn;
+    setSoundEnabled(newState);
+    setSoundOn(newState);
+  };
 
   if (!user) return null;
 
@@ -65,6 +79,19 @@ const UserNav = () => {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={toggleSound} className="cursor-pointer">
+          {soundOn ? (
+            <>
+              <Volume2 className="mr-2 h-4 w-4" />
+              <span>Sound On</span>
+            </>
+          ) : (
+            <>
+              <VolumeX className="mr-2 h-4 w-4" />
+              <span>Sound Off</span>
+            </>
+          )}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer">
           <LogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>
