@@ -7,6 +7,7 @@ import { useCustomersData } from "@/hooks/useCustomersData";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { toast } from "sonner";
 import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
+import { processFileForUpload } from "@/lib/image-conversion";
 import {
   Table,
   TableBody,
@@ -611,14 +612,18 @@ const Customers = () => {
   };
 
   // Upload file to Supabase Storage and get public URL
+  // Upload file to Supabase Storage (converts unsupported image formats to JPEG)
   const uploadFileToStorage = async (file: File): Promise<string> => {
-    const fileExt = file.name.split('.').pop();
+    // Convert unsupported image formats (AVIF, HEIC, etc.) to JPEG
+    const processedFile = await processFileForUpload(file);
+    
+    const fileExt = processedFile.name.split('.').pop();
     const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
     const filePath = `chat-media/${fileName}`;
 
     const { data, error } = await supabase.storage
       .from('chat-attachments')
-      .upload(filePath, file, {
+      .upload(filePath, processedFile, {
         cacheControl: '3600',
         upsert: false,
       });
