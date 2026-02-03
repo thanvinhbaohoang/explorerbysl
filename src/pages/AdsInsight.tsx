@@ -12,6 +12,7 @@ import { exportToCSV } from "@/lib/csv-export";
 
 import { useNavigate } from "react-router-dom";
 import { useAdAccounts, useAccountInsights, useCampaigns, useAdSets, useAds } from "@/hooks/useAdsInsightData";
+import { useUserPermissions } from "@/hooks/useUserPermissions";
 
 interface Insight {
   impressions: string;
@@ -56,6 +57,7 @@ interface Ad {
 const AdsInsight = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { permissions } = useUserPermissions();
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [fetchAdSets, setFetchAdSets] = useState(false);
   const [fetchAdsFlag, setFetchAdsFlag] = useState(false);
@@ -167,40 +169,42 @@ const AdsInsight = () => {
               <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const exportData = campaigns.map(campaign => {
-                  const data = getInsightData(campaign);
-                  return {
-                    name: campaign.name,
-                    status: campaign.status,
-                    impressions: data.impressions,
-                    clicks: data.clicks,
-                    spend: data.spend,
-                    ctr: data.ctr,
-                    cpc: data.cpc,
-                  };
-                });
-                exportToCSV(
-                  exportData,
-                  [
-                    { key: 'name', header: 'Campaign Name' },
-                    { key: 'status', header: 'Status' },
-                    { key: 'impressions', header: 'Impressions' },
-                    { key: 'clicks', header: 'Clicks' },
-                    { key: 'spend', header: 'Spend', getValue: (c) => `$${Number(c.spend).toFixed(2)}` },
-                    { key: 'ctr', header: 'CTR', getValue: (c) => `${Number(c.ctr).toFixed(2)}%` },
-                    { key: 'cpc', header: 'CPC', getValue: (c) => `$${Number(c.cpc).toFixed(2)}` },
-                  ],
-                  'ads_campaigns'
-                );
-              }}
-              disabled={campaigns.length === 0}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
-            </Button>
+            {permissions.canExportAds && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const exportData = campaigns.map(campaign => {
+                    const data = getInsightData(campaign);
+                    return {
+                      name: campaign.name,
+                      status: campaign.status,
+                      impressions: data.impressions,
+                      clicks: data.clicks,
+                      spend: data.spend,
+                      ctr: data.ctr,
+                      cpc: data.cpc,
+                    };
+                  });
+                  exportToCSV(
+                    exportData,
+                    [
+                      { key: 'name', header: 'Campaign Name' },
+                      { key: 'status', header: 'Status' },
+                      { key: 'impressions', header: 'Impressions' },
+                      { key: 'clicks', header: 'Clicks' },
+                      { key: 'spend', header: 'Spend', getValue: (c) => `$${Number(c.spend).toFixed(2)}` },
+                      { key: 'ctr', header: 'CTR', getValue: (c) => `${Number(c.ctr).toFixed(2)}%` },
+                      { key: 'cpc', header: 'CPC', getValue: (c) => `$${Number(c.cpc).toFixed(2)}` },
+                    ],
+                    'ads_campaigns'
+                  );
+                }}
+                disabled={campaigns.length === 0}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
+            )}
           </div>
         </div>
 

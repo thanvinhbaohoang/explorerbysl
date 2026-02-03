@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import UserNav from "@/components/UserNav";
 import { useAuth } from "@/contexts/AuthContext";
-import { useUserRole } from "@/hooks/useUserRole";
+import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { cn } from "@/lib/utils";
 
 interface AppLayoutProps {
@@ -12,7 +12,7 @@ interface AppLayoutProps {
 interface NavLink {
   href: string;
   label: string;
-  adminOnly?: boolean;
+  permission?: 'canViewFacebookPages' | 'canViewMondayImport' | 'canViewUserRoles';
 }
 
 const navLinks: NavLink[] = [
@@ -21,19 +21,24 @@ const navLinks: NavLink[] = [
   { href: "/traffic", label: "Traffic" },
   { href: "/ads-insight", label: "Ads Insight" },
   { href: "/docs", label: "Docs" },
-  { href: "/facebook-pages", label: "Pages", adminOnly: true },
-  { href: "/monday-import", label: "Import", adminOnly: true },
-  { href: "/user-roles", label: "Roles", adminOnly: true },
+  { href: "/facebook-pages", label: "Pages", permission: 'canViewFacebookPages' },
+  { href: "/monday-import", label: "Import", permission: 'canViewMondayImport' },
+  { href: "/user-roles", label: "Roles", permission: 'canViewUserRoles' },
 ];
 
 const AppLayout = ({ children }: AppLayoutProps) => {
   const { user } = useAuth();
-  const { isAdmin } = useUserRole();
+  const { permissions, isAdmin, isLoading } = useUserPermissions();
   const location = useLocation();
 
-  const filteredNavLinks = navLinks.filter(
-    (link) => !link.adminOnly || isAdmin
-  );
+  const filteredNavLinks = navLinks.filter((link) => {
+    // No permission required - always show
+    if (!link.permission) return true;
+    // Admin always sees everything
+    if (isAdmin) return true;
+    // Check specific permission
+    return permissions[link.permission];
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -44,7 +49,7 @@ const AppLayout = ({ children }: AppLayoutProps) => {
               ExplorerBySL
             </Link>
             <nav className="flex-1 flex items-center justify-center gap-6">
-              {filteredNavLinks.map((link) => (
+              {!isLoading && filteredNavLinks.map((link) => (
                 <Link
                   key={link.href}
                   to={link.href}
