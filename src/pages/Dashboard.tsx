@@ -316,7 +316,7 @@ const Dashboard = () => {
     setIsLoadingMessages(true);
 
     try {
-      // Mark all unread messages as read for this customer
+      // Mark messages as read when dialog opens - this is explicit user action
       await supabase
         .from("messages")
         .update({ is_read: true })
