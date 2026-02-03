@@ -239,15 +239,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     
     const cacheKey = allCustomerIds.sort().join("-");
     
-    // Mark messages as read
-    if (offset === 0) {
-      await supabase
-        .from("messages")
-        .update({ is_read: true })
-        .in("customer_id", allCustomerIds)
-        .eq("sender_type", "customer")
-        .eq("is_read", false);
-    }
+    // NOTE: Messages are NOT marked as read here - they are marked when the user explicitly selects a conversation
     
     // Check cache
     if (offset === 0 && !forceRefresh && messagesCache[cacheKey]?.length > 0) {
@@ -891,12 +883,9 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
               return [...prev, newMessage];
             });
 
-            // Mark as read if from customer
+            // Clear expired window flag if customer sends a message (they're back in 24-hour window)
             if (newMessage.sender_type === "customer") {
-              supabase
-                .from("messages")
-                .update({ is_read: true })
-                .eq("id", newMessage.id);
+              // NOTE: Do NOT auto-mark as read - only mark when user explicitly opens conversation
               
               // Clear expired window flag
               setExpiredWindowCustomers(prev => {
@@ -927,6 +916,18 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Explicit function to mark messages as read - called when user opens a conversation
+  const markMessagesAsRead = async () => {
+    if (linkedCustomerIds.length === 0) return;
+    
+    await supabase
+      .from("messages")
+      .update({ is_read: true })
+      .in("customer_id", linkedCustomerIds)
+      .eq("sender_type", "customer")
+      .eq("is_read", false);
   };
 
   return {
@@ -964,5 +965,6 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     formatDuration,
     setMessages,
     uploadFileToStorage,
+    markMessagesAsRead,
   };
 };

@@ -276,17 +276,25 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     return [customer.id, ...linkedIds].reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
   };
 
-  // Mark messages as read when selecting
+  // Mark messages as read when selecting a conversation
   const handleSelect = async (customer: Customer) => {
     const linkedIds = linkedPlatformsMap[customer.id]?.linkedIds || [];
     const allIds = [customer.id, ...linkedIds];
     
-    // Update local state immediately
+    // Update local state immediately for responsive UI
     setUnreadCounts(prev => {
       const updated = { ...prev };
       allIds.forEach(id => { updated[id] = 0; });
       return updated;
     });
+    
+    // Mark messages as read in database - this is the ONLY place messages get marked as read
+    await supabase
+      .from("messages")
+      .update({ is_read: true })
+      .in("customer_id", allIds)
+      .eq("sender_type", "customer")
+      .eq("is_read", false);
     
     onSelect(customer);
   };

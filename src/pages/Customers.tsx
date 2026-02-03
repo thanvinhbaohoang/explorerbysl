@@ -1243,26 +1243,7 @@ const Customers = () => {
     
     const cacheKey = allCustomerIds.sort().join("-");
     
-    // ALWAYS mark messages as read on initial load (even when using cache)
-    if (offset === 0) {
-      const { error: markReadError } = await supabase
-        .from("messages")
-        .update({ is_read: true })
-        .in("customer_id", allCustomerIds)
-        .eq("sender_type", "customer")
-        .eq("is_read", false);
-
-      if (markReadError) {
-        console.error("Error marking messages as read:", markReadError);
-      } else {
-        // Reset unread count for all linked customer IDs
-        setUnreadCounts((prev) => {
-          const updated = { ...prev };
-          allCustomerIds.forEach(id => { updated[id] = 0; });
-          return updated;
-        });
-      }
-    }
+    // NOTE: Messages are NOT marked as read here - they are marked when the dialog opens (in openChatDialog)
     
     // Check cache (only if not forcing refresh, offset is 0, and cache has actual messages)
     if (offset === 0 && !forceRefresh && messagesCache[cacheKey] && messagesCache[cacheKey].length > 0) {
@@ -1577,20 +1558,8 @@ const Customers = () => {
             
             setHasNewMessages(false);
             
-            // Mark as read if it's from customer
-            if (newMessage.sender_type === "customer") {
-              supabase
-                .from("messages")
-                .update({ is_read: true })
-                .eq("id", newMessage.id)
-                .then(() => {
-                  // Reset unread count for this customer
-                  setUnreadCounts((prev) => ({
-                    ...prev,
-                    [newMessage.customer_id]: Math.max(0, (prev[newMessage.customer_id] || 1) - 1),
-                  }));
-                });
-            }
+            // NOTE: Do NOT auto-mark as read - only mark when user explicitly views the dialog
+            // The unread count will be properly reflected in the UI
             
             // Scroll to bottom
             setTimeout(() => {
