@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { detectLanguage } from "@/lib/language-detection";
 import { useQueryClient } from "@tanstack/react-query";
+import { processFileForUpload } from "@/lib/image-conversion";
 
 export interface Message {
   id: string;
@@ -156,15 +157,18 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     return hoursSinceLastMessage > 24;
   }, [replyCustomer, selectedCustomer, messages, platformFilter, linkedCustomersMap, expiredWindowCustomers]);
 
-  // Upload file to Supabase Storage
+  // Upload file to Supabase Storage (converts unsupported image formats to JPEG)
   const uploadFileToStorage = async (file: File): Promise<string> => {
-    const fileExt = file.name.split('.').pop();
+    // Convert unsupported image formats (AVIF, HEIC, etc.) to JPEG
+    const processedFile = await processFileForUpload(file);
+    
+    const fileExt = processedFile.name.split('.').pop();
     const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
     const filePath = `chat-media/${fileName}`;
 
     const { error } = await supabase.storage
       .from('chat-attachments')
-      .upload(filePath, file, { cacheControl: '3600', upsert: false });
+      .upload(filePath, processedFile, { cacheControl: '3600', upsert: false });
 
     if (error) throw new Error(`Failed to upload file: ${error.message}`);
 
