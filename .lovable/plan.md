@@ -1,275 +1,188 @@
 
-# Audible Notifications with Click-to-Navigate
+# Fix Double Tick / Read Receipt Behavior
 
-## Overview
+## Problem
 
-Add audible notification sounds for new messages and new customers, along with clickable toast notifications that navigate directly to the relevant chat conversation.
+Currently, customer messages are marked as "seen" (double tick) even when staff haven't actually opened the conversation. This happens because:
 
----
+1. Messages are marked `is_read: true` immediately when loading messages (even for cached/background loads)
+2. Real-time messages are auto-marked as read when they arrive, regardless of whether the chat is actually visible
+3. Multiple pages (Dashboard, Customers, Chat) all trigger read status updates
 
-## Current State
-
-The app already has:
-- Real-time Supabase subscriptions for new messages and customers
-- Visual toast notifications using `sonner`
-- Toast notifications with "Refresh" action buttons
-
-What's missing:
-- Audio playback for notifications
-- Direct navigation to specific customer chat from toast clicks
-- User preference to enable/disable sound notifications
+This creates customer frustration when they see the double tick but don't receive a response.
 
 ---
 
-## Implementation Plan
+## Solution
 
-### Part 1: Add Notification Sound Files
+Only mark messages as read when a staff member **explicitly selects and views** a conversation. This requires:
 
-Add two notification sound files to the `public` folder:
-- `public/sounds/notification.mp3` - Short, pleasant chime for new messages
-- `public/sounds/new-customer.mp3` - Distinct sound for new customers
-
-These can be royalty-free sounds or generated using a service like Pixabay or Freesound.
-
-### Part 2: Create Notification Sound Utility
-
-**New File: `src/lib/notification-sound.ts`**
-
-```typescript
-// Notification sound player with user preference support
-const STORAGE_KEY = 'notification-sound-enabled';
-
-let notificationAudio: HTMLAudioElement | null = null;
-let newCustomerAudio: HTMLAudioElement | null = null;
-
-// Preload sounds for instant playback
-export const preloadNotificationSounds = () => {
-  notificationAudio = new Audio('/sounds/notification.mp3');
-  newCustomerAudio = new Audio('/sounds/new-customer.mp3');
-  notificationAudio.volume = 0.5;
-  newCustomerAudio.volume = 0.6;
-};
-
-export const isSoundEnabled = (): boolean => {
-  return localStorage.getItem(STORAGE_KEY) !== 'false';
-};
-
-export const setSoundEnabled = (enabled: boolean) => {
-  localStorage.setItem(STORAGE_KEY, enabled ? 'true' : 'false');
-};
-
-export const playMessageNotification = () => {
-  if (!isSoundEnabled()) return;
-  if (notificationAudio) {
-    notificationAudio.currentTime = 0;
-    notificationAudio.play().catch(() => {});
-  }
-};
-
-export const playNewCustomerNotification = () => {
-  if (!isSoundEnabled()) return;
-  if (newCustomerAudio) {
-    newCustomerAudio.currentTime = 0;
-    newCustomerAudio.play().catch(() => {});
-  }
-};
-```
-
-### Part 3: Add Sound Toggle to UserNav
-
-**File: `src/components/UserNav.tsx`**
-
-Add a sound toggle button in the user navigation dropdown:
-
-```typescript
-import { Volume2, VolumeX } from "lucide-react";
-import { isSoundEnabled, setSoundEnabled } from "@/lib/notification-sound";
-
-// In the dropdown menu:
-<DropdownMenuItem onClick={() => {
-  const newState = !isSoundEnabled();
-  setSoundEnabled(newState);
-  // Force re-render
-}}>
-  {soundEnabled ? (
-    <>
-      <Volume2 className="h-4 w-4 mr-2" />
-      Sound On
-    </>
-  ) : (
-    <>
-      <VolumeX className="h-4 w-4 mr-2" />
-      Sound Off
-    </>
-  )}
-</DropdownMenuItem>
-```
-
-### Part 4: Update ChatConversationList with Sound and Navigation
-
-**File: `src/components/ChatConversationList.tsx`**
-
-Update the real-time subscriptions to:
-1. Play notification sounds
-2. Make toast clickable to navigate to chat
-
-```typescript
-import { useNavigate } from "react-router-dom";
-import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
-
-// In ChatConversationList component:
-const navigate = useNavigate();
-
-// For new messages subscription:
-if (newMessage.sender_type === "customer") {
-  playMessageNotification();
-  
-  toast.success("New message", {
-    description: `${customerName} sent a message`,
-    icon: <Bell className="h-4 w-4" />,
-    action: {
-      label: "View",
-      onClick: () => {
-        // Find the customer and select them
-        const customer = customers.find(c => c.id === newMessage.customer_id);
-        if (customer) {
-          onSelect(customer);
-        }
-      },
-    },
-  });
-}
-
-// For new customers subscription:
-const newCustomer = payload.new as Customer;
-playNewCustomerNotification();
-
-toast.success(`New customer: ${newCustomer.messenger_name || newCustomer.first_name || "Unknown"}`, {
-  icon: <Bell className="h-4 w-4" />,
-  duration: 8000, // Longer duration for new customers
-  action: {
-    label: "Chat Now",
-    onClick: () => {
-      refetch().then(() => {
-        onSelect(newCustomer);
-      });
-    },
-  },
-});
-```
-
-### Part 5: Update Other Pages with Centralized Notifications
-
-**Files to Update:**
-- `src/pages/Customers.tsx` - Use sound utilities, add navigation
-- `src/pages/Dashboard.tsx` - Use sound utilities, add navigation
-
-Each page will:
-1. Import sound utilities
-2. Add click handler to navigate to `/chat` with the customer pre-selected
-
-For pages that aren't the Chat page, the toast action will navigate:
-
-```typescript
-toast.success("New message", {
-  description: `${customerName} sent a message`,
-  action: {
-    label: "Open Chat",
-    onClick: () => {
-      navigate(`/chat?customer=${customerId}`);
-    },
-  },
-});
-```
-
-### Part 6: Handle URL Parameter in Chat Page
-
-**File: `src/pages/Chat.tsx`**
-
-Update to read customer ID from URL and auto-select:
-
-```typescript
-import { useSearchParams } from "react-router-dom";
-
-const Chat = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const customerId = searchParams.get('customer');
-  
-  // Auto-select customer from URL parameter
-  useEffect(() => {
-    if (customerId && customers) {
-      const customer = customers.find(c => c.id === customerId);
-      if (customer) {
-        setSelectedCustomer(customer);
-        // Clear the URL parameter
-        setSearchParams({});
-      }
-    }
-  }, [customerId, customers]);
-  
-  // ... rest of component
-};
-```
-
-### Part 7: Preload Sounds on App Start
-
-**File: `src/App.tsx`**
-
-Add sound preloading when the app initializes:
-
-```typescript
-import { preloadNotificationSounds } from "@/lib/notification-sound";
-
-// In App component, add useEffect:
-useEffect(() => {
-  preloadNotificationSounds();
-}, []);
-```
+1. **Remove automatic read marking from message loading** - Don't mark as read during `loadMessages` or `fetchMessages`
+2. **Create explicit "mark as read" action** - Only triggered when staff actually opens a conversation
+3. **Move read marking to conversation selection** - When a customer is selected in the chat list, mark their messages as read
+4. **Remove auto-read from real-time handlers** - New messages should stay unread until the conversation is opened
 
 ---
 
-## Files to Create/Modify
+## Files to Modify
 
 | File | Changes |
 |------|---------|
-| `public/sounds/notification.mp3` | New - message notification sound |
-| `public/sounds/new-customer.mp3` | New - new customer notification sound |
-| `src/lib/notification-sound.ts` | New - sound playback utilities |
-| `src/components/UserNav.tsx` | Add sound toggle option |
-| `src/components/ChatConversationList.tsx` | Add sounds + navigation to toasts |
-| `src/pages/Chat.tsx` | Handle URL parameter for direct navigation |
-| `src/pages/Customers.tsx` | Add sounds + navigation to toasts |
-| `src/pages/Dashboard.tsx` | Add sounds + navigation to toasts |
-| `src/App.tsx` | Preload notification sounds |
+| `src/hooks/useChatMessages.ts` | Remove auto-read on load and real-time, add explicit `markMessagesAsRead` function |
+| `src/pages/Customers.tsx` | Remove auto-read on load and real-time, call mark-read only when dialog opens |
+| `src/pages/Dashboard.tsx` | Remove auto-read on load, mark read only when dialog is opened |
+| `src/components/ChatConversationList.tsx` | Add database update when selecting a customer |
+| `src/pages/Chat.tsx` | Ensure mark-as-read is called when customer is selected |
 
 ---
 
-## User Experience Flow
+## Implementation Details
 
-### New Message Notification
-1. Customer sends message
-2. Notification sound plays (if enabled)
-3. Toast appears: "New message - [Customer Name] sent a message" with "View" button
-4. Clicking "View" navigates to `/chat` and opens that conversation
-5. If already on Chat page, it selects that customer directly
+### 1. Update `useChatMessages.ts`
 
-### New Customer Notification
-1. New customer starts chat
-2. Distinct notification sound plays (if enabled)
-3. Toast appears: "New customer: [Name]" with "Chat Now" button (8 second duration)
-4. Clicking "Chat Now" navigates to `/chat` and opens that conversation
+**Remove auto-read on load (lines 242-250):**
+```typescript
+// REMOVE this block - don't auto-mark as read on load
+// if (offset === 0) {
+//   await supabase
+//     .from("messages")
+//     .update({ is_read: true })
+//     ...
+// }
+```
 
-### Sound Preferences
-1. User can toggle sounds on/off from the user menu (top-right)
-2. Preference is saved in localStorage
-3. Persists across sessions
+**Remove auto-read on real-time (lines 894-899):**
+```typescript
+// REMOVE this block - don't auto-mark incoming messages
+// if (newMessage.sender_type === "customer") {
+//   supabase.from("messages").update({ is_read: true })...
+// }
+```
+
+**Add explicit mark-as-read function:**
+```typescript
+// New function to mark messages as read
+const markMessagesAsRead = async () => {
+  if (linkedCustomerIds.length === 0) return;
+  
+  await supabase
+    .from("messages")
+    .update({ is_read: true })
+    .in("customer_id", linkedCustomerIds)
+    .eq("sender_type", "customer")
+    .eq("is_read", false);
+};
+```
+
+**Return the new function from the hook:**
+```typescript
+return {
+  // ... existing returns
+  markMessagesAsRead,
+};
+```
+
+### 2. Update `ChatConversationList.tsx`
+
+**Add database update when selecting a customer:**
+```typescript
+const handleSelect = async (customer: Customer) => {
+  const linkedIds = linkedPlatformsMap[customer.id]?.linkedIds || [];
+  const allIds = [customer.id, ...linkedIds];
+  
+  // Update local state immediately
+  setUnreadCounts(prev => {
+    const updated = { ...prev };
+    allIds.forEach(id => { updated[id] = 0; });
+    return updated;
+  });
+  
+  // Mark messages as read in database
+  await supabase
+    .from("messages")
+    .update({ is_read: true })
+    .in("customer_id", allIds)
+    .eq("sender_type", "customer")
+    .eq("is_read", false);
+  
+  onSelect(customer);
+};
+```
+
+### 3. Update `Customers.tsx`
+
+**Remove auto-read on load (lines 1246-1253):**
+```typescript
+// REMOVE this entire block from fetchMessages
+```
+
+**Remove auto-read on real-time (lines 1580-1586):**
+```typescript
+// REMOVE the supabase update call
+```
+
+**Mark as read only when dialog opens:**
+```typescript
+// In the function that opens the chat dialog
+const openChatDialog = (customer: Customer) => {
+  setSelectedCustomer(customer);
+  setDialogOpen(true);
+  
+  // Mark messages as read when dialog opens
+  markMessagesAsReadForCustomer(customer);
+};
+```
+
+### 4. Update `Dashboard.tsx`
+
+**Remove auto-read on load (lines 320-325):**
+```typescript
+// REMOVE from loadMessages function
+```
+
+**Mark as read only when dialog opens:**
+```typescript
+// Move the mark-as-read to openCustomerDialog function
+const openCustomerDialog = (customer: Customer) => {
+  setSelectedCustomer(customer);
+  markMessagesAsReadForCustomer(customer);
+};
+```
 
 ---
 
-## Technical Notes
+## Flow After Fix
 
-- Sounds are preloaded on app start for instant playback
-- Audio playback uses `.catch(() => {})` to handle browsers that block autoplay
-- Browser tab must have been interacted with for audio to play (browser restriction)
-- Sound files should be short (under 1 second) and compressed for fast loading
-- Default volume set to 50% for messages, 60% for new customers
+```text
+Customer sends message
+       ↓
+Message saved with is_read = false
+       ↓
+Staff sees unread badge in conversation list
+       ↓
+Staff clicks on conversation
+       ↓
+handleSelect() called
+       ↓
+Messages marked is_read = true in database
+       ↓
+Customer sees double tick (read receipt)
+```
+
+---
+
+## Benefits
+
+1. **Accurate read receipts** - Customers only see "seen" when staff actually opened the chat
+2. **Better customer experience** - No more frustration from perceived ignored messages
+3. **Accurate unread counts** - Badges reflect true unread status
+4. **Consistent behavior** - Same logic across Chat, Customers, and Dashboard pages
+
+---
+
+## Edge Cases Handled
+
+1. **Linked customers** - All linked customer IDs are marked as read together
+2. **Real-time messages** - New messages stay unread until conversation is opened
+3. **Cached messages** - Loading from cache doesn't mark as read
+4. **Multiple tabs** - Each tab independently marks read when conversation is opened
