@@ -1,26 +1,102 @@
 
-# Fix Double Tick / Read Receipt Behavior
+# Fix Google OAuth on Custom Domain (app.explorerbysl.com)
 
-## Problem
+## Problem Identified
 
-Currently, customer messages are marked as "seen" (double tick) even when staff haven't actually opened the conversation. This happens because:
+The Lovable Cloud managed OAuth (`@lovable.dev/cloud-auth-js`) is designed to work with Lovable domains (`*.lovable.app`, `*.lovableproject.com`). When using a custom domain like `app.explorerbysl.com`, the OAuth flow fails because:
 
-1. Messages are marked `is_read: true` immediately when loading messages (even for cached/background loads)
-2. Real-time messages are auto-marked as read when they arrive, regardless of whether the chat is actually visible
-3. Multiple pages (Dashboard, Customers, Chat) all trigger read status updates
-
-This creates customer frustration when they see the double tick but don't receive a response.
+1. User clicks "Sign in with Google" on `app.explorerbysl.com`
+2. Lovable auth broker initiates OAuth with Google
+3. Google completes auth and sends tokens back to the broker
+4. Broker attempts to redirect/set session for your custom domain
+5. Session is not properly established on the custom domain
+6. User gets redirected back to `/auth` because `getSession()` returns null
 
 ---
 
-## Solution
+## Solution Options
 
-Only mark messages as read when a staff member **explicitly selects and views** a conversation. This requires:
+### Option A: Use Your Own Google OAuth Credentials (Recommended)
 
-1. **Remove automatic read marking from message loading** - Don't mark as read during `loadMessages` or `fetchMessages`
-2. **Create explicit "mark as read" action** - Only triggered when staff actually opens a conversation
-3. **Move read marking to conversation selection** - When a customer is selected in the chat list, mark their messages as read
-4. **Remove auto-read from real-time handlers** - New messages should stay unread until the conversation is opened
+Configure Google OAuth directly in Lovable Cloud's Authentication Settings with your own credentials, which will work with custom domains.
+
+**Steps:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Create OAuth 2.0 credentials (Web application type)
+3. Add authorized redirect URLs:
+   - `https://ddaybkxhpvlpvgnphahp.supabase.co/auth/v1/callback`
+4. Add authorized JavaScript origins:
+   - `https://app.explorerbysl.com`
+   - `https://haroldtest.lovable.app` (if you want both to work)
+5. In Lovable Cloud Dashboard → Users → Authentication Settings → Google:
+   - Enter your Client ID and Client Secret
+6. Update the code to use standard Supabase OAuth instead of Lovable broker
+
+### Option B: Keep Using Lovable Domain
+
+Continue using `haroldtest.lovable.app` as your primary domain for authentication, and the managed OAuth will continue to work.
+
+---
+
+## Implementation Plan (Option A)
+
+### Step 1: Update Auth.tsx to Use Direct Supabase OAuth
+
+Replace the Lovable auth broker with standard Supabase OAuth for custom domain compatibility:
+
+**File: `src/pages/Auth.tsx`**
+
+```typescript
+// Change from:
+import { lovable } from "@/integrations/lovable";
+
+// To using direct Supabase OAuth:
+const handleGoogleLogin = async () => {
+  setLoading(true);
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/customers`,
+      },
+    });
+
+    if (error) {
+      toast({
+        title: "Login failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  } catch (error) {
+    toast({
+      title: "Login failed",
+      description: "An unexpected error occurred",
+      variant: "destructive",
+    });
+  } finally {
+    setLoading(false);
+  }
+};
+```
+
+### Step 2: Configure Google OAuth in Lovable Cloud
+
+1. Open Lovable Cloud Dashboard
+2. Navigate to **Users → Authentication Settings → Sign In Methods → Google**
+3. Add your Google Client ID and Client Secret
+4. Save the configuration
+
+### Step 3: Configure Google Cloud Console
+
+In your Google Cloud project:
+
+1. **Authorized JavaScript origins:**
+   - `https://app.explorerbysl.com`
+   - `https://haroldtest.lovable.app`
+
+2. **Authorized redirect URIs:**
+   - `https://ddaybkxhpvlpvgnphahp.supabase.co/auth/v1/callback`
 
 ---
 
@@ -28,161 +104,42 @@ Only mark messages as read when a staff member **explicitly selects and views** 
 
 | File | Changes |
 |------|---------|
-| `src/hooks/useChatMessages.ts` | Remove auto-read on load and real-time, add explicit `markMessagesAsRead` function |
-| `src/pages/Customers.tsx` | Remove auto-read on load and real-time, call mark-read only when dialog opens |
-| `src/pages/Dashboard.tsx` | Remove auto-read on load, mark read only when dialog is opened |
-| `src/components/ChatConversationList.tsx` | Add database update when selecting a customer |
-| `src/pages/Chat.tsx` | Ensure mark-as-read is called when customer is selected |
+| `src/pages/Auth.tsx` | Replace `lovable.auth.signInWithOAuth` with `supabase.auth.signInWithOAuth` |
 
 ---
 
-## Implementation Details
+## Important Notes
 
-### 1. Update `useChatMessages.ts`
-
-**Remove auto-read on load (lines 242-250):**
-```typescript
-// REMOVE this block - don't auto-mark as read on load
-// if (offset === 0) {
-//   await supabase
-//     .from("messages")
-//     .update({ is_read: true })
-//     ...
-// }
-```
-
-**Remove auto-read on real-time (lines 894-899):**
-```typescript
-// REMOVE this block - don't auto-mark incoming messages
-// if (newMessage.sender_type === "customer") {
-//   supabase.from("messages").update({ is_read: true })...
-// }
-```
-
-**Add explicit mark-as-read function:**
-```typescript
-// New function to mark messages as read
-const markMessagesAsRead = async () => {
-  if (linkedCustomerIds.length === 0) return;
-  
-  await supabase
-    .from("messages")
-    .update({ is_read: true })
-    .in("customer_id", linkedCustomerIds)
-    .eq("sender_type", "customer")
-    .eq("is_read", false);
-};
-```
-
-**Return the new function from the hook:**
-```typescript
-return {
-  // ... existing returns
-  markMessagesAsRead,
-};
-```
-
-### 2. Update `ChatConversationList.tsx`
-
-**Add database update when selecting a customer:**
-```typescript
-const handleSelect = async (customer: Customer) => {
-  const linkedIds = linkedPlatformsMap[customer.id]?.linkedIds || [];
-  const allIds = [customer.id, ...linkedIds];
-  
-  // Update local state immediately
-  setUnreadCounts(prev => {
-    const updated = { ...prev };
-    allIds.forEach(id => { updated[id] = 0; });
-    return updated;
-  });
-  
-  // Mark messages as read in database
-  await supabase
-    .from("messages")
-    .update({ is_read: true })
-    .in("customer_id", allIds)
-    .eq("sender_type", "customer")
-    .eq("is_read", false);
-  
-  onSelect(customer);
-};
-```
-
-### 3. Update `Customers.tsx`
-
-**Remove auto-read on load (lines 1246-1253):**
-```typescript
-// REMOVE this entire block from fetchMessages
-```
-
-**Remove auto-read on real-time (lines 1580-1586):**
-```typescript
-// REMOVE the supabase update call
-```
-
-**Mark as read only when dialog opens:**
-```typescript
-// In the function that opens the chat dialog
-const openChatDialog = (customer: Customer) => {
-  setSelectedCustomer(customer);
-  setDialogOpen(true);
-  
-  // Mark messages as read when dialog opens
-  markMessagesAsReadForCustomer(customer);
-};
-```
-
-### 4. Update `Dashboard.tsx`
-
-**Remove auto-read on load (lines 320-325):**
-```typescript
-// REMOVE from loadMessages function
-```
-
-**Mark as read only when dialog opens:**
-```typescript
-// Move the mark-as-read to openCustomerDialog function
-const openCustomerDialog = (customer: Customer) => {
-  setSelectedCustomer(customer);
-  markMessagesAsReadForCustomer(customer);
-};
-```
+- The Lovable broker (`@lovable.dev/cloud-auth-js`) is excellent for preview environments but has limitations with custom domains
+- Using your own Google OAuth credentials gives you full control over authorized domains
+- Both the Lovable domain and custom domain can work simultaneously with proper Google Console configuration
+- The session handling in `AuthContext.tsx` and `ProtectedRoute.tsx` will work correctly once OAuth is properly configured
 
 ---
 
-## Flow After Fix
+## Alternative: Hybrid Approach
 
-```text
-Customer sends message
-       ↓
-Message saved with is_read = false
-       ↓
-Staff sees unread badge in conversation list
-       ↓
-Staff clicks on conversation
-       ↓
-handleSelect() called
-       ↓
-Messages marked is_read = true in database
-       ↓
-Customer sees double tick (read receipt)
+If you want to keep the Lovable broker for preview but use direct Supabase for custom domains:
+
+```typescript
+const handleGoogleLogin = async () => {
+  const isLovableDomain = window.location.hostname.includes('lovable');
+  
+  if (isLovableDomain) {
+    // Use Lovable managed OAuth for preview
+    await lovable.auth.signInWithOAuth("google", {
+      redirect_uri: window.location.origin,
+    });
+  } else {
+    // Use direct Supabase OAuth for custom domains
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/customers`,
+      },
+    });
+  }
+};
 ```
 
----
-
-## Benefits
-
-1. **Accurate read receipts** - Customers only see "seen" when staff actually opened the chat
-2. **Better customer experience** - No more frustration from perceived ignored messages
-3. **Accurate unread counts** - Badges reflect true unread status
-4. **Consistent behavior** - Same logic across Chat, Customers, and Dashboard pages
-
----
-
-## Edge Cases Handled
-
-1. **Linked customers** - All linked customer IDs are marked as read together
-2. **Real-time messages** - New messages stay unread until conversation is opened
-3. **Cached messages** - Loading from cache doesn't mark as read
-4. **Multiple tabs** - Each tab independently marks read when conversation is opened
+This gives you the best of both worlds - managed OAuth in preview and custom domain support for production.
