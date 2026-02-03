@@ -1,93 +1,275 @@
-# Discord-Style Role Management System
 
-## Status: ✅ Implemented
+# Audible Notifications with Click-to-Navigate
 
 ## Overview
 
-This system implements a flexible, Discord-like role system where admins can:
-1. ✅ **Create custom roles** with unique names and colors
-2. ✅ **Define granular permissions** for each role (CSV export, page access, etc.)
-3. ✅ **Assign roles to users** and edit their display names
-4. ✅ **Control feature visibility** based on role permissions
+Add audible notification sounds for new messages and new customers, along with clickable toast notifications that navigate directly to the relevant chat conversation.
 
 ---
 
-## Database Design
+## Current State
 
-### Tables Created
+The app already has:
+- Real-time Supabase subscriptions for new messages and customers
+- Visual toast notifications using `sonner`
+- Toast notifications with "Refresh" action buttons
 
-**1. `roles` table** - Custom role definitions (like Discord roles)
+What's missing:
+- Audio playback for notifications
+- Direct navigation to specific customer chat from toast clicks
+- User preference to enable/disable sound notifications
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | uuid | Primary key |
-| name | text | Role name (e.g., "Sales Team", "Manager") |
-| color | text | Hex color for badge display |
-| permissions | jsonb | Permission flags object |
-| priority | integer | Role hierarchy (higher = more authority) |
-| is_system | boolean | True for built-in roles (Admin, Staff) |
-| created_at | timestamp | When created |
+---
 
-**2. `user_roles` table updates** - Added display name and link to new roles
+## Implementation Plan
 
-| Column | Type | Description |
-|--------|------|-------------|
-| display_name | text | Custom display name for the user |
-| role_id | uuid | Foreign key to `roles` table |
+### Part 1: Add Notification Sound Files
 
-### Permission Structure
+Add two notification sound files to the `public` folder:
+- `public/sounds/notification.mp3` - Short, pleasant chime for new messages
+- `public/sounds/new-customer.mp3` - Distinct sound for new customers
 
-```json
-{
-  "canExportCustomers": true,
-  "canExportTraffic": true,
-  "canExportAds": true,
-  "canViewFacebookPages": true,
-  "canViewMondayImport": true,
-  "canViewUserRoles": true,
-  "canManageRoles": true
-}
+These can be royalty-free sounds or generated using a service like Pixabay or Freesound.
+
+### Part 2: Create Notification Sound Utility
+
+**New File: `src/lib/notification-sound.ts`**
+
+```typescript
+// Notification sound player with user preference support
+const STORAGE_KEY = 'notification-sound-enabled';
+
+let notificationAudio: HTMLAudioElement | null = null;
+let newCustomerAudio: HTMLAudioElement | null = null;
+
+// Preload sounds for instant playback
+export const preloadNotificationSounds = () => {
+  notificationAudio = new Audio('/sounds/notification.mp3');
+  newCustomerAudio = new Audio('/sounds/new-customer.mp3');
+  notificationAudio.volume = 0.5;
+  newCustomerAudio.volume = 0.6;
+};
+
+export const isSoundEnabled = (): boolean => {
+  return localStorage.getItem(STORAGE_KEY) !== 'false';
+};
+
+export const setSoundEnabled = (enabled: boolean) => {
+  localStorage.setItem(STORAGE_KEY, enabled ? 'true' : 'false');
+};
+
+export const playMessageNotification = () => {
+  if (!isSoundEnabled()) return;
+  if (notificationAudio) {
+    notificationAudio.currentTime = 0;
+    notificationAudio.play().catch(() => {});
+  }
+};
+
+export const playNewCustomerNotification = () => {
+  if (!isSoundEnabled()) return;
+  if (newCustomerAudio) {
+    newCustomerAudio.currentTime = 0;
+    newCustomerAudio.play().catch(() => {});
+  }
+};
 ```
 
-### Built-in Roles (System Roles)
+### Part 3: Add Sound Toggle to UserNav
 
-| Role | Permissions |
-|------|-------------|
-| **Admin** | All permissions enabled (full access) |
-| **Staff** | Default staff role - no exports, no admin pages |
+**File: `src/components/UserNav.tsx`**
 
----
+Add a sound toggle button in the user navigation dropdown:
 
-## Files Created/Modified
+```typescript
+import { Volume2, VolumeX } from "lucide-react";
+import { isSoundEnabled, setSoundEnabled } from "@/lib/notification-sound";
 
-### New Files
-- `src/hooks/useUserPermissions.ts` - Fetch user's role + permissions + display name
-- `src/hooks/useRolesData.ts` - CRUD operations for roles table
-- `src/components/RoleManagementTab.tsx` - Roles management UI with permission toggles
-- `src/components/CreateRoleDialog.tsx` - Dialog for creating new roles
-
-### Modified Files
-- `src/pages/UserRoles.tsx` - Added tabs for Users/Roles, display name editing
-- `src/components/AppLayout.tsx` - Uses permissions for nav link visibility
-- `src/pages/Customers.tsx` - Export button gated with permissions
-- `src/pages/Traffic.tsx` - Export button gated with permissions
-- `src/pages/AdsInsight.tsx` - Export button gated with permissions
-- `src/pages/FacebookPages.tsx` - Page access gated with permissions
-- `src/pages/MondayImport.tsx` - Page access gated with permissions
-- `src/hooks/useUserRolesData.ts` - Added display_name support and role_id
-
----
-
-## Future Extensibility
-
-The JSONB permissions field allows adding new permissions without database migrations:
-
-```json
-{
-  "canExportCustomers": true,
-  "canDeleteMessages": false,
-  "canViewAnalytics": true,
-  "canBulkImport": false,
-  "maxDailyExports": 100
-}
+// In the dropdown menu:
+<DropdownMenuItem onClick={() => {
+  const newState = !isSoundEnabled();
+  setSoundEnabled(newState);
+  // Force re-render
+}}>
+  {soundEnabled ? (
+    <>
+      <Volume2 className="h-4 w-4 mr-2" />
+      Sound On
+    </>
+  ) : (
+    <>
+      <VolumeX className="h-4 w-4 mr-2" />
+      Sound Off
+    </>
+  )}
+</DropdownMenuItem>
 ```
+
+### Part 4: Update ChatConversationList with Sound and Navigation
+
+**File: `src/components/ChatConversationList.tsx`**
+
+Update the real-time subscriptions to:
+1. Play notification sounds
+2. Make toast clickable to navigate to chat
+
+```typescript
+import { useNavigate } from "react-router-dom";
+import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
+
+// In ChatConversationList component:
+const navigate = useNavigate();
+
+// For new messages subscription:
+if (newMessage.sender_type === "customer") {
+  playMessageNotification();
+  
+  toast.success("New message", {
+    description: `${customerName} sent a message`,
+    icon: <Bell className="h-4 w-4" />,
+    action: {
+      label: "View",
+      onClick: () => {
+        // Find the customer and select them
+        const customer = customers.find(c => c.id === newMessage.customer_id);
+        if (customer) {
+          onSelect(customer);
+        }
+      },
+    },
+  });
+}
+
+// For new customers subscription:
+const newCustomer = payload.new as Customer;
+playNewCustomerNotification();
+
+toast.success(`New customer: ${newCustomer.messenger_name || newCustomer.first_name || "Unknown"}`, {
+  icon: <Bell className="h-4 w-4" />,
+  duration: 8000, // Longer duration for new customers
+  action: {
+    label: "Chat Now",
+    onClick: () => {
+      refetch().then(() => {
+        onSelect(newCustomer);
+      });
+    },
+  },
+});
+```
+
+### Part 5: Update Other Pages with Centralized Notifications
+
+**Files to Update:**
+- `src/pages/Customers.tsx` - Use sound utilities, add navigation
+- `src/pages/Dashboard.tsx` - Use sound utilities, add navigation
+
+Each page will:
+1. Import sound utilities
+2. Add click handler to navigate to `/chat` with the customer pre-selected
+
+For pages that aren't the Chat page, the toast action will navigate:
+
+```typescript
+toast.success("New message", {
+  description: `${customerName} sent a message`,
+  action: {
+    label: "Open Chat",
+    onClick: () => {
+      navigate(`/chat?customer=${customerId}`);
+    },
+  },
+});
+```
+
+### Part 6: Handle URL Parameter in Chat Page
+
+**File: `src/pages/Chat.tsx`**
+
+Update to read customer ID from URL and auto-select:
+
+```typescript
+import { useSearchParams } from "react-router-dom";
+
+const Chat = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const customerId = searchParams.get('customer');
+  
+  // Auto-select customer from URL parameter
+  useEffect(() => {
+    if (customerId && customers) {
+      const customer = customers.find(c => c.id === customerId);
+      if (customer) {
+        setSelectedCustomer(customer);
+        // Clear the URL parameter
+        setSearchParams({});
+      }
+    }
+  }, [customerId, customers]);
+  
+  // ... rest of component
+};
+```
+
+### Part 7: Preload Sounds on App Start
+
+**File: `src/App.tsx`**
+
+Add sound preloading when the app initializes:
+
+```typescript
+import { preloadNotificationSounds } from "@/lib/notification-sound";
+
+// In App component, add useEffect:
+useEffect(() => {
+  preloadNotificationSounds();
+}, []);
+```
+
+---
+
+## Files to Create/Modify
+
+| File | Changes |
+|------|---------|
+| `public/sounds/notification.mp3` | New - message notification sound |
+| `public/sounds/new-customer.mp3` | New - new customer notification sound |
+| `src/lib/notification-sound.ts` | New - sound playback utilities |
+| `src/components/UserNav.tsx` | Add sound toggle option |
+| `src/components/ChatConversationList.tsx` | Add sounds + navigation to toasts |
+| `src/pages/Chat.tsx` | Handle URL parameter for direct navigation |
+| `src/pages/Customers.tsx` | Add sounds + navigation to toasts |
+| `src/pages/Dashboard.tsx` | Add sounds + navigation to toasts |
+| `src/App.tsx` | Preload notification sounds |
+
+---
+
+## User Experience Flow
+
+### New Message Notification
+1. Customer sends message
+2. Notification sound plays (if enabled)
+3. Toast appears: "New message - [Customer Name] sent a message" with "View" button
+4. Clicking "View" navigates to `/chat` and opens that conversation
+5. If already on Chat page, it selects that customer directly
+
+### New Customer Notification
+1. New customer starts chat
+2. Distinct notification sound plays (if enabled)
+3. Toast appears: "New customer: [Name]" with "Chat Now" button (8 second duration)
+4. Clicking "Chat Now" navigates to `/chat` and opens that conversation
+
+### Sound Preferences
+1. User can toggle sounds on/off from the user menu (top-right)
+2. Preference is saved in localStorage
+3. Persists across sessions
+
+---
+
+## Technical Notes
+
+- Sounds are preloaded on app start for instant playback
+- Audio playback uses `.catch(() => {})` to handle browsers that block autoplay
+- Browser tab must have been interacted with for audio to play (browser restriction)
+- Sound files should be short (under 1 second) and compressed for fast loading
+- Default volume set to 50% for messages, 60% for new customers
