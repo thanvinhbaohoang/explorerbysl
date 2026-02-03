@@ -45,6 +45,7 @@ import { exportToCSV } from "@/lib/csv-export";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { cn } from "@/lib/utils";
 import { useTrafficFilterOptions, useTrafficData } from "@/hooks/useTrafficData";
+import { useUserPermissions } from "@/hooks/useUserPermissions";
 
 interface MessengerAdContext {
   ad_id?: string;
@@ -86,6 +87,7 @@ interface TrafficData {
 
 const Traffic = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { permissions } = useUserPermissions();
   const itemsPerPage = 10;
 
   // Filter and search states
@@ -276,29 +278,31 @@ const Traffic = () => {
               <span className="text-2xl font-semibold">{totalTraffic}</span>
               <span>Total Traffic Records</span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                exportToCSV(
-                  filteredTrafficData,
-                  [
-                    { key: 'customer_name', header: 'Customer', getValue: (t) => t.customer ? (t.customer.first_name || t.customer.messenger_name || '') + ' ' + (t.customer.last_name || '') : '' },
-                    { key: 'platform', header: 'Platform' },
-                    { key: 'utm_source', header: 'UTM Source' },
-                    { key: 'utm_campaign', header: 'UTM Campaign' },
-                    { key: 'messenger_ref', header: 'Post Tag' },
-                    { key: 'created_at', header: 'Date', getValue: (t) => new Date(t.created_at).toLocaleString() },
-                    { key: 'isNewCustomer', header: 'Status', getValue: (t) => t.isNewCustomer ? 'New' : 'Existing' },
-                  ],
-                  'traffic'
-                );
-              }}
-              disabled={filteredTrafficData.length === 0}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
-            </Button>
+            {permissions.canExportTraffic && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  exportToCSV(
+                    filteredTrafficData,
+                    [
+                      { key: 'customer_name', header: 'Customer', getValue: (t) => t.customer ? (t.customer.first_name || t.customer.messenger_name || '') + ' ' + (t.customer.last_name || '') : '' },
+                      { key: 'platform', header: 'Platform' },
+                      { key: 'utm_source', header: 'UTM Source' },
+                      { key: 'utm_campaign', header: 'UTM Campaign' },
+                      { key: 'messenger_ref', header: 'Post Tag' },
+                      { key: 'created_at', header: 'Date', getValue: (t) => new Date(t.created_at).toLocaleString() },
+                      { key: 'isNewCustomer', header: 'Status', getValue: (t) => t.isNewCustomer ? 'New' : 'Existing' },
+                    ],
+                    'traffic'
+                  );
+                }}
+                disabled={filteredTrafficData.length === 0}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
+            )}
           </div>
         </div>
 

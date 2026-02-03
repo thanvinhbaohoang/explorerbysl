@@ -357,6 +357,36 @@ export type Database = {
           },
         ]
       }
+      roles: {
+        Row: {
+          color: string | null
+          created_at: string | null
+          id: string
+          is_system: boolean
+          name: string
+          permissions: Json
+          priority: number
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string | null
+          id?: string
+          is_system?: boolean
+          name: string
+          permissions?: Json
+          priority?: number
+        }
+        Update: {
+          color?: string | null
+          created_at?: string | null
+          id?: string
+          is_system?: boolean
+          name?: string
+          permissions?: Json
+          priority?: number
+        }
+        Relationships: []
+      }
       telegram_leads: {
         Row: {
           ad_id: string | null
@@ -446,23 +476,37 @@ export type Database = {
       user_roles: {
         Row: {
           created_at: string | null
+          display_name: string | null
           id: string
           role: Database["public"]["Enums"]["app_role"]
+          role_id: string | null
           user_id: string
         }
         Insert: {
           created_at?: string | null
+          display_name?: string | null
           id?: string
           role: Database["public"]["Enums"]["app_role"]
+          role_id?: string | null
           user_id: string
         }
         Update: {
           created_at?: string | null
+          display_name?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          role_id?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCustomersData } from "@/hooks/useCustomersData";
+import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { toast } from "sonner";
 import {
   Table,
@@ -106,6 +107,7 @@ interface Message {
 const Customers = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { permissions } = useUserPermissions();
   const queryClient = useQueryClient();
   const [customersPage, setCustomersPage] = useState(1);
   const itemsPerPage = 10;
@@ -1654,28 +1656,30 @@ const Customers = () => {
               <span className="text-2xl font-semibold">{totalCustomers}</span>
               <span>Total Customers</span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                exportToCSV(
-                  customers,
-                  [
-                    { key: 'first_name', header: 'First Name', getValue: (c) => c.first_name || c.messenger_name || '' },
-                    { key: 'last_name', header: 'Last Name', getValue: (c) => c.last_name || '' },
-                    { key: 'username', header: 'Username', getValue: (c) => c.username || '' },
-                    { key: 'platform', header: 'Platform', getValue: (c) => c.messenger_id ? 'Messenger' : 'Telegram' },
-                    { key: 'first_message_at', header: 'First Message', getValue: (c) => formatDateGMT7(c.first_message_at) },
-                    { key: 'last_message_at', header: 'Last Message', getValue: (c) => formatDateGMT7(c.last_message_at) },
-                    { key: 'detected_language', header: 'Language', getValue: (c) => getLanguageLabel(c.detected_language) },
-                  ],
-                  'customers'
-                );
-              }}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
-            </Button>
+            {permissions.canExportCustomers && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  exportToCSV(
+                    customers,
+                    [
+                      { key: 'first_name', header: 'First Name', getValue: (c) => c.first_name || c.messenger_name || '' },
+                      { key: 'last_name', header: 'Last Name', getValue: (c) => c.last_name || '' },
+                      { key: 'username', header: 'Username', getValue: (c) => c.username || '' },
+                      { key: 'platform', header: 'Platform', getValue: (c) => c.messenger_id ? 'Messenger' : 'Telegram' },
+                      { key: 'first_message_at', header: 'First Message', getValue: (c) => formatDateGMT7(c.first_message_at) },
+                      { key: 'last_message_at', header: 'Last Message', getValue: (c) => formatDateGMT7(c.last_message_at) },
+                      { key: 'detected_language', header: 'Language', getValue: (c) => getLanguageLabel(c.detected_language) },
+                    ],
+                    'customers'
+                  );
+                }}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

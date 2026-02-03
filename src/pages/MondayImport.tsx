@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, RefreshCw, LayoutGrid, List } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, LayoutGrid, List, Shield } from "lucide-react";
+import { useUserPermissions } from "@/hooks/useUserPermissions";
 
 interface Board {
   id: string;
@@ -39,6 +40,7 @@ interface Item {
 
 const MondayImport = () => {
   const navigate = useNavigate();
+  const { permissions, isAdmin, isLoading: permissionsLoading } = useUserPermissions();
   const [loading, setLoading] = useState(false);
   const [boards, setBoards] = useState<Board[]>([]);
   const [selectedBoard, setSelectedBoard] = useState<string>('');
@@ -47,6 +49,29 @@ const MondayImport = () => {
   const [loadingItems, setLoadingItems] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+
+  // Check permission
+  if (permissionsLoading) {
+    return (
+      <div className="container py-8">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!isAdmin && !permissions.canViewMondayImport) {
+    return (
+      <div className="container py-8">
+        <div className="flex flex-col items-center justify-center py-12">
+          <Shield className="h-12 w-12 text-muted-foreground mb-4" />
+          <h2 className="text-xl font-semibold">Access Denied</h2>
+          <p className="text-muted-foreground">
+            You don't have permission to view this page.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // Fetch boards from Monday.com
   const fetchBoards = async () => {

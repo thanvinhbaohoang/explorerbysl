@@ -9,6 +9,8 @@ interface UserRole {
   id: string;
   user_id: string;
   role: AppRole;
+  role_id: string | null;
+  display_name: string | null;
   created_at: string | null;
 }
 
@@ -62,11 +64,12 @@ export const useAddRole = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ userId, role }: { userId: string; role: AppRole }) => {
-      const { error } = await supabase.from("user_roles").insert({
+    mutationFn: async ({ userId, role, roleId }: { userId: string; role: AppRole; roleId?: string }) => {
+      const { error } = await supabase.from("user_roles").insert([{
         user_id: userId,
         role,
-      });
+        role_id: roleId || null,
+      }]);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -83,15 +86,40 @@ export const useUpdateRole = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, role }: { id: string; role: AppRole }) => {
+    mutationFn: async ({ id, role, roleId }: { id: string; role?: AppRole; roleId?: string }) => {
+      const updates: Record<string, unknown> = {};
+      if (role !== undefined) updates.role = role;
+      if (roleId !== undefined) updates.role_id = roleId;
+      
       const { error } = await supabase
         .from("user_roles")
-        .update({ role })
+        .update(updates)
         .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
       toast.success("Role updated");
+      queryClient.invalidateQueries({ queryKey: ["user-roles"] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+};
+
+export const useUpdateDisplayName = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, displayName }: { id: string; displayName: string }) => {
+      const { error } = await supabase
+        .from("user_roles")
+        .update({ display_name: displayName })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Display name updated");
       queryClient.invalidateQueries({ queryKey: ["user-roles"] });
     },
     onError: (error: Error) => {

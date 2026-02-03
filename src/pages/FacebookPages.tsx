@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useUserRole } from "@/hooks/useUserRole";
+import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { UpdateTokenDialog } from "@/components/UpdateTokenDialog";
 
 interface FacebookPage {
@@ -65,7 +65,7 @@ interface TokenInfo {
 
 const FacebookPages = () => {
   const navigate = useNavigate();
-  const { isAdmin, isLoading: roleLoading } = useUserRole();
+  const { permissions, isAdmin, isLoading: permissionsLoading } = useUserPermissions();
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [dbPages, setDbPages] = useState<DbPage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
