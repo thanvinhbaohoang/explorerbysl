@@ -1,125 +1,132 @@
 
+# Mobile-Friendly App Layout Improvements
 
-# Fix Profile Photos in Conversation List
+## Overview
 
-## Problem Summary
-
-Profile photos are not displaying for customers in the chat list. There are two separate issues:
-
-| Platform | Current State | Root Cause |
-|----------|---------------|------------|
-| **Messenger** | Only 1/3 customers have photos | Facebook API permission issues + URL expiration |
-| **Telegram** | 0 customers have photos | Profile photo fetching not implemented |
+This plan addresses three key mobile UX issues:
+1. Navigation is not responsive (shows all links on mobile, cramped)
+2. Chat input area jumps/scrolls when keyboard appears on mobile
+3. No search filter in the conversation list for quick customer access
 
 ---
 
-## Detailed Analysis
+## Part 1: Hamburger Menu Navigation
 
-### Messenger Issues
+### Current State
+The `AppLayout.tsx` shows all navigation links horizontally in the center, which becomes cramped on mobile screens.
 
-1. **Permission Problem**: Two Messenger customers show `messenger_name: "Unknown"` and `messenger_profile_pic: null` - this indicates the Facebook Graph API call to fetch user profile failed (requires `pages_messaging` permission)
+### Solution
+Add a hamburger menu using the existing `Sheet` component that slides in from the left on mobile devices.
 
-2. **URL Expiration**: Harold Than's profile picture URL will expire:
-   - URL contains `ext=1768430855` (Unix timestamp = ~May 2026)
-   - After expiration, the image will fail to load
-   - Current code saves the temporary Facebook URL directly instead of downloading permanently
+**Changes to `src/components/AppLayout.tsx`:**
 
-### Telegram Issues
+```text
+Desktop (md and up):
++----------------------------------+
+| Logo      [Nav Links]    UserNav |
++----------------------------------+
 
-The `handleStart` function in `telegram-bot` edge function:
-- Captures username, first_name, last_name, language_code
-- Does **NOT** call Telegram's `getUserProfilePhotos` API
-- Never stores any profile photo URL
+Mobile (below md):
++----------------------------------+
+| [☰]  Logo              UserNav   |
++----------------------------------+
+         ↓ (tap hamburger)
++--------+-------------------------+
+| [Sheet]|                         |
+| Chat   |                         |
+| Custom |                         |
+| Traffic|                         |
+| ...    |                         |
++--------+-------------------------+
+```
+
+**Implementation:**
+- Import `Sheet`, `SheetContent`, `SheetTrigger`, `SheetClose` from `@/components/ui/sheet`
+- Add `Menu` icon from lucide-react
+- Wrap mobile nav in a Sheet that slides from "left"
+- Show hamburger button only on mobile (`md:hidden`)
+- Keep existing horizontal nav visible on desktop (`hidden md:flex`)
 
 ---
 
-## Solution
+## Part 2: Fixed Chat Input on Mobile
 
-### Part 1: Add Telegram Profile Photo Fetching
+### Current Problem
+On mobile devices, when the virtual keyboard opens, the chat input area can scroll out of view or jump around. This is a common iOS/Android issue with `100vh` calculations.
 
-Modify `supabase/functions/telegram-bot/index.ts`:
+### Solution
+Use `dvh` (dynamic viewport height) CSS units and ensure the input area is properly fixed at the bottom with correct z-indexing. Add mobile-specific viewport handling.
 
-1. Add a new `getUserProfilePhoto` function that:
-   - Calls Telegram's `getUserProfilePhotos` API
-   - Downloads the photo using `getFile`
-   - Stores it in Supabase Storage permanently
-   - Returns the permanent URL
+**Changes to `src/pages/Chat.tsx`:**
+- Update mobile container height to use `h-[calc(100dvh-3.5rem)]` instead of `h-[calc(100vh-3.5rem)]`
+- This uses the dynamic viewport height which accounts for mobile browser chrome and keyboard
 
-2. Update `handleStart` and message handling to:
-   - Fetch and store profile photo for new customers
-   - Optionally refresh photo for existing customers periodically
+**Changes to `src/components/ChatPanel.tsx`:**
+- Change the main container to use `flex flex-col` with proper height inheritance
+- Ensure messages area uses `flex-1 overflow-y-auto min-h-0` (already correct)
+- Add `flex-shrink-0` to both header and input area (already present)
+- Add safe-area padding for iOS notch: `pb-safe` or `padding-bottom: env(safe-area-inset-bottom)`
 
-```typescript
-// New function to add
-async function getUserProfilePhoto(userId: number): Promise<string | null> {
-  try {
-    // Get user's profile photos
-    const response = await fetch(
-      `${TELEGRAM_API}/getUserProfilePhotos?user_id=${userId}&limit=1`
-    );
-    const data = await response.json();
-    
-    if (!data.ok || !data.result.photos || data.result.photos.length === 0) {
-      return null;
-    }
-    
-    // Get the largest size of the first photo
-    const photoSizes = data.result.photos[0];
-    const largest = photoSizes[photoSizes.length - 1];
-    
-    // Download and store permanently
-    return await downloadAndStoreFile(largest.file_id, 'photo');
-  } catch (error) {
-    console.error("Error getting user profile photo:", error);
-    return null;
+**Changes to `src/index.css`:**
+Add CSS for safe area and mobile viewport:
+```css
+/* Mobile viewport fix */
+@supports (height: 100dvh) {
+  .h-dvh-safe {
+    height: 100dvh;
   }
+}
+
+/* iOS safe area */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 ```
 
-### Part 2: Fix Messenger Profile Photo Storage
+---
 
-Modify `supabase/functions/messenger-webhook/index.ts`:
+## Part 3: Search Filter for Chat Conversations
 
-1. Add a dedicated function to download and permanently store profile pictures
-2. Update `handleMessage` to use permanent storage instead of Facebook's temporary URL
-3. Store the permanent Supabase Storage URL in the database
+### Current State
+The `ChatConversationList` shows all customers with no way to quickly search or filter.
 
-```typescript
-// Download profile pic and store permanently
-async function downloadAndStoreProfilePic(url: string, customerId: string): Promise<string | null> {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    
-    const blob = await response.blob();
-    const fileName = `profile-pics/${customerId}.jpg`;
-    
-    const { error } = await supabase.storage
-      .from('chat-attachments')
-      .upload(fileName, await blob.arrayBuffer(), {
-        contentType: 'image/jpeg',
-        upsert: true  // Overwrite if exists
-      });
-    
-    if (error) return null;
-    
-    const { data } = supabase.storage
-      .from('chat-attachments')
-      .getPublicUrl(fileName);
-    
-    return data.publicUrl;
-  } catch (error) {
-    console.error("Error storing profile pic:", error);
-    return null;
-  }
-}
+### Solution
+Add a search input at the top of the conversation list that filters customers by name in real-time.
+
+**Changes to `src/components/ChatConversationList.tsx`:**
+
+```text
++---------------------------+
+| Conversations             |
+| 63 customers+             |
++---------------------------+
+| [🔍 Search customers...]  |  ← NEW
++---------------------------+
+| Customer 1                |
+| Customer 2                |
+| ...                       |
++---------------------------+
 ```
 
-### Part 3: Backfill Existing Customers
-
-Create an edge function endpoint to refresh profile photos for existing customers:
-- For Telegram: Fetch photos using `getUserProfilePhotos`
-- For Messenger: Re-fetch using Graph API and store permanently
+**Implementation:**
+1. Add state for search query: `const [searchQuery, setSearchQuery] = useState("")`
+2. Add search Input with Search icon from lucide-react
+3. Filter customers before sorting:
+```typescript
+const filteredBySearch = useMemo(() => {
+  if (!searchQuery.trim()) return allCustomers;
+  const query = searchQuery.toLowerCase();
+  return allCustomers.filter(customer => {
+    const name = customer.messenger_name || 
+      `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
+      customer.username || '';
+    return name.toLowerCase().includes(query);
+  });
+}, [allCustomers, searchQuery]);
+```
+4. Use `filteredBySearch` in the sorting logic instead of `allCustomers`
+5. Add "X" clear button when search has text
+6. Show "No results" message when search yields no matches
 
 ---
 
@@ -127,35 +134,56 @@ Create an edge function endpoint to refresh profile photos for existing customer
 
 | File | Changes |
 |------|---------|
-| `supabase/functions/telegram-bot/index.ts` | Add `getUserProfilePhoto` function, update customer creation to fetch/store photos |
-| `supabase/functions/messenger-webhook/index.ts` | Add `downloadAndStoreProfilePic` function, update profile storage to use permanent URLs |
+| `src/components/AppLayout.tsx` | Add hamburger menu using Sheet component for mobile navigation |
+| `src/pages/Chat.tsx` | Update height calculation to use `dvh` for mobile |
+| `src/components/ChatPanel.tsx` | Add safe-area padding for iOS devices |
+| `src/components/ChatConversationList.tsx` | Add search input and filter functionality |
+| `src/index.css` | Add utility classes for safe-area and dynamic viewport |
 
 ---
 
-## Technical Notes
+## Visual Summary
 
-### Telegram API
-- `getUserProfilePhotos` returns an array of photos at different resolutions
-- Each photo has a `file_id` that can be used with `getFile` to download
-- No special permissions needed - bots can always get profile photos
+### Mobile Navigation (Before → After)
+```text
+BEFORE:                         AFTER:
++------------------------+      +------------------------+
+| Logo [Chat][Cust][...]|      | [☰] Logo        [User] |
++------------------------+      +------------------------+
+(cramped, hard to tap)          (clean, hamburger menu)
+```
 
-### Messenger API
-- Requires `pages_messaging` permission to fetch user profiles
-- Profile pics are temporary URLs that expire
-- The 2 customers with "Unknown" name may have failed API calls due to permission issues
+### Chat Search (New Feature)
+```text
++---------------------------+
+| Conversations       [X]   |
+| 63 customers              |
++---------------------------+
+| 🔍 Search customers...    |
++---------------------------+
+| [Avatar] John Doe      2m |
+|          Latest message...|
++---------------------------+
+```
 
-### Storage Strategy
-- Store all profile photos in `chat-attachments/profile-pics/`
-- Use customer ID as filename for easy updates: `profile-pics/{customer_id}.jpg`
-- Use `upsert: true` to allow photo updates
+### Chat Input (Fixed)
+```text
++---------------------------+
+|      Messages Area        |
+|      (scrollable)         |
+|                           |
++---------------------------+
+| [📎][🎤] Type message [→] |  ← Always visible, never jumps
++---------------------------+
+  ↑ Safe area padding for iOS
+```
 
 ---
 
 ## Expected Outcome
 
 After implementation:
-- New Telegram customers will have their profile photo fetched and stored
-- New Messenger customers will have permanent photo URLs (not expiring)
-- Existing customers can be updated via a backfill process
-- The conversation list will display actual user avatars instead of placeholders
-
+- **Mobile navigation**: Clean hamburger menu that opens a side sheet with all navigation links
+- **Fixed chat input**: Input area stays pinned at the bottom even when keyboard is open
+- **Search filter**: Quick access to find any customer by typing their name
+- Better overall mobile experience matching native chat app UX
