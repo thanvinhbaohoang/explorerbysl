@@ -1,189 +1,104 @@
 
-# Mobile-Friendly App Layout Improvements
+# Fix Customer Profile Pictures in Chat
 
-## Overview
+## Problem Summary
 
-This plan addresses three key mobile UX issues:
-1. Navigation is not responsive (shows all links on mobile, cramped)
-2. Chat input area jumps/scrolls when keyboard appears on mobile
-3. No search filter in the conversation list for quick customer access
+Customer profile pictures are showing as initials instead of actual photos because:
 
----
+1. **Most customers have no profile picture stored** - The database shows only 1 out of 20 recent customers has a `messenger_profile_pic` value
+2. **Profile photos are only fetched for NEW customers** - The `telegram-bot` edge function only calls `getUserProfilePhoto()` when creating a new customer record
+3. **Existing customers never got their photos** - Customers created before this feature was added, or those who started chatting through a regular message instead of `/start`, don't have photos
 
-## Part 1: Hamburger Menu Navigation
+## Solution Overview
 
-### Current State
-The `AppLayout.tsx` shows all navigation links horizontally in the center, which becomes cramped on mobile screens.
+Update the Telegram bot to fetch and store profile pictures for all customers who don't have one yet, and optionally create a one-time backfill script for existing customers.
 
-### Solution
-Add a hamburger menu using the existing `Sheet` component that slides in from the left on mobile devices.
+## Implementation Steps
 
-**Changes to `src/components/AppLayout.tsx`:**
+### Step 1: Update telegram-bot Edge Function
+
+Modify the message handling logic to check if an existing customer is missing their profile picture and fetch it if so.
+
+**File: `supabase/functions/telegram-bot/index.ts`**
+
+Changes:
+- In the message handler (when customer already exists), check if `messenger_profile_pic` is null
+- If null, call `getUserProfilePhoto()` and update the customer record
+- This ensures any customer who sends a message will get their photo fetched if missing
 
 ```text
-Desktop (md and up):
-+----------------------------------+
-| Logo      [Nav Links]    UserNav |
-+----------------------------------+
+Before (simplified):
+if (existingCustomer) {
+  // Customer exists - use existing ID
+  customerId = existingCustomer.id;
+  // Update basic info only
+  await supabase.from('customer').update({...basic info...})
+}
 
-Mobile (below md):
-+----------------------------------+
-| [☰]  Logo              UserNav   |
-+----------------------------------+
-         ↓ (tap hamburger)
-+--------+-------------------------+
-| [Sheet]|                         |
-| Chat   |                         |
-| Custom |                         |
-| Traffic|                         |
-| ...    |                         |
-+--------+-------------------------+
-```
-
-**Implementation:**
-- Import `Sheet`, `SheetContent`, `SheetTrigger`, `SheetClose` from `@/components/ui/sheet`
-- Add `Menu` icon from lucide-react
-- Wrap mobile nav in a Sheet that slides from "left"
-- Show hamburger button only on mobile (`md:hidden`)
-- Keep existing horizontal nav visible on desktop (`hidden md:flex`)
-
----
-
-## Part 2: Fixed Chat Input on Mobile
-
-### Current Problem
-On mobile devices, when the virtual keyboard opens, the chat input area can scroll out of view or jump around. This is a common iOS/Android issue with `100vh` calculations.
-
-### Solution
-Use `dvh` (dynamic viewport height) CSS units and ensure the input area is properly fixed at the bottom with correct z-indexing. Add mobile-specific viewport handling.
-
-**Changes to `src/pages/Chat.tsx`:**
-- Update mobile container height to use `h-[calc(100dvh-3.5rem)]` instead of `h-[calc(100vh-3.5rem)]`
-- This uses the dynamic viewport height which accounts for mobile browser chrome and keyboard
-
-**Changes to `src/components/ChatPanel.tsx`:**
-- Change the main container to use `flex flex-col` with proper height inheritance
-- Ensure messages area uses `flex-1 overflow-y-auto min-h-0` (already correct)
-- Add `flex-shrink-0` to both header and input area (already present)
-- Add safe-area padding for iOS notch: `pb-safe` or `padding-bottom: env(safe-area-inset-bottom)`
-
-**Changes to `src/index.css`:**
-Add CSS for safe area and mobile viewport:
-```css
-/* Mobile viewport fix */
-@supports (height: 100dvh) {
-  .h-dvh-safe {
-    height: 100dvh;
+After (simplified):
+if (existingCustomer) {
+  customerId = existingCustomer.id;
+  await supabase.from('customer').update({...basic info...})
+  
+  // Fetch profile photo if missing
+  if (!existingCustomer.messenger_profile_pic) {
+    const profilePhotoUrl = await getUserProfilePhoto(telegramId, customerId);
+    if (profilePhotoUrl) {
+      await supabase.from('customer')
+        .update({ messenger_profile_pic: profilePhotoUrl })
+        .eq('id', customerId);
+    }
   }
 }
-
-/* iOS safe area */
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
 ```
 
----
+### Step 2: Update handleStart Function
 
-## Part 3: Search Filter for Chat Conversations
+Similarly update the `/start` command handler to fetch photos for existing customers who are missing them.
 
-### Current State
-The `ChatConversationList` shows all customers with no way to quickly search or filter.
+### Step 3: Update Regular Message Handler
 
-### Solution
-Add a search input at the top of the conversation list that filters customers by name in real-time.
+Apply the same logic to the regular message handler (`handleMessage` function) to ensure photos are fetched whenever a customer without a profile picture sends any message.
 
-**Changes to `src/components/ChatConversationList.tsx`:**
+## Technical Details
 
-```text
-+---------------------------+
-| Conversations             |
-| 63 customers+             |
-+---------------------------+
-| [🔍 Search customers...]  |  ← NEW
-+---------------------------+
-| Customer 1                |
-| Customer 2                |
-| ...                       |
-+---------------------------+
-```
-
-**Implementation:**
-1. Add state for search query: `const [searchQuery, setSearchQuery] = useState("")`
-2. Add search Input with Search icon from lucide-react
-3. Filter customers before sorting:
-```typescript
-const filteredBySearch = useMemo(() => {
-  if (!searchQuery.trim()) return allCustomers;
-  const query = searchQuery.toLowerCase();
-  return allCustomers.filter(customer => {
-    const name = customer.messenger_name || 
-      `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
-      customer.username || '';
-    return name.toLowerCase().includes(query);
-  });
-}, [allCustomers, searchQuery]);
-```
-4. Use `filteredBySearch` in the sorting logic instead of `allCustomers`
-5. Add "X" clear button when search has text
-6. Show "No results" message when search yields no matches
-
----
-
-## Files to Modify
+### Files to Modify
 
 | File | Changes |
 |------|---------|
-| `src/components/AppLayout.tsx` | Add hamburger menu using Sheet component for mobile navigation |
-| `src/pages/Chat.tsx` | Update height calculation to use `dvh` for mobile |
-| `src/components/ChatPanel.tsx` | Add safe-area padding for iOS devices |
-| `src/components/ChatConversationList.tsx` | Add search input and filter functionality |
-| `src/index.css` | Add utility classes for safe-area and dynamic viewport |
+| `supabase/functions/telegram-bot/index.ts` | Add profile photo fetching for existing customers in multiple handlers |
 
----
+### Query Change for Existing Customer Lookup
 
-## Visual Summary
-
-### Mobile Navigation (Before → After)
-```text
-BEFORE:                         AFTER:
-+------------------------+      +------------------------+
-| Logo [Chat][Cust][...]|      | [☰] Logo        [User] |
-+------------------------+      +------------------------+
-(cramped, hard to tap)          (clean, hamburger menu)
+The current query only selects `id`:
+```typescript
+const { data: existingCustomer } = await supabase
+  .from('customer')
+  .select('id')  // Only gets id
+  .eq('telegram_id', u.id)
+  .maybeSingle();
 ```
 
-### Chat Search (New Feature)
-```text
-+---------------------------+
-| Conversations       [X]   |
-| 63 customers              |
-+---------------------------+
-| 🔍 Search customers...    |
-+---------------------------+
-| [Avatar] John Doe      2m |
-|          Latest message...|
-+---------------------------+
+Update to also select `messenger_profile_pic`:
+```typescript
+const { data: existingCustomer } = await supabase
+  .from('customer')
+  .select('id, messenger_profile_pic')  // Also get profile pic status
+  .eq('telegram_id', u.id)
+  .maybeSingle();
 ```
 
-### Chat Input (Fixed)
-```text
-+---------------------------+
-|      Messages Area        |
-|      (scrollable)         |
-|                           |
-+---------------------------+
-| [📎][🎤] Type message [→] |  ← Always visible, never jumps
-+---------------------------+
-  ↑ Safe area padding for iOS
-```
+### Backfill Consideration
 
----
+For existing customers who haven't messaged since this update, you have two options:
+
+1. **Wait for natural backfill** - Photos will be fetched as customers send new messages
+2. **Manual backfill** (optional) - Run a one-time script/SQL to trigger photo fetching for all Telegram customers with null profile pics
 
 ## Expected Outcome
 
 After implementation:
-- **Mobile navigation**: Clean hamburger menu that opens a side sheet with all navigation links
-- **Fixed chat input**: Input area stays pinned at the bottom even when keyboard is open
-- **Search filter**: Quick access to find any customer by typing their name
-- Better overall mobile experience matching native chat app UX
+- New customers will get profile photos immediately
+- Existing customers will get their photos on their next message
+- The chat conversation list will display actual profile pictures instead of initials
+- Messenger customers will continue to work as before (photos already fetched on webhook)
