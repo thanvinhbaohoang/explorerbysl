@@ -330,6 +330,20 @@ const Dashboard = () => {
         [customer.id]: 0,
       }));
 
+      // Send typing indicator for Telegram customers to show staff is viewing
+      if (customer.telegram_id) {
+        try {
+          await supabase.functions.invoke('telegram-bot', {
+            body: {
+              action: 'mark_seen',
+              telegram_id: customer.telegram_id
+            }
+          });
+        } catch (error) {
+          console.error('Failed to send typing indicator:', error);
+        }
+      }
+
       const { data, error } = await supabase
         .from("messages")
         .select("*")

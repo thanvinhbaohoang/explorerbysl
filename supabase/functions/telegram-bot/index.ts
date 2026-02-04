@@ -733,6 +733,25 @@ async function sendAudioWithFile(chatId: number, fileBlob: Blob, caption?: strin
   return await response.json();
 }
 
+// Send chat action (typing indicator) to show staff is viewing
+async function sendChatAction(chatId: number, action: string) {
+  const response = await fetch(`${TELEGRAM_API}/sendChatAction`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      action: action,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error("Telegram API error (sendChatAction):", error);
+  }
+  
+  return response.ok;
+}
+
 // Send audio file to Telegram (audio file, not voice bubble)
 async function sendAudio(chatId: number, audioUrl: string, caption?: string) {
   const response = await fetch(`${TELEGRAM_API}/sendAudio`, {
@@ -765,6 +784,43 @@ serve(async (req) => {
     if (req.method === "POST") {
       // Parse the body once
       const body = await req.json();
+      
+      // Handle mark_seen action (send typing indicator to show staff is viewing)
+      if (body.action === "mark_seen") {
+        const { telegram_id } = body;
+        
+        if (!telegram_id) {
+          return new Response(
+            JSON.stringify({ error: "Missing telegram_id" }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 400,
+            }
+          );
+        }
+
+        try {
+          // Send "typing" action to show customer that staff is viewing
+          await sendChatAction(telegram_id, 'typing');
+          
+          return new Response(
+            JSON.stringify({ success: true }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 200,
+            }
+          );
+        } catch (error: any) {
+          console.error("Error sending chat action:", error);
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 500,
+            }
+          );
+        }
+      }
       
       // Check if this is a send message request from frontend
       if (body.action === "send_message") {
