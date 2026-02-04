@@ -179,23 +179,49 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
               [newMessage.customer_id]: (prev[newMessage.customer_id] || 0) + 1,
             }));
             
-          // Find customer name for toast
-          const customer = allCustomers.find(c => c.id === newMessage.customer_id);
+            // Find customer - check direct match or linked customers
+            let customer = allCustomers.find(c => c.id === newMessage.customer_id);
+            let parentCustomerId = newMessage.customer_id;
+            
+            // If not found directly, check if it's a linked customer
+            if (!customer) {
+              for (const [parentId, linkedInfo] of Object.entries(allLinkedPlatformsMap)) {
+                if (linkedInfo.linkedIds.includes(newMessage.customer_id)) {
+                  customer = allCustomers.find(c => c.id === parentId);
+                  parentCustomerId = parentId;
+                  break;
+                }
+              }
+            }
+            
+            // Get customer name
             const customerName = customer?.messenger_name || 
               `${customer?.first_name || ''} ${customer?.last_name || ''}`.trim() || 
-              'Customer';
+              'New Customer';
             
-            // Show toast with click-to-navigate action
-            toast.success("New message", {
-              description: `${customerName} sent a message`,
+            // Format message preview (truncate if too long)
+            let messagePreview = newMessage.message_text || '';
+            if (newMessage.message_type === 'photo') messagePreview = '📷 Photo';
+            else if (newMessage.message_type === 'video') messagePreview = '🎥 Video';
+            else if (newMessage.message_type === 'voice') messagePreview = '🎤 Voice message';
+            else if (newMessage.message_type === 'document') messagePreview = '📎 Document';
+            else if (messagePreview.length > 50) {
+              messagePreview = messagePreview.substring(0, 50) + '...';
+            }
+            
+            // Show improved toast with name and message preview
+            toast.success(customerName, {
+              description: messagePreview || 'New message',
               icon: <Bell className="h-4 w-4" />,
               action: {
                 label: isOnChatPage ? "View" : "Open Chat",
                 onClick: () => {
                   if (isOnChatPage && customer) {
+                    // Already on chat page with customer loaded - select directly
                     onSelect(customer);
                   } else {
-                    navigate(`/chat?customer=${newMessage.customer_id}`);
+                    // Navigate with URL parameter - works even if customer not loaded
+                    navigate(`/chat?customer=${parentCustomerId}`);
                   }
                 },
               },
@@ -207,6 +233,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           if (newMessage.message_type === 'photo') text = '📷 Photo';
           else if (newMessage.message_type === 'video') text = '🎥 Video';
           else if (newMessage.message_type === 'voice') text = '🎤 Voice message';
+          else if (newMessage.message_type === 'document') text = '📎 Document';
           
           setLastMessages(prev => ({
             ...prev,
