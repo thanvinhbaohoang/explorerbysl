@@ -1,171 +1,125 @@
 
 
-# Telegram Read Receipts - Investigation & Solution
+# Fix Profile Photos in Conversation List
 
-## Understanding Telegram's Behavior
+## Problem Summary
 
-Telegram bots work differently from Messenger when it comes to read receipts:
+Profile photos are not displaying for customers in the chat list. There are two separate issues:
 
-| Status | Meaning | Bot Control? |
-|--------|---------|--------------|
-| Single tick (✓) | Sent to server | No |
-| Double tick (✓✓) | Delivered to bot | No - automatic |
-| Blue ticks / Eyes | Read | Not available for bots |
-
-**Key Point**: In Telegram, when a user sends a message to a bot, the double tick (✓✓) appears immediately when your webhook returns `200 OK`. This is Telegram's design - it indicates "message delivered to the bot" not "message read by a human."
-
-Unlike Messenger, Telegram bots **cannot** control when read receipts appear. The double tick simply means the webhook received the message successfully.
+| Platform | Current State | Root Cause |
+|----------|---------------|------------|
+| **Messenger** | Only 1/3 customers have photos | Facebook API permission issues + URL expiration |
+| **Telegram** | 0 customers have photos | Profile photo fetching not implemented |
 
 ---
 
-## What Your Customers See
+## Detailed Analysis
 
-When a customer sends a message to your Telegram bot:
-1. They see **single tick** briefly (sent to Telegram servers)
-2. They see **double tick** immediately after (delivered to your bot's webhook)
-3. There is **no "read" status** for bot conversations - Telegram doesn't show this
+### Messenger Issues
 
-The double tick is **not** a "seen" indicator for bots - it just means "delivered."
+1. **Permission Problem**: Two Messenger customers show `messenger_name: "Unknown"` and `messenger_profile_pic: null` - this indicates the Facebook Graph API call to fetch user profile failed (requires `pages_messaging` permission)
 
----
+2. **URL Expiration**: Harold Than's profile picture URL will expire:
+   - URL contains `ext=1768430855` (Unix timestamp = ~May 2026)
+   - After expiration, the image will fail to load
+   - Current code saves the temporary Facebook URL directly instead of downloading permanently
 
-## Possible Causes of Customer Frustration
+### Telegram Issues
 
-If customers are interpreting double ticks as "seen," this is a **perception issue** rather than a technical one. However, there are things we can do:
-
-### Option A: Send "Typing" Indicator When Staff Opens Chat (Recommended)
-
-When a staff member opens a conversation, we can send a "typing" action to let the customer know someone is looking at their message. This creates a clear visual signal that their message is being attended to.
-
-```typescript
-// Add to telegram-bot edge function
-async function sendChatAction(chatId: number, action: 'typing' | 'upload_photo' | 'record_voice') {
-  await fetch(`${TELEGRAM_API}/sendChatAction`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      action: action  // 'typing' shows "typing..." in chat
-    }),
-  });
-}
-```
-
-**Effect**: When staff opens the chat, customer sees "typing..." for 5 seconds, indicating human attention.
-
-### Option B: Send Acknowledgment Message
-
-Optionally send a brief auto-message when staff views the chat, like "Your message has been received. Our team is reviewing it."
+The `handleStart` function in `telegram-bot` edge function:
+- Captures username, first_name, last_name, language_code
+- Does **NOT** call Telegram's `getUserProfilePhotos` API
+- Never stores any profile photo URL
 
 ---
 
-## Implementation Plan (Option A - Typing Indicator)
+## Solution
 
-### Step 1: Add `sendChatAction` to Telegram Bot Edge Function
+### Part 1: Add Telegram Profile Photo Fetching
 
-Add a new action handler to the edge function:
+Modify `supabase/functions/telegram-bot/index.ts`:
 
-**File: `supabase/functions/telegram-bot/index.ts`**
+1. Add a new `getUserProfilePhoto` function that:
+   - Calls Telegram's `getUserProfilePhotos` API
+   - Downloads the photo using `getFile`
+   - Stores it in Supabase Storage permanently
+   - Returns the permanent URL
 
-```typescript
-// Send chat action (typing indicator)
-async function sendChatAction(chatId: number, action: string) {
-  const response = await fetch(`${TELEGRAM_API}/sendChatAction`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      action: action,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    console.error("Telegram API error (sendChatAction):", error);
-  }
-}
-```
-
-Add new action handler:
+2. Update `handleStart` and message handling to:
+   - Fetch and store profile photo for new customers
+   - Optionally refresh photo for existing customers periodically
 
 ```typescript
-// Handle mark_seen action (send typing indicator to show staff attention)
-if (body.action === "mark_seen") {
-  const { telegram_id } = body;
-  
-  if (!telegram_id) {
-    return new Response(
-      JSON.stringify({ error: "Missing telegram_id" }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  }
-
+// New function to add
+async function getUserProfilePhoto(userId: number): Promise<string | null> {
   try {
-    // Send "typing" action to show customer that staff is viewing
-    await sendChatAction(telegram_id, 'typing');
+    // Get user's profile photos
+    const response = await fetch(
+      `${TELEGRAM_API}/getUserProfilePhotos?user_id=${userId}&limit=1`
+    );
+    const data = await response.json();
     
-    return new Response(
-      JSON.stringify({ success: true }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  } catch (error: any) {
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    if (!data.ok || !data.result.photos || data.result.photos.length === 0) {
+      return null;
+    }
+    
+    // Get the largest size of the first photo
+    const photoSizes = data.result.photos[0];
+    const largest = photoSizes[photoSizes.length - 1];
+    
+    // Download and store permanently
+    return await downloadAndStoreFile(largest.file_id, 'photo');
+  } catch (error) {
+    console.error("Error getting user profile photo:", error);
+    return null;
   }
 }
 ```
 
-### Step 2: Call from Frontend When Staff Opens Chat
+### Part 2: Fix Messenger Profile Photo Storage
 
-**File: `src/components/ChatConversationList.tsx`**
+Modify `supabase/functions/messenger-webhook/index.ts`:
 
-Modify `handleSelect` to trigger typing indicator for Telegram customers:
+1. Add a dedicated function to download and permanently store profile pictures
+2. Update `handleMessage` to use permanent storage instead of Facebook's temporary URL
+3. Store the permanent Supabase Storage URL in the database
 
 ```typescript
-const handleSelect = async (customer: Customer) => {
-  const linkedIds = allLinkedPlatformsMap[customer.id]?.linkedIds || [];
-  const allIds = [customer.id, ...linkedIds];
-  
-  // Update local state immediately
-  setUnreadCounts(prev => {
-    const updated = { ...prev };
-    allIds.forEach(id => { updated[id] = 0; });
-    return updated;
-  });
-  
-  // Mark messages as read in database
-  await supabase
-    .from("messages")
-    .update({ is_read: true })
-    .in("customer_id", allIds)
-    .eq("sender_type", "customer")
-    .eq("is_read", false);
-  
-  // Send typing indicator for Telegram customers
-  if (customer.telegram_id) {
-    try {
-      await supabase.functions.invoke('telegram-bot', {
-        body: {
-          action: 'mark_seen',
-          telegram_id: customer.telegram_id
-        }
+// Download profile pic and store permanently
+async function downloadAndStoreProfilePic(url: string, customerId: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    
+    const blob = await response.blob();
+    const fileName = `profile-pics/${customerId}.jpg`;
+    
+    const { error } = await supabase.storage
+      .from('chat-attachments')
+      .upload(fileName, await blob.arrayBuffer(), {
+        contentType: 'image/jpeg',
+        upsert: true  // Overwrite if exists
       });
-    } catch (error) {
-      console.error('Failed to send typing indicator:', error);
-    }
+    
+    if (error) return null;
+    
+    const { data } = supabase.storage
+      .from('chat-attachments')
+      .getPublicUrl(fileName);
+    
+    return data.publicUrl;
+  } catch (error) {
+    console.error("Error storing profile pic:", error);
+    return null;
   }
-  
-  onSelect(customer);
-};
+}
 ```
 
-### Step 3: Apply Same Logic to Other Entry Points
+### Part 3: Backfill Existing Customers
 
-Update the same typing indicator logic in:
-- `src/pages/Dashboard.tsx` - When opening chat dialog
-- `src/pages/Customers.tsx` - When opening chat dialog
+Create an edge function endpoint to refresh profile photos for existing customers:
+- For Telegram: Fetch photos using `getUserProfilePhotos`
+- For Messenger: Re-fetch using Graph API and store permanently
 
 ---
 
@@ -173,27 +127,35 @@ Update the same typing indicator logic in:
 
 | File | Changes |
 |------|---------|
-| `supabase/functions/telegram-bot/index.ts` | Add `sendChatAction` function and `mark_seen` action handler |
-| `src/components/ChatConversationList.tsx` | Call `mark_seen` when staff opens Telegram chat |
-| `src/pages/Dashboard.tsx` | Call `mark_seen` when opening Telegram customer dialog |
-| `src/pages/Customers.tsx` | Call `mark_seen` when opening Telegram chat dialog |
+| `supabase/functions/telegram-bot/index.ts` | Add `getUserProfilePhoto` function, update customer creation to fetch/store photos |
+| `supabase/functions/messenger-webhook/index.ts` | Add `downloadAndStoreProfilePic` function, update profile storage to use permanent URLs |
+
+---
+
+## Technical Notes
+
+### Telegram API
+- `getUserProfilePhotos` returns an array of photos at different resolutions
+- Each photo has a `file_id` that can be used with `getFile` to download
+- No special permissions needed - bots can always get profile photos
+
+### Messenger API
+- Requires `pages_messaging` permission to fetch user profiles
+- Profile pics are temporary URLs that expire
+- The 2 customers with "Unknown" name may have failed API calls due to permission issues
+
+### Storage Strategy
+- Store all profile photos in `chat-attachments/profile-pics/`
+- Use customer ID as filename for easy updates: `profile-pics/{customer_id}.jpg`
+- Use `upsert: true` to allow photo updates
 
 ---
 
 ## Expected Outcome
 
 After implementation:
-- When staff opens a Telegram conversation, the customer sees "typing..." for 5 seconds
-- This provides clear visual feedback that their message is being attended to
-- The double tick behavior remains unchanged (Telegram limitation) but customers get meaningful "attention" signals
-
----
-
-## Alternative: Education Approach
-
-If you prefer not to add the typing indicator, the alternative is to educate customers that:
-- Double ticks in bot chats mean "delivered to our system"
-- A human response will follow when available
-
-This could be added to the welcome message or an FAQ.
+- New Telegram customers will have their profile photo fetched and stored
+- New Messenger customers will have permanent photo URLs (not expiring)
+- Existing customers can be updated via a backfill process
+- The conversation list will display actual user avatars instead of placeholders
 
