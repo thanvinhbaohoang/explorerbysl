@@ -443,7 +443,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
       </div>
 
       {/* Input area */}
-      <div className="flex-shrink-0 border-t p-4">
+      <div className="flex-shrink-0 border-t p-4 pb-safe">
         {/* Hidden file inputs - now with multiple */}
         <input type="file" id="chat-image-upload" className="hidden" accept="image/*" multiple onChange={handleFileSelect} />
         <input type="file" id="chat-video-upload" className="hidden" accept="video/*" multiple onChange={handleFileSelect} />

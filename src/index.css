@@ -60,3 +60,15 @@ All colors MUST be HSL.
     @apply font-sans;
   }
 }
+
+/* Mobile viewport fix - uses dynamic viewport height */
+@supports (height: 100dvh) {
+  .h-dvh-safe {
+    height: 100dvh;
+  }
+}
+
+/* iOS safe area padding */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
