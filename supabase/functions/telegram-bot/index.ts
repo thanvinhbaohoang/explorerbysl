@@ -106,6 +106,18 @@ async function handleStart(message: any) {
       } else {
         customerId = newCustomer?.id;
         console.log("New customer created with id:", customerId);
+        
+        // Fetch and store profile photo for new customer
+        if (customerId) {
+          const profilePhotoUrl = await getUserProfilePhoto(u.id, customerId);
+          if (profilePhotoUrl) {
+            await supabase
+              .from('customer')
+              .update({ messenger_profile_pic: profilePhotoUrl })
+              .eq('id', customerId);
+            console.log("Profile photo saved for new customer:", customerId);
+          }
+        }
       }
     }
   } catch (dbError) {
@@ -227,6 +239,74 @@ async function getFileUrl(fileId: string): Promise<string | null> {
     return null;
   } catch (error) {
     console.error("Error getting file URL:", error);
+    return null;
+  }
+}
+
+// Get user's profile photo from Telegram and store permanently
+async function getUserProfilePhoto(userId: number, customerId: string): Promise<string | null> {
+  try {
+    // Get user's profile photos
+    const response = await fetch(`${TELEGRAM_API}/getUserProfilePhotos?user_id=${userId}&limit=1`);
+    const data = await response.json();
+    
+    if (!data.ok || !data.result.photos || data.result.photos.length === 0) {
+      console.log(`No profile photos found for user ${userId}`);
+      return null;
+    }
+    
+    // Get the largest size of the first photo (last in array is largest)
+    const photoSizes = data.result.photos[0];
+    const largest = photoSizes[photoSizes.length - 1];
+    
+    console.log(`Found profile photo for user ${userId}, downloading...`);
+    
+    // Get file path from Telegram
+    const fileResponse = await fetch(`${TELEGRAM_API}/getFile?file_id=${largest.file_id}`);
+    const fileData = await fileResponse.json();
+    
+    if (!fileData.ok || !fileData.result.file_path) {
+      console.error("Failed to get profile photo file path from Telegram");
+      return null;
+    }
+    
+    const telegramFileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
+    
+    // Download the file
+    const downloadResponse = await fetch(telegramFileUrl);
+    if (!downloadResponse.ok) {
+      console.error("Failed to download profile photo from Telegram");
+      return null;
+    }
+    
+    const fileBuffer = await downloadResponse.arrayBuffer();
+    
+    // Store in profile-pics folder with customer ID as filename
+    const fileName = `profile-pics/${customerId}.jpg`;
+    
+    // Upload to Supabase Storage (upsert to allow updates)
+    const { error: uploadError } = await supabase.storage
+      .from('chat-attachments')
+      .upload(fileName, fileBuffer, {
+        contentType: 'image/jpeg',
+        cacheControl: '3600',
+        upsert: true, // Overwrite if exists
+      });
+    
+    if (uploadError) {
+      console.error("Failed to upload profile photo to storage:", uploadError);
+      return null;
+    }
+    
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('chat-attachments')
+      .getPublicUrl(fileName);
+    
+    console.log("Profile photo stored permanently:", urlData.publicUrl);
+    return urlData.publicUrl;
+  } catch (error) {
+    console.error("Error getting user profile photo:", error);
     return null;
   }
 }
