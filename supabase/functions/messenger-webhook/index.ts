@@ -343,6 +343,47 @@ async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | '
   }
 }
 
+// Download and store profile picture permanently
+async function downloadAndStoreProfilePic(url: string, customerId: string): Promise<string | null> {
+  try {
+    console.log(`Downloading profile pic for customer ${customerId} from:`, url);
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error(`Failed to download profile pic: ${response.status}`);
+      return null;
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const fileName = `profile-pics/${customerId}.jpg`;
+    
+    // Upload to Supabase Storage (upsert to allow updates)
+    const { error: uploadError } = await supabase.storage
+      .from('chat-attachments')
+      .upload(fileName, arrayBuffer, {
+        contentType: 'image/jpeg',
+        cacheControl: '3600',
+        upsert: true, // Overwrite if exists
+      });
+    
+    if (uploadError) {
+      console.error('Profile pic upload error:', uploadError);
+      return null;
+    }
+    
+    const { data: publicUrlData } = supabase.storage
+      .from('chat-attachments')
+      .getPublicUrl(fileName);
+    
+    console.log(`Profile pic stored permanently at: ${publicUrlData.publicUrl}`);
+    return publicUrlData.publicUrl;
+    
+  } catch (error) {
+    console.error(`Error storing profile pic:`, error);
+    return null;
+  }
+}
+
 // Handle incoming messages
 async function handleMessage(senderId: string, message: any, pageId: string, hasReferral: boolean = false) {
   console.log(`Handling message from ${senderId} on page ${pageId}:`, message);
@@ -373,11 +414,21 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
       
       if (profile && profile.first_name) {
         console.log(`Profile refresh successful: ${profile.first_name} ${profile.last_name}`);
+        
+        // Download and store profile pic permanently if available
+        let permanentProfilePicUrl = customer.messenger_profile_pic;
+        if (profile.profile_pic) {
+          const storedUrl = await downloadAndStoreProfilePic(profile.profile_pic, customer.id);
+          if (storedUrl) {
+            permanentProfilePicUrl = storedUrl;
+          }
+        }
+        
         const { error: updateError } = await supabase
           .from('customer')
           .update({
             messenger_name: `${profile.first_name} ${profile.last_name}`,
-            messenger_profile_pic: profile.profile_pic || customer.messenger_profile_pic,
+            messenger_profile_pic: permanentProfilePicUrl,
             locale: profile.locale || customer.locale,
             timezone_offset: profile.timezone || customer.timezone_offset,
             updated_at: new Date().toISOString(),
@@ -387,7 +438,7 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
         if (updateError) {
           console.error("Error updating customer profile:", updateError);
         } else {
-          console.log(`Customer profile updated successfully`);
+          console.log(`Customer profile updated successfully with permanent photo`);
           customer.messenger_name = `${profile.first_name} ${profile.last_name}`;
         }
       } else {
@@ -403,10 +454,11 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
       const profile = await getUserProfile(senderId, pageId);
       console.log(`Profile fetch result:`, profile ? `Success: ${profile.first_name} ${profile.last_name}` : 'Failed');
       
+      // Create customer first (to get customer ID for profile pic storage)
       const customerData = {
         messenger_id: senderId,
         messenger_name: profile ? `${profile.first_name} ${profile.last_name}` : 'Unknown',
-        messenger_profile_pic: profile?.profile_pic || null,
+        messenger_profile_pic: null, // Will be updated after storage
         locale: profile?.locale || null,
         timezone_offset: profile?.timezone || null,
         first_message_at: new Date().toISOString(),
@@ -427,6 +479,24 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
       
       customer = newCustomer;
       console.log(`Customer created successfully: ${customer.id}`);
+      
+      // Now download and store profile pic permanently if available
+      if (profile?.profile_pic && customer.id) {
+        const permanentProfilePicUrl = await downloadAndStoreProfilePic(profile.profile_pic, customer.id);
+        if (permanentProfilePicUrl) {
+          const { error: updateError } = await supabase
+            .from('customer')
+            .update({ messenger_profile_pic: permanentProfilePicUrl })
+            .eq('id', customer.id);
+          
+          if (updateError) {
+            console.error("Error updating customer profile pic:", updateError);
+          } else {
+            console.log(`Profile pic stored permanently for new customer: ${customer.id}`);
+            customer.messenger_profile_pic = permanentProfilePicUrl;
+          }
+        }
+      }
     }
     
     if (isNewCustomer && !hasReferral) {
