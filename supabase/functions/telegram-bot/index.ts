@@ -61,10 +61,10 @@ async function handleStart(message: any) {
   // Check if customer already exists, otherwise create new one
   let customerId = null;
   try {
-    // First check if customer exists
+    // First check if customer exists (include messenger_profile_pic for backfill check)
     const { data: existingCustomer } = await supabase
       .from('customer')
-      .select('id')
+      .select('id, messenger_profile_pic')
       .eq('telegram_id', u.id)
       .maybeSingle();
 
@@ -85,6 +85,19 @@ async function handleStart(message: any) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', customerId);
+      
+      // Fetch and store profile photo if missing (backfill for existing customers)
+      if (!existingCustomer.messenger_profile_pic) {
+        console.log("Profile photo missing for customer, fetching...");
+        const profilePhotoUrl = await getUserProfilePhoto(u.id, customerId);
+        if (profilePhotoUrl) {
+          await supabase
+            .from('customer')
+            .update({ messenger_profile_pic: profilePhotoUrl })
+            .eq('id', customerId);
+          console.log("Profile photo backfilled for existing customer:", customerId);
+        }
+      }
     } else {
       // Customer doesn't exist - create new one
       const { data: newCustomer, error: insertError } = await supabase
@@ -442,14 +455,26 @@ async function downloadAndStoreDocument(fileId: string, fileName: string): Promi
 // Save message to database
 async function saveMessage(message: any) {
   try {
-    // First, ensure customer exists
+    // First, ensure customer exists (include messenger_profile_pic for backfill check)
     const { data: customer } = await supabase
       .from('customer')
-      .select('id')
+      .select('id, messenger_profile_pic')
       .eq('telegram_id', message.from.id)
       .single();
 
     if (customer) {
+      // Fetch and store profile photo if missing (backfill for existing customers)
+      if (!customer.messenger_profile_pic) {
+        console.log("Profile photo missing for customer during message, fetching...");
+        const profilePhotoUrl = await getUserProfilePhoto(message.from.id, customer.id);
+        if (profilePhotoUrl) {
+          await supabase
+            .from('customer')
+            .update({ messenger_profile_pic: profilePhotoUrl })
+            .eq('id', customer.id);
+          console.log("Profile photo backfilled for customer:", customer.id);
+        }
+      }
       let messageType = 'text';
       let messageText = message.text || message.caption || null;
       
