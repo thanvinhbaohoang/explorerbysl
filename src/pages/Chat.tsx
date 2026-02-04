@@ -53,7 +53,7 @@ const Chat = () => {
   // Mobile: Full-screen switching between list and chat
   if (isMobile) {
     return (
-      <div className="h-[calc(100vh-3.5rem)]">
+      <div className="h-[calc(100dvh-3.5rem)]">
         {selectedCustomer ? (
           <ChatPanel 
             customer={selectedCustomer} 
@@ -71,7 +71,7 @@ const Chat = () => {
 
   // Desktop: Keep resizable side-by-side layout
   return (
-    <div className="h-[calc(100vh-3.5rem)]">
+    <div className="h-[calc(100dvh-3.5rem)]">
       <ResizablePanelGroup direction="horizontal">
         <ResizablePanel defaultSize={30} minSize={20} maxSize={40}>
           <ChatConversationList 

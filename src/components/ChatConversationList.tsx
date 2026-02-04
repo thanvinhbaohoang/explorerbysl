@@ -6,7 +6,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Facebook, Send, Bell, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Facebook, Send, Bell, Loader2, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
@@ -55,6 +57,9 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   const [page, setPage] = useState(1);
   const itemsPerPage = 50;
   const { data: customersData, isLoading, refetch } = useCustomersData(page, itemsPerPage);
+  
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
   
   // Infinite scroll state
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
@@ -255,9 +260,21 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     return () => { supabase.removeChannel(channel); };
   }, [refetch, isOnChatPage, navigate, onSelect]);
 
+  // Filter customers by search query
+  const filteredBySearch = useMemo(() => {
+    if (!searchQuery.trim()) return allCustomers;
+    const query = searchQuery.toLowerCase();
+    return allCustomers.filter(customer => {
+      const name = customer.messenger_name || 
+        `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
+        customer.username || '';
+      return name.toLowerCase().includes(query);
+    });
+  }, [allCustomers, searchQuery]);
+
   // Sort customers: unread first, then by last activity
   const sortedCustomers = useMemo(() => {
-    return [...allCustomers].sort((a, b) => {
+    return [...filteredBySearch].sort((a, b) => {
       const linkedIdsA = allLinkedPlatformsMap[a.id]?.linkedIds || [];
       const linkedIdsB = allLinkedPlatformsMap[b.id]?.linkedIds || [];
       const aUnread = [a.id, ...linkedIdsA].reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
@@ -272,7 +289,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
       return bTime - aTime;
     });
-  }, [allCustomers, unreadCounts, allLinkedPlatformsMap]);
+  }, [filteredBySearch, unreadCounts, allLinkedPlatformsMap]);
 
   // Format relative time
   const formatRelativeTime = (dateString: string | null) => {
@@ -375,11 +392,42 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       <div className="p-4 border-b flex-shrink-0">
         <h2 className="font-semibold">Conversations</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {allCustomers.length} customers{hasMore ? '+' : ''}
+          {searchQuery ? `${sortedCustomers.length} of ${allCustomers.length}` : `${allCustomers.length} customers${hasMore ? '+' : ''}`}
         </p>
       </div>
+      
+      {/* Search input */}
+      <div className="px-3 py-2 border-b flex-shrink-0">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search customers..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-8 h-9"
+          />
+          {searchQuery && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6"
+              onClick={() => setSearchQuery("")}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+      </div>
+      
       <ScrollArea className="flex-1">
         <div className="p-1">
+          {sortedCustomers.length === 0 && searchQuery ? (
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+              <Search className="h-8 w-8 mb-3 opacity-50" />
+              <p className="text-sm">No customers found</p>
+              <p className="text-xs mt-1">Try a different search term</p>
+            </div>
+          ) : null}
           {sortedCustomers.map(customer => {
             const displayName = customer.messenger_name || 
               `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
