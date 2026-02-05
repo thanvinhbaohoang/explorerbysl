@@ -299,8 +299,22 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     });
   }, [allCustomers, searchQuery]);
 
-  // Sort customers: unread first, then by last activity
+  // Sort customers: unread first, then by last activity (using real-time lastMessages)
   const sortedCustomers = useMemo(() => {
+    // Helper to get latest timestamp from real-time lastMessages state
+    const getLatestTime = (customerId: string, linkedIds: string[]): number => {
+      const allIds = [customerId, ...linkedIds];
+      let latest = 0;
+      allIds.forEach(id => {
+        const msg = lastMessages[id];
+        if (msg) {
+          const time = new Date(msg.timestamp).getTime();
+          if (time > latest) latest = time;
+        }
+      });
+      return latest;
+    };
+
     return [...filteredBySearch].sort((a, b) => {
       const linkedIdsA = allLinkedPlatformsMap[a.id]?.linkedIds || [];
       const linkedIdsB = allLinkedPlatformsMap[b.id]?.linkedIds || [];
@@ -311,12 +325,14 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       if (aUnread > 0 && bUnread === 0) return -1;
       if (bUnread > 0 && aUnread === 0) return 1;
       
-      // Then by most recent activity
-      const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-      const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+      // Use real-time timestamps, fall back to database value
+      const aTime = getLatestTime(a.id, linkedIdsA) || 
+                    (a.last_message_at ? new Date(a.last_message_at).getTime() : 0);
+      const bTime = getLatestTime(b.id, linkedIdsB) || 
+                    (b.last_message_at ? new Date(b.last_message_at).getTime() : 0);
       return bTime - aTime;
     });
-  }, [filteredBySearch, unreadCounts, allLinkedPlatformsMap]);
+  }, [filteredBySearch, unreadCounts, allLinkedPlatformsMap, lastMessages]);
 
   // Format relative time
   const formatRelativeTime = (dateString: string | null) => {

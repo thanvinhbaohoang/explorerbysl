@@ -59,7 +59,7 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10) => {
         .from("customer")
         .select("*")
         .is("linked_customer_id", null)
-        .order("created_at", { ascending: false })
+        .order("last_message_at", { ascending: false, nullsFirst: false })
         .range(from, to);
 
       if (error) throw error;
