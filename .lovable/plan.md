@@ -1,239 +1,89 @@
 
 
-# Customers Page Filters & Search Debounce for Both Pages
+# Fix Chat Conversation List - Newer Messages on Top
 
-## Overview
+## Problem
 
-This plan adds consistent filtering and pagination to the Customers page (matching Traffic) and implements search debounce on both pages to prevent excessive API calls while typing.
+When clicking on a conversation with unread messages, the customer entry jumps or disappears because:
+1. Data is sorted by `created_at` from the database, not `last_message_at`
+2. The local sorting uses stale `customer.last_message_at` instead of the real-time `lastMessages` state
 
-## Current State
+## Solution
 
-| Feature | Traffic Page | Customers Page |
-|---------|--------------|----------------|
-| Global Search | ✅ Has search box | ❌ No search |
-| Platform Filter | ✅ Dropdown | ❌ None |
-| Post Tag/Source Filter | ✅ Multiple dropdowns | ❌ None |
-| Smart Pagination | ✅ Ellipsis pagination | ❌ Shows all page numbers (overflows) |
-| Search Debounce | ❌ Fires on every keystroke | N/A |
+Two simple changes to ensure newer messages stay on top:
 
-## Implementation Plan
+### Change 1: Database Query Order
 
-### Part 1: Add Debounce to Traffic Page Search
-
-**File: `src/pages/Traffic.tsx`**
-
-Add a debounced search term to prevent the search from firing a database query on every keystroke.
+**File: `src/hooks/useCustomersData.ts` (line 62)**
 
 ```typescript
-// New state for debounced value
-const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+// Before
+.order("created_at", { ascending: false })
 
-// Debounce effect - waits 500ms after user stops typing
-useEffect(() => {
-  const timer = setTimeout(() => {
-    setDebouncedSearchTerm(searchTerm);
-  }, 500);
-  return () => clearTimeout(timer);
-}, [searchTerm]);
-
-// Use debouncedSearchTerm instead of searchTerm in the hook
-const { data: trafficResult, isLoading: isLoadingTraffic } = useTrafficData({
-  page: trafficPage,
-  searchTerm: debouncedSearchTerm, // Changed from searchTerm
-  // ... rest of params
-});
+// After  
+.order("last_message_at", { ascending: false, nullsFirst: false })
 ```
 
-Also remove `disabled={isLoadingTraffic}` from the search input so users can continue typing while data loads.
+This ensures the initial page load already has the most recently active customers first.
 
 ---
 
-### Part 2: Add Filters and Smart Pagination to Customers Page
+### Change 2: Use Real-Time Timestamps for Sorting
 
-**File: `src/pages/Customers.tsx`**
+**File: `src/components/ChatConversationList.tsx` (lines 302-319)**
 
-#### 2a. Add Required Imports
-
-```typescript
-import { PaginationEllipsis } from "@/components/ui/pagination";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter } from "lucide-react";
-```
-
-#### 2b. Add Smart Pagination Helper
-
-Copy the `getPageNumbers` function from Traffic.tsx:
+Update the `sortedCustomers` memo to use `lastMessages` state (updated in real-time) instead of only `customer.last_message_at`:
 
 ```typescript
-const getPageNumbers = (currentPage: number, totalPages: number): (number | 'ellipsis')[] => {
-  const maxVisible = 5;
-  if (totalPages <= maxVisible) {
-    return Array.from({ length: totalPages }, (_, i) => i + 1);
-  }
-  
-  const pages: (number | 'ellipsis')[] = [];
-  pages.push(1);
-  
-  const rangeStart = Math.max(2, currentPage - 1);
-  const rangeEnd = Math.min(totalPages - 1, currentPage + 1);
-  
-  if (rangeStart > 2) pages.push('ellipsis');
-  for (let i = rangeStart; i <= rangeEnd; i++) pages.push(i);
-  if (rangeEnd < totalPages - 1) pages.push('ellipsis');
-  if (totalPages > 1) pages.push(totalPages);
-  
-  return pages;
-};
-```
-
-#### 2c. Add Search and Filter State
-
-```typescript
-// Search and filters
-const [searchTerm, setSearchTerm] = useState("");
-const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
-const [customerPlatformFilter, setCustomerPlatformFilter] = useState<string>("all");
-
-// Debounce search
-useEffect(() => {
-  const timer = setTimeout(() => {
-    setDebouncedSearchTerm(searchTerm);
-    setCustomersPage(1); // Reset to page 1 on search
-  }, 500);
-  return () => clearTimeout(timer);
-}, [searchTerm]);
-```
-
-#### 2d. Client-Side Filtering (immediate, no API changes needed)
-
-Filter the customers array based on search term and platform:
-
-```typescript
-const filteredCustomers = useMemo(() => {
-  let filtered = customers;
-  
-  // Platform filter
-  if (customerPlatformFilter === 'telegram') {
-    filtered = filtered.filter(c => c.telegram_id && !c.messenger_id);
-  } else if (customerPlatformFilter === 'messenger') {
-    filtered = filtered.filter(c => c.messenger_id);
-  }
-  
-  // Search filter
-  if (debouncedSearchTerm) {
-    const search = debouncedSearchTerm.toLowerCase();
-    filtered = filtered.filter(c => {
-      const name = c.messenger_name || `${c.first_name || ''} ${c.last_name || ''}`.trim();
-      const username = c.username || '';
-      const sourceTag = c.lead_source?.messenger_ref || '';
-      const campaign = c.lead_source?.campaign_name || '';
-      return name.toLowerCase().includes(search) ||
-             username.toLowerCase().includes(search) ||
-             sourceTag.toLowerCase().includes(search) ||
-             campaign.toLowerCase().includes(search);
-    });
-  }
-  
-  return filtered;
-}, [customers, customerPlatformFilter, debouncedSearchTerm]);
-```
-
-#### 2e. Add Filter UI Before Table
-
-Insert a filter section below CardHeader and before the table:
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ [🔍 Search customers, source tags...        ]  [Platform ▼] │
-│                                                             │
-│ Active filters: 2                              [Clear All]  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-```jsx
-{/* Search and Filters */}
-<div className="flex flex-col sm:flex-row gap-3 mb-4">
-  <div className="relative flex-1">
-    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-    <Input
-      placeholder="Search name, source tag, campaign..."
-      value={searchTerm}
-      onChange={(e) => setSearchTerm(e.target.value)}
-      className="pl-9"
-    />
-  </div>
-  
-  <Select value={customerPlatformFilter} onValueChange={setCustomerPlatformFilter}>
-    <SelectTrigger className="w-full sm:w-[150px]">
-      <SelectValue placeholder="Platform" />
-    </SelectTrigger>
-    <SelectContent>
-      <SelectItem value="all">All Platforms</SelectItem>
-      <SelectItem value="messenger">Messenger</SelectItem>
-      <SelectItem value="telegram">Telegram</SelectItem>
-    </SelectContent>
-  </Select>
-</div>
-```
-
-#### 2f. Update Pagination to Use Smart Ellipsis
-
-Replace the current pagination that shows all pages:
-
-```jsx
-{/* Before */}
-{Array.from({ length: totalCustomerPages }, (_, i) => i + 1).map((page) => (
-  <PaginationItem key={page}>
-    <PaginationLink ... />
-  </PaginationItem>
-))}
-
-{/* After */}
-{getPageNumbers(customersPage, totalCustomerPages).map((page, index) => (
-  <PaginationItem key={index}>
-    {page === 'ellipsis' ? (
-      <PaginationEllipsis />
-    ) : (
-      <PaginationLink
-        onClick={() => setCustomersPage(page)}
-        isActive={page === customersPage}
-        className="cursor-pointer"
-      >
-        {page}
-      </PaginationLink>
-    )}
-  </PaginationItem>
-))}
+const sortedCustomers = useMemo(() => {
+  return [...filteredBySearch].sort((a, b) => {
+    const linkedIdsA = allLinkedPlatformsMap[a.id]?.linkedIds || [];
+    const linkedIdsB = allLinkedPlatformsMap[b.id]?.linkedIds || [];
+    const aUnread = [a.id, ...linkedIdsA].reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
+    const bUnread = [b.id, ...linkedIdsB].reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
+    
+    // Unread first
+    if (aUnread > 0 && bUnread === 0) return -1;
+    if (bUnread > 0 && aUnread === 0) return 1;
+    
+    // Get latest timestamp from real-time lastMessages state
+    const getLatestTime = (customerId: string, linkedIds: string[]): number => {
+      const allIds = [customerId, ...linkedIds];
+      let latest = 0;
+      allIds.forEach(id => {
+        const msg = lastMessages[id];
+        if (msg) {
+          const time = new Date(msg.timestamp).getTime();
+          if (time > latest) latest = time;
+        }
+      });
+      return latest;
+    };
+    
+    // Use real-time timestamps, fall back to database value
+    const aTime = getLatestTime(a.id, linkedIdsA) || 
+                  (a.last_message_at ? new Date(a.last_message_at).getTime() : 0);
+    const bTime = getLatestTime(b.id, linkedIdsB) || 
+                  (b.last_message_at ? new Date(b.last_message_at).getTime() : 0);
+    
+    return bTime - aTime;
+  });
+}, [filteredBySearch, unreadCounts, allLinkedPlatformsMap, lastMessages]); // Added lastMessages
 ```
 
 ---
 
-## Summary of Changes
+## Summary
 
-| File | Changes |
-|------|---------|
-| `src/pages/Traffic.tsx` | Add debounced search (500ms delay), remove disabled state from search input while loading |
-| `src/pages/Customers.tsx` | Add search input with debounce, platform filter dropdown, smart pagination with ellipsis, `getPageNumbers` helper function |
+| File | Change |
+|------|--------|
+| `src/hooks/useCustomersData.ts` | Line 62: Change order from `created_at` to `last_message_at` |
+| `src/components/ChatConversationList.tsx` | Lines 302-319: Use `lastMessages` state for real-time sorting, add to dependencies |
 
-## User Experience After Changes
+## Result
 
-### Traffic Page
-- **Before**: Every keystroke triggers a database query, search input is disabled while loading
-- **After**: Search waits 500ms after user stops typing before querying, input stays enabled
-
-### Customers Page  
-- **Before**: No search, no filters, pagination breaks with many pages
-- **After**: 
-  - Search box filters by name, username, source tag, campaign
-  - Platform dropdown to filter Telegram vs Messenger
-  - Smart pagination shows max 7 page buttons with ellipsis
-
-### Pagination Visual
-
-```text
-Before (100+ pages): [<] [1] [2] [3] [4] [5] ... [98] [99] [100] [>] ← overflows
-
-After (100+ pages, on page 50): [<] [1] [...] [49] [50] [51] [...] [100] [>] ← fits perfectly
-```
+- **Initial load**: Customers sorted by most recent message
+- **New message arrives**: Conversation moves to top immediately (via real-time state)
+- **Clicking conversation**: No jumping - position stays stable based on message time
+- **Multi-user**: Each user's view updates independently via Supabase real-time
 
