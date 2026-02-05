@@ -30,12 +30,21 @@ import {
 import {
   Pagination,
   PaginationContent,
+  PaginationEllipsis,
   PaginationItem,
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square, Play, Pause, Trash2, Clock, Download, FileText } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square, Play, Pause, Trash2, Clock, Download, FileText, Search } from "lucide-react";
 import { exportToCSV } from "@/lib/csv-export";
 import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
 import { TableSkeleton } from "@/components/TableSkeleton";
@@ -106,6 +115,28 @@ interface Message {
   isPending?: boolean; // For optimistic UI
 }
 
+// Helper function for smart pagination with ellipsis
+const getPageNumbers = (currentPage: number, totalPages: number): (number | 'ellipsis')[] => {
+  const maxVisible = 5;
+  
+  if (totalPages <= maxVisible) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  
+  const pages: (number | 'ellipsis')[] = [];
+  pages.push(1);
+  
+  const rangeStart = Math.max(2, currentPage - 1);
+  const rangeEnd = Math.min(totalPages - 1, currentPage + 1);
+  
+  if (rangeStart > 2) pages.push('ellipsis');
+  for (let i = rangeStart; i <= rangeEnd; i++) pages.push(i);
+  if (rangeEnd < totalPages - 1) pages.push('ellipsis');
+  if (totalPages > 1) pages.push(totalPages);
+  
+  return pages;
+};
+
 const Customers = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -113,6 +144,11 @@ const Customers = () => {
   const queryClient = useQueryClient();
   const [customersPage, setCustomersPage] = useState(1);
   const itemsPerPage = 10;
+  
+  // Search and filter state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+  const [customerPlatformFilter, setCustomerPlatformFilter] = useState<string>("all");
   
   // Use cached customers data
   const { data: customersData, isLoading, refetch: refetchCustomers } = useCustomersData(customersPage, itemsPerPage);
@@ -157,6 +193,44 @@ const Customers = () => {
   // Track customers where messaging window has expired (from API error)
   const [expiredWindowCustomers, setExpiredWindowCustomers] = useState<Set<string>>(new Set());
   const messagesPerPage = 50; // Fetch more messages to ensure enough per platform when filtering
+
+  // Debounce search term (500ms delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setCustomersPage(1); // Reset to page 1 on search
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Filter customers client-side based on search and platform filter
+  const filteredCustomers = useMemo(() => {
+    let filtered = customers;
+    
+    // Platform filter
+    if (customerPlatformFilter === 'telegram') {
+      filtered = filtered.filter(c => c.telegram_id && !c.messenger_id);
+    } else if (customerPlatformFilter === 'messenger') {
+      filtered = filtered.filter(c => c.messenger_id);
+    }
+    
+    // Search filter
+    if (debouncedSearchTerm) {
+      const search = debouncedSearchTerm.toLowerCase();
+      filtered = filtered.filter(c => {
+        const name = c.messenger_name || `${c.first_name || ''} ${c.last_name || ''}`.trim();
+        const username = c.username || '';
+        const sourceTag = c.lead_source?.messenger_ref || '';
+        const campaign = c.lead_source?.campaign_name || '';
+        return name.toLowerCase().includes(search) ||
+               username.toLowerCase().includes(search) ||
+               sourceTag.toLowerCase().includes(search) ||
+               campaign.toLowerCase().includes(search);
+      });
+    }
+    
+    return filtered;
+  }, [customers, customerPlatformFilter, debouncedSearchTerm]);
 
   // Scroll to bottom of messages
   const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
@@ -1713,11 +1787,45 @@ const Customers = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {/* Search and Filters */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search name, source tag, campaign..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              
+              <Select value={customerPlatformFilter} onValueChange={setCustomerPlatformFilter}>
+                <SelectTrigger className="w-full sm:w-[150px]">
+                  <SelectValue placeholder="Platform" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Platforms</SelectItem>
+                  <SelectItem value="messenger">
+                    <div className="flex items-center gap-2">
+                      <Facebook className="h-4 w-4" />
+                      Messenger
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="telegram">
+                    <div className="flex items-center gap-2">
+                      <Send className="h-4 w-4" />
+                      Telegram
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {isLoading ? (
               <TableSkeleton rows={10} columns={8} />
-            ) : customers.length === 0 ? (
+            ) : filteredCustomers.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No customers yet. Share your bot to get started!
+                {customers.length === 0 ? 'No customers yet. Share your bot to get started!' : 'No customers match your search.'}
               </div>
             ) : (
               <div className="rounded-md border">
@@ -1735,7 +1843,7 @@ const Customers = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {customers.map((customer) => {
+                    {filteredCustomers.map((customer) => {
                       const platforms = linkedPlatformsMap[customer.id];
                       const hasBothPlatforms = platforms?.telegram && platforms?.messenger;
                       const primaryPlatform = customer.messenger_id ? 'messenger' : 'telegram';
@@ -1868,15 +1976,19 @@ const Customers = () => {
                         className={customersPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
                       />
                     </PaginationItem>
-                    {Array.from({ length: totalCustomerPages }, (_, i) => i + 1).map((page) => (
-                      <PaginationItem key={page}>
-                        <PaginationLink
-                          onClick={() => setCustomersPage(page)}
-                          isActive={page === customersPage}
-                          className="cursor-pointer"
-                        >
-                          {page}
-                        </PaginationLink>
+                    {getPageNumbers(customersPage, totalCustomerPages).map((page, index) => (
+                      <PaginationItem key={index}>
+                        {page === 'ellipsis' ? (
+                          <PaginationEllipsis />
+                        ) : (
+                          <PaginationLink
+                            onClick={() => setCustomersPage(page)}
+                            isActive={page === customersPage}
+                            className="cursor-pointer"
+                          >
+                            {page}
+                          </PaginationLink>
+                        )}
                       </PaginationItem>
                     ))}
                     <PaginationItem>

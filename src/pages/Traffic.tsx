@@ -135,6 +135,7 @@ const Traffic = () => {
 
   // Filter and search states
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [sourceFilter, setSourceFilter] = useState<string>("");
   const [campaignFilter, setCampaignFilter] = useState<string>("");
   const [platformFilter, setPlatformFilter] = useState<string>("");
@@ -146,6 +147,14 @@ const Traffic = () => {
   
   // Customer status filter
   const [customerStatusFilter, setCustomerStatusFilter] = useState<string>("");
+
+  // Debounce search term (500ms delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   // Get current page from URL params, default to 1
   const trafficPage = parseInt(searchParams.get("page") || "1", 10);
@@ -163,7 +172,7 @@ const Traffic = () => {
   // Use cached traffic data
   const { data: trafficResult, isLoading: isLoadingTraffic } = useTrafficData({
     page: trafficPage,
-    searchTerm,
+    searchTerm: debouncedSearchTerm,
     sourceFilter,
     campaignFilter,
     platformFilter,
@@ -400,7 +409,6 @@ const Traffic = () => {
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-9"
-                      disabled={isLoadingTraffic}
                     />
                   </div>
 
