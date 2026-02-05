@@ -1,145 +1,172 @@
 
-# Improve Chat Notifications with Name, Message, and Correct Navigation
+
+# Traffic Page Improvements: Global Search and Pagination Fix
 
 ## Problem Summary
 
-The current chat notification system has several issues:
-1. **Toast shows generic message** - Only shows "New message" with "{customerName} sent a message" instead of showing the actual message content
-2. **View button doesn't always work** - The customer might not be found in `allCustomers` if:
-   - The customer is new and hasn't been loaded yet
-   - The message comes from a linked customer ID (child account linked to parent)
-3. **Linked customers not handled** - If a message comes from a linked customer, we need to find and navigate to the parent customer
+Two issues need to be addressed on the Traffic page:
+
+1. **Global Search by Source Tag**: The current search works but users specifically want to easily filter by "Source Tag" (the `messenger_ref` field). While the search box does search across multiple fields including `messenger_ref`, it's not immediately obvious to users. A dedicated filter already exists for Post Tags (which is `messenger_ref`), but a clearer global search experience is needed.
+
+2. **Pagination Numbers Overflow**: When there are many pages (e.g., 100+ pages), all page numbers are rendered, causing them to overflow beyond the page width. This breaks the layout and is not responsive.
+
+---
 
 ## Solution Overview
 
-Update the message notification toast to:
-1. Show the customer name and truncated message preview in the toast
-2. Handle cases where customer is not yet loaded by fetching them if needed
-3. Properly resolve linked customers to their parent customer for navigation
+### Issue 1: Enhanced Source Tag Filtering
 
-## Implementation Steps
+The existing Post Tag dropdown (`postTagFilter`) already filters by `messenger_ref`. However, to make the global search more useful:
+- Ensure the search box placeholder clearly indicates it searches source tags
+- The search already includes `messenger_ref` in the server-side query
 
-### Step 1: Improve Toast Content
+**Current behavior is correct** - the search does include `messenger_ref`. The Post Tag dropdown provides specific filtering. No changes needed for functionality, but we can clarify the UI.
 
-Update the toast to show the message content:
+### Issue 2: Smart Pagination with Ellipsis
 
-```text
-Before:
-+-----------------------------------+
-|  New message                      |
-|  John sent a message       [View] |
-+-----------------------------------+
+Replace the current pagination that renders all page numbers with a smart pagination that:
+- Shows first and last page always
+- Shows pages around the current page (e.g., current ± 1)
+- Uses ellipsis (...) for skipped page ranges
+- Stays compact and responsive
 
-After:
-+-----------------------------------+
-|  John                             |
-|  Hello, I need help with...  [View] |
-+-----------------------------------+
-```
+---
 
-### Step 2: Handle Linked Customers
-
-When a message arrives, check if it's from a linked customer and find the parent customer for navigation:
-
-```text
-Message from customer_id = linked_child_id
-  -> Look up in allLinkedPlatformsMap to find parent
-  -> Navigate to parent customer
-```
-
-### Step 3: Handle Missing Customers
-
-If customer is not in `allCustomers`:
-1. First try to find in `allLinkedPlatformsMap` (for linked customers)
-2. If still not found, refetch data then navigate using URL parameter as fallback
-
-## Technical Details
+## Implementation Details
 
 ### File to Modify
 
 | File | Changes |
 |------|---------|
-| `src/components/ChatConversationList.tsx` | Update the real-time message subscription to improve toast content and navigation |
+| `src/pages/Traffic.tsx` | Update pagination logic to limit displayed page numbers with ellipsis |
 
-### Changes in Detail
+### Pagination Logic
+
+Create a helper function to calculate which page numbers to display:
 
 ```typescript
-// In the postgres_changes handler for messages:
-(payload) => {
-  const newMessage = payload.new as any;
+const getPageNumbers = (currentPage: number, totalPages: number): (number | 'ellipsis')[] => {
+  const maxVisible = 5; // Maximum number of page buttons to show
   
-  if (newMessage.sender_type === "customer") {
-    playMessageNotification();
-    
-    // Update unread counts...
-    
-    // Find customer - check direct match or linked customers
-    let customer = allCustomers.find(c => c.id === newMessage.customer_id);
-    let parentCustomerId = newMessage.customer_id;
-    
-    // If not found directly, check if it's a linked customer
-    if (!customer) {
-      // Search through linkedPlatformsMap to find parent
-      for (const [parentId, linkedInfo] of Object.entries(allLinkedPlatformsMap)) {
-        if (linkedInfo.linkedIds.includes(newMessage.customer_id)) {
-          customer = allCustomers.find(c => c.id === parentId);
-          parentCustomerId = parentId;
-          break;
-        }
-      }
-    }
-    
-    // Get customer name
-    const customerName = customer?.messenger_name || 
-      `${customer?.first_name || ''} ${customer?.last_name || ''}`.trim() || 
-      'New Customer';
-    
-    // Format message preview (truncate if too long)
-    let messagePreview = newMessage.message_text || '';
-    if (newMessage.message_type === 'photo') messagePreview = '📷 Photo';
-    else if (newMessage.message_type === 'video') messagePreview = '🎥 Video';
-    else if (newMessage.message_type === 'voice') messagePreview = '🎤 Voice message';
-    else if (newMessage.message_type === 'document') messagePreview = '📎 Document';
-    else if (messagePreview.length > 50) {
-      messagePreview = messagePreview.substring(0, 50) + '...';
-    }
-    
-    // Show improved toast
-    toast.success(customerName, {
-      description: messagePreview,
-      icon: <Bell className="h-4 w-4" />,
-      action: {
-        label: isOnChatPage ? "View" : "Open Chat",
-        onClick: () => {
-          if (isOnChatPage && customer) {
-            // Already on chat page with customer loaded - select directly
-            onSelect(customer);
-          } else {
-            // Navigate with URL parameter - works even if customer not loaded
-            navigate(`/chat?customer=${parentCustomerId}`);
-          }
-        },
-      },
-    });
+  if (totalPages <= maxVisible) {
+    // Show all pages if total is small
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
   }
-  // ... rest of handler
-}
+  
+  const pages: (number | 'ellipsis')[] = [];
+  
+  // Always show first page
+  pages.push(1);
+  
+  // Calculate range around current page
+  const rangeStart = Math.max(2, currentPage - 1);
+  const rangeEnd = Math.min(totalPages - 1, currentPage + 1);
+  
+  // Add ellipsis if there's a gap after first page
+  if (rangeStart > 2) {
+    pages.push('ellipsis');
+  }
+  
+  // Add pages in range
+  for (let i = rangeStart; i <= rangeEnd; i++) {
+    pages.push(i);
+  }
+  
+  // Add ellipsis if there's a gap before last page
+  if (rangeEnd < totalPages - 1) {
+    pages.push('ellipsis');
+  }
+  
+  // Always show last page
+  if (totalPages > 1) {
+    pages.push(totalPages);
+  }
+  
+  return pages;
+};
 ```
 
-### Key Improvements
+### Updated Pagination JSX
 
-1. **Toast Title**: Shows customer name instead of "New message"
-2. **Toast Description**: Shows actual message content (truncated) instead of generic text
-3. **Linked Customer Resolution**: Searches `allLinkedPlatformsMap` to find parent customer
-4. **Reliable Navigation**: Falls back to URL parameter navigation if customer not in memory, ensuring the Chat page's `useEffect` will handle the selection when data loads
+```text
+Before (lines 770-780):
+{Array.from({ length: totalTrafficPages }, (_, i) => i + 1).map((page) => (
+  <PaginationItem key={page}>
+    <PaginationLink ... />
+  </PaginationItem>
+))}
 
-## Expected Behavior
+After:
+{getPageNumbers(trafficPage, totalTrafficPages).map((page, index) => (
+  <PaginationItem key={index}>
+    {page === 'ellipsis' ? (
+      <PaginationEllipsis />
+    ) : (
+      <PaginationLink
+        onClick={() => updatePage(page)}
+        isActive={page === trafficPage}
+        className="cursor-pointer"
+      >
+        {page}
+      </PaginationLink>
+    )}
+  </PaginationItem>
+))}
+```
 
-After implementation:
+### Visual Examples
 
-| Scenario | Toast Shows | View Action |
-|----------|-------------|-------------|
-| Known customer | "John" / "Hello, how are..." | Opens John's conversation |
-| Known customer (photo) | "John" / "📷 Photo" | Opens John's conversation |
-| Linked customer message | "Parent Name" / "Message..." | Opens parent's conversation |
-| New customer (not loaded) | "New Customer" / "Message..." | Navigates via URL, loads when data ready |
+**Before (with 50 pages):**
+```
+[ < Previous ] [1] [2] [3] [4] [5] [6] [7] [8] ... [47] [48] [49] [50] [ Next > ]
+                     ↑ overflows the container, breaks layout
+```
+
+**After (with 50 pages, current page = 1):**
+```
+[ < Previous ] [1] [2] [...] [50] [ Next > ]
+```
+
+**After (with 50 pages, current page = 25):**
+```
+[ < Previous ] [1] [...] [24] [25] [26] [...] [50] [ Next > ]
+```
+
+**After (with 50 pages, current page = 50):**
+```
+[ < Previous ] [1] [...] [49] [50] [ Next > ]
+```
+
+### Import Update
+
+Add `PaginationEllipsis` to the imports:
+
+```typescript
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,  // Add this
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+```
+
+---
+
+## Mobile Responsiveness
+
+The smart pagination naturally works better on mobile:
+- Maximum 5-7 buttons shown at any time
+- Ellipsis reduces visual clutter
+- Previous/Next buttons remain accessible
+
+---
+
+## Summary of Changes
+
+1. **Add `PaginationEllipsis` import** from the pagination component
+2. **Create `getPageNumbers` helper function** that calculates which pages to display
+3. **Update pagination rendering** to use the helper function and show ellipsis for gaps
+
