@@ -174,6 +174,8 @@ const UserRoles = () => {
                   const role = roles.find(r => r.id === u.userRole?.role_id);
                   return role?.name || 'Unknown';
                 }},
+                { key: 'user_id', header: 'User ID', getValue: (u) => u.userId },
+                { key: 'created_at', header: 'Joined', getValue: (u) => u.userRole?.created_at ? new Date(u.userRole.created_at).toLocaleString() : '' },
               ],
               'user_roles'
             );

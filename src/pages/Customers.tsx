@@ -1648,9 +1648,21 @@ const Customers = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
+                onClick={async () => {
+                  toast.info("Exporting all customers...");
+                  const { data: allCustomers, error } = await supabase
+                    .from('customer')
+                    .select('*')
+                    .is('linked_customer_id', null)
+                    .order('last_message_at', { ascending: false });
+                  
+                  if (error) {
+                    toast.error("Failed to export customers");
+                    return;
+                  }
+                  
                   exportToCSV(
-                    customers,
+                    allCustomers || [],
                     [
                       { key: 'first_name', header: 'First Name', getValue: (c) => c.first_name || c.messenger_name || '' },
                       { key: 'last_name', header: 'Last Name', getValue: (c) => c.last_name || '' },
@@ -1659,9 +1671,12 @@ const Customers = () => {
                       { key: 'first_message_at', header: 'First Message', getValue: (c) => formatDateGMT7(c.first_message_at) },
                       { key: 'last_message_at', header: 'Last Message', getValue: (c) => formatDateGMT7(c.last_message_at) },
                       { key: 'detected_language', header: 'Language', getValue: (c) => getLanguageLabel(c.detected_language) },
+                      { key: 'telegram_id', header: 'Telegram ID', getValue: (c) => c.telegram_id || '' },
+                      { key: 'messenger_id', header: 'Messenger ID', getValue: (c) => c.messenger_id || '' },
                     ],
                     'customers'
                   );
+                  toast.success(`Exported ${allCustomers?.length || 0} customers`);
                 }}
               >
                 <Download className="h-4 w-4 mr-2" />
