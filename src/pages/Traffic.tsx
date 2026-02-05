@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { format } from "date-fns";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import {
   Table,
   TableBody,
@@ -282,22 +284,45 @@ const Traffic = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
+                onClick={async () => {
+                  toast.info("Exporting all traffic data...");
+                  const { data: allTraffic, error } = await supabase
+                    .from('telegram_leads')
+                    .select('*, customer:user_id(id, telegram_id, username, first_name, last_name, messenger_id, messenger_name, first_message_at)')
+                    .order('created_at', { ascending: false });
+                  
+                  if (error) {
+                    toast.error("Failed to export traffic data");
+                    return;
+                  }
+                  
+                  // Determine if customer is new based on first_message_at
+                  const trafficWithStatus = (allTraffic || []).map(t => ({
+                    ...t,
+                    isNewCustomer: t.customer?.first_message_at ? 
+                      Math.abs(new Date(t.created_at).getTime() - new Date(t.customer.first_message_at).getTime()) < 60000 : false
+                  }));
+                  
                   exportToCSV(
-                    filteredTrafficData,
+                    trafficWithStatus,
                     [
-                      { key: 'customer_name', header: 'Customer', getValue: (t) => t.customer ? (t.customer.first_name || t.customer.messenger_name || '') + ' ' + (t.customer.last_name || '') : '' },
+                      { key: 'customer_name', header: 'Customer', getValue: (t: any) => t.customer ? (t.customer.first_name || t.customer.messenger_name || '') + ' ' + (t.customer.last_name || '') : '' },
                       { key: 'platform', header: 'Platform' },
                       { key: 'utm_source', header: 'UTM Source' },
+                      { key: 'utm_medium', header: 'UTM Medium' },
                       { key: 'utm_campaign', header: 'UTM Campaign' },
+                      { key: 'utm_content', header: 'UTM Content' },
+                      { key: 'utm_term', header: 'UTM Term' },
                       { key: 'messenger_ref', header: 'Post Tag' },
-                      { key: 'created_at', header: 'Date', getValue: (t) => new Date(t.created_at).toLocaleString() },
-                      { key: 'isNewCustomer', header: 'Status', getValue: (t) => t.isNewCustomer ? 'New' : 'Existing' },
+                      { key: 'facebook_click_id', header: 'FB Click ID' },
+                      { key: 'referrer', header: 'Referrer' },
+                      { key: 'created_at', header: 'Date', getValue: (t: any) => new Date(t.created_at).toLocaleString() },
+                      { key: 'isNewCustomer', header: 'Status', getValue: (t: any) => t.isNewCustomer ? 'New' : 'Existing' },
                     ],
                     'traffic'
                   );
+                  toast.success(`Exported ${allTraffic?.length || 0} traffic records`);
                 }}
-                disabled={filteredTrafficData.length === 0}
               >
                 <Download className="h-4 w-4 mr-2" />
                 Export CSV

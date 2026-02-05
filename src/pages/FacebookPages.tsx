@@ -234,19 +234,32 @@ const FacebookPages = () => {
             )}
             <Button
               variant="outline"
-              onClick={() => {
+              onClick={async () => {
+                toast.info("Exporting all Facebook pages...");
+                const { data: dbPages, error } = await supabase
+                  .from('facebook_pages')
+                  .select('*')
+                  .order('name');
+                
+                if (error) {
+                  toast.error("Failed to export pages");
+                  return;
+                }
+                
                 exportToCSV(
-                  pages,
+                  dbPages || [],
                   [
                     { key: 'name', header: 'Page Name' },
-                    { key: 'id', header: 'Page ID' },
+                    { key: 'page_id', header: 'Page ID' },
                     { key: 'category', header: 'Category' },
-                    { key: 'synced', header: 'Synced', getValue: (p) => p.synced ? 'Yes' : 'No' },
+                    { key: 'is_active', header: 'Active', getValue: (p) => p.is_active ? 'Yes' : 'No' },
+                    { key: 'created_at', header: 'Added', getValue: (p) => new Date(p.created_at).toLocaleString() },
+                    { key: 'updated_at', header: 'Last Updated', getValue: (p) => new Date(p.updated_at).toLocaleString() },
                   ],
                   'facebook_pages'
                 );
+                toast.success(`Exported ${dbPages?.length || 0} pages`);
               }}
-              disabled={pages.length === 0}
             >
               <Download className="h-4 w-4 mr-2" />
               Export CSV
