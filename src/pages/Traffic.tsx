@@ -37,11 +37,52 @@ import {
 import {
   Pagination,
   PaginationContent,
+  PaginationEllipsis,
   PaginationItem,
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+
+// Helper function for smart pagination with ellipsis
+const getPageNumbers = (currentPage: number, totalPages: number): (number | 'ellipsis')[] => {
+  const maxVisible = 5;
+  
+  if (totalPages <= maxVisible) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  
+  const pages: (number | 'ellipsis')[] = [];
+  
+  // Always show first page
+  pages.push(1);
+  
+  // Calculate range around current page
+  const rangeStart = Math.max(2, currentPage - 1);
+  const rangeEnd = Math.min(totalPages - 1, currentPage + 1);
+  
+  // Add ellipsis if there's a gap after first page
+  if (rangeStart > 2) {
+    pages.push('ellipsis');
+  }
+  
+  // Add pages in range
+  for (let i = rangeStart; i <= rangeEnd; i++) {
+    pages.push(i);
+  }
+  
+  // Add ellipsis if there's a gap before last page
+  if (rangeEnd < totalPages - 1) {
+    pages.push('ellipsis');
+  }
+  
+  // Always show last page
+  if (totalPages > 1) {
+    pages.push(totalPages);
+  }
+  
+  return pages;
+};
 import { TrendingUp, Search, X, Filter, UserPlus, User, CalendarIcon, MessageCircle, Send, Hash, Link as LinkIcon, Megaphone, Download } from "lucide-react";
 import { exportToCSV } from "@/lib/csv-export";
 import { TableSkeleton } from "@/components/TableSkeleton";
@@ -767,15 +808,19 @@ const Traffic = () => {
                         className={trafficPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
                       />
                     </PaginationItem>
-                    {Array.from({ length: totalTrafficPages }, (_, i) => i + 1).map((page) => (
-                      <PaginationItem key={page}>
-                        <PaginationLink
-                          onClick={() => updatePage(page)}
-                          isActive={page === trafficPage}
-                          className="cursor-pointer"
-                        >
-                          {page}
-                        </PaginationLink>
+                    {getPageNumbers(trafficPage, totalTrafficPages).map((page, index) => (
+                      <PaginationItem key={index}>
+                        {page === 'ellipsis' ? (
+                          <PaginationEllipsis />
+                        ) : (
+                          <PaginationLink
+                            onClick={() => updatePage(page)}
+                            isActive={page === trafficPage}
+                            className="cursor-pointer"
+                          >
+                            {page}
+                          </PaginationLink>
+                        )}
                       </PaginationItem>
                     ))}
                     <PaginationItem>
