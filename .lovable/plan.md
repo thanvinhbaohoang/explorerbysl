@@ -1,110 +1,203 @@
 
 
-# Traffic Page Improvements: Global Search and Pagination Fix
+# Customers Page Filters & Search Debounce for Both Pages
 
-## Problem Summary
+## Overview
 
-Two issues need to be addressed on the Traffic page:
+This plan adds consistent filtering and pagination to the Customers page (matching Traffic) and implements search debounce on both pages to prevent excessive API calls while typing.
 
-1. **Global Search by Source Tag**: The current search works but users specifically want to easily filter by "Source Tag" (the `messenger_ref` field). While the search box does search across multiple fields including `messenger_ref`, it's not immediately obvious to users. A dedicated filter already exists for Post Tags (which is `messenger_ref`), but a clearer global search experience is needed.
+## Current State
 
-2. **Pagination Numbers Overflow**: When there are many pages (e.g., 100+ pages), all page numbers are rendered, causing them to overflow beyond the page width. This breaks the layout and is not responsive.
+| Feature | Traffic Page | Customers Page |
+|---------|--------------|----------------|
+| Global Search | ✅ Has search box | ❌ No search |
+| Platform Filter | ✅ Dropdown | ❌ None |
+| Post Tag/Source Filter | ✅ Multiple dropdowns | ❌ None |
+| Smart Pagination | ✅ Ellipsis pagination | ❌ Shows all page numbers (overflows) |
+| Search Debounce | ❌ Fires on every keystroke | N/A |
+
+## Implementation Plan
+
+### Part 1: Add Debounce to Traffic Page Search
+
+**File: `src/pages/Traffic.tsx`**
+
+Add a debounced search term to prevent the search from firing a database query on every keystroke.
+
+```typescript
+// New state for debounced value
+const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+
+// Debounce effect - waits 500ms after user stops typing
+useEffect(() => {
+  const timer = setTimeout(() => {
+    setDebouncedSearchTerm(searchTerm);
+  }, 500);
+  return () => clearTimeout(timer);
+}, [searchTerm]);
+
+// Use debouncedSearchTerm instead of searchTerm in the hook
+const { data: trafficResult, isLoading: isLoadingTraffic } = useTrafficData({
+  page: trafficPage,
+  searchTerm: debouncedSearchTerm, // Changed from searchTerm
+  // ... rest of params
+});
+```
+
+Also remove `disabled={isLoadingTraffic}` from the search input so users can continue typing while data loads.
 
 ---
 
-## Solution Overview
+### Part 2: Add Filters and Smart Pagination to Customers Page
 
-### Issue 1: Enhanced Source Tag Filtering
+**File: `src/pages/Customers.tsx`**
 
-The existing Post Tag dropdown (`postTagFilter`) already filters by `messenger_ref`. However, to make the global search more useful:
-- Ensure the search box placeholder clearly indicates it searches source tags
-- The search already includes `messenger_ref` in the server-side query
+#### 2a. Add Required Imports
 
-**Current behavior is correct** - the search does include `messenger_ref`. The Post Tag dropdown provides specific filtering. No changes needed for functionality, but we can clarify the UI.
+```typescript
+import { PaginationEllipsis } from "@/components/ui/pagination";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, Filter } from "lucide-react";
+```
 
-### Issue 2: Smart Pagination with Ellipsis
+#### 2b. Add Smart Pagination Helper
 
-Replace the current pagination that renders all page numbers with a smart pagination that:
-- Shows first and last page always
-- Shows pages around the current page (e.g., current ± 1)
-- Uses ellipsis (...) for skipped page ranges
-- Stays compact and responsive
-
----
-
-## Implementation Details
-
-### File to Modify
-
-| File | Changes |
-|------|---------|
-| `src/pages/Traffic.tsx` | Update pagination logic to limit displayed page numbers with ellipsis |
-
-### Pagination Logic
-
-Create a helper function to calculate which page numbers to display:
+Copy the `getPageNumbers` function from Traffic.tsx:
 
 ```typescript
 const getPageNumbers = (currentPage: number, totalPages: number): (number | 'ellipsis')[] => {
-  const maxVisible = 5; // Maximum number of page buttons to show
-  
+  const maxVisible = 5;
   if (totalPages <= maxVisible) {
-    // Show all pages if total is small
     return Array.from({ length: totalPages }, (_, i) => i + 1);
   }
   
   const pages: (number | 'ellipsis')[] = [];
-  
-  // Always show first page
   pages.push(1);
   
-  // Calculate range around current page
   const rangeStart = Math.max(2, currentPage - 1);
   const rangeEnd = Math.min(totalPages - 1, currentPage + 1);
   
-  // Add ellipsis if there's a gap after first page
-  if (rangeStart > 2) {
-    pages.push('ellipsis');
-  }
-  
-  // Add pages in range
-  for (let i = rangeStart; i <= rangeEnd; i++) {
-    pages.push(i);
-  }
-  
-  // Add ellipsis if there's a gap before last page
-  if (rangeEnd < totalPages - 1) {
-    pages.push('ellipsis');
-  }
-  
-  // Always show last page
-  if (totalPages > 1) {
-    pages.push(totalPages);
-  }
+  if (rangeStart > 2) pages.push('ellipsis');
+  for (let i = rangeStart; i <= rangeEnd; i++) pages.push(i);
+  if (rangeEnd < totalPages - 1) pages.push('ellipsis');
+  if (totalPages > 1) pages.push(totalPages);
   
   return pages;
 };
 ```
 
-### Updated Pagination JSX
+#### 2c. Add Search and Filter State
+
+```typescript
+// Search and filters
+const [searchTerm, setSearchTerm] = useState("");
+const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+const [customerPlatformFilter, setCustomerPlatformFilter] = useState<string>("all");
+
+// Debounce search
+useEffect(() => {
+  const timer = setTimeout(() => {
+    setDebouncedSearchTerm(searchTerm);
+    setCustomersPage(1); // Reset to page 1 on search
+  }, 500);
+  return () => clearTimeout(timer);
+}, [searchTerm]);
+```
+
+#### 2d. Client-Side Filtering (immediate, no API changes needed)
+
+Filter the customers array based on search term and platform:
+
+```typescript
+const filteredCustomers = useMemo(() => {
+  let filtered = customers;
+  
+  // Platform filter
+  if (customerPlatformFilter === 'telegram') {
+    filtered = filtered.filter(c => c.telegram_id && !c.messenger_id);
+  } else if (customerPlatformFilter === 'messenger') {
+    filtered = filtered.filter(c => c.messenger_id);
+  }
+  
+  // Search filter
+  if (debouncedSearchTerm) {
+    const search = debouncedSearchTerm.toLowerCase();
+    filtered = filtered.filter(c => {
+      const name = c.messenger_name || `${c.first_name || ''} ${c.last_name || ''}`.trim();
+      const username = c.username || '';
+      const sourceTag = c.lead_source?.messenger_ref || '';
+      const campaign = c.lead_source?.campaign_name || '';
+      return name.toLowerCase().includes(search) ||
+             username.toLowerCase().includes(search) ||
+             sourceTag.toLowerCase().includes(search) ||
+             campaign.toLowerCase().includes(search);
+    });
+  }
+  
+  return filtered;
+}, [customers, customerPlatformFilter, debouncedSearchTerm]);
+```
+
+#### 2e. Add Filter UI Before Table
+
+Insert a filter section below CardHeader and before the table:
 
 ```text
-Before (lines 770-780):
-{Array.from({ length: totalTrafficPages }, (_, i) => i + 1).map((page) => (
+┌─────────────────────────────────────────────────────────────┐
+│ [🔍 Search customers, source tags...        ]  [Platform ▼] │
+│                                                             │
+│ Active filters: 2                              [Clear All]  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+```jsx
+{/* Search and Filters */}
+<div className="flex flex-col sm:flex-row gap-3 mb-4">
+  <div className="relative flex-1">
+    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+    <Input
+      placeholder="Search name, source tag, campaign..."
+      value={searchTerm}
+      onChange={(e) => setSearchTerm(e.target.value)}
+      className="pl-9"
+    />
+  </div>
+  
+  <Select value={customerPlatformFilter} onValueChange={setCustomerPlatformFilter}>
+    <SelectTrigger className="w-full sm:w-[150px]">
+      <SelectValue placeholder="Platform" />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="all">All Platforms</SelectItem>
+      <SelectItem value="messenger">Messenger</SelectItem>
+      <SelectItem value="telegram">Telegram</SelectItem>
+    </SelectContent>
+  </Select>
+</div>
+```
+
+#### 2f. Update Pagination to Use Smart Ellipsis
+
+Replace the current pagination that shows all pages:
+
+```jsx
+{/* Before */}
+{Array.from({ length: totalCustomerPages }, (_, i) => i + 1).map((page) => (
   <PaginationItem key={page}>
     <PaginationLink ... />
   </PaginationItem>
 ))}
 
-After:
-{getPageNumbers(trafficPage, totalTrafficPages).map((page, index) => (
+{/* After */}
+{getPageNumbers(customersPage, totalCustomerPages).map((page, index) => (
   <PaginationItem key={index}>
     {page === 'ellipsis' ? (
       <PaginationEllipsis />
     ) : (
       <PaginationLink
-        onClick={() => updatePage(page)}
-        isActive={page === trafficPage}
+        onClick={() => setCustomersPage(page)}
+        isActive={page === customersPage}
         className="cursor-pointer"
       >
         {page}
@@ -114,59 +207,33 @@ After:
 ))}
 ```
 
-### Visual Examples
-
-**Before (with 50 pages):**
-```
-[ < Previous ] [1] [2] [3] [4] [5] [6] [7] [8] ... [47] [48] [49] [50] [ Next > ]
-                     ↑ overflows the container, breaks layout
-```
-
-**After (with 50 pages, current page = 1):**
-```
-[ < Previous ] [1] [2] [...] [50] [ Next > ]
-```
-
-**After (with 50 pages, current page = 25):**
-```
-[ < Previous ] [1] [...] [24] [25] [26] [...] [50] [ Next > ]
-```
-
-**After (with 50 pages, current page = 50):**
-```
-[ < Previous ] [1] [...] [49] [50] [ Next > ]
-```
-
-### Import Update
-
-Add `PaginationEllipsis` to the imports:
-
-```typescript
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,  // Add this
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
-```
-
----
-
-## Mobile Responsiveness
-
-The smart pagination naturally works better on mobile:
-- Maximum 5-7 buttons shown at any time
-- Ellipsis reduces visual clutter
-- Previous/Next buttons remain accessible
-
 ---
 
 ## Summary of Changes
 
-1. **Add `PaginationEllipsis` import** from the pagination component
-2. **Create `getPageNumbers` helper function** that calculates which pages to display
-3. **Update pagination rendering** to use the helper function and show ellipsis for gaps
+| File | Changes |
+|------|---------|
+| `src/pages/Traffic.tsx` | Add debounced search (500ms delay), remove disabled state from search input while loading |
+| `src/pages/Customers.tsx` | Add search input with debounce, platform filter dropdown, smart pagination with ellipsis, `getPageNumbers` helper function |
+
+## User Experience After Changes
+
+### Traffic Page
+- **Before**: Every keystroke triggers a database query, search input is disabled while loading
+- **After**: Search waits 500ms after user stops typing before querying, input stays enabled
+
+### Customers Page  
+- **Before**: No search, no filters, pagination breaks with many pages
+- **After**: 
+  - Search box filters by name, username, source tag, campaign
+  - Platform dropdown to filter Telegram vs Messenger
+  - Smart pagination shows max 7 page buttons with ellipsis
+
+### Pagination Visual
+
+```text
+Before (100+ pages): [<] [1] [2] [3] [4] [5] ... [98] [99] [100] [>] ← overflows
+
+After (100+ pages, on page 50): [<] [1] [...] [49] [50] [51] [...] [100] [>] ← fits perfectly
+```
 
