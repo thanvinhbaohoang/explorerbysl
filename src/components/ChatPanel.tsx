@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
 import { MediaGroupBubble } from "@/components/MediaGroupBubble";
+import { MediaThumbnail } from "@/components/MediaViewer";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -649,8 +650,13 @@ const MessageBubble = ({
 
       {/* Photo */}
       {message.message_type === 'photo' && message.photo_url && (
-        <div className="rounded-md overflow-hidden border">
-          <img src={message.photo_url} alt="Message photo" className="w-full max-h-96 object-contain bg-muted" />
+        <div className="rounded-md overflow-hidden border max-w-xs sm:max-w-sm">
+          <MediaThumbnail
+            src={message.photo_url}
+            alt="Message photo"
+            type="photo"
+            className="w-full max-h-64 sm:max-h-96"
+          />
         </div>
       )}
 
@@ -685,31 +691,49 @@ const MessageBubble = ({
 
       {/* Video */}
       {message.message_type === 'video' && message.video_url && (
-        <div className="rounded-md overflow-hidden border">
-          <video controls className="w-full max-h-96" preload="metadata">
-            <source src={message.video_url} type={message.video_mime_type || 'video/mp4'} />
-          </video>
+        <div className="rounded-md overflow-hidden border max-w-xs sm:max-w-sm">
+          <MediaThumbnail
+            src={message.video_url}
+            alt="Message video"
+            type="video"
+            mimeType={message.video_mime_type || 'video/mp4'}
+            className="w-full max-h-48 sm:max-h-64"
+          />
         </div>
       )}
 
       {/* Document/File */}
       {message.message_type === 'document' && message.document_url && (
-        <a
-          href={message.document_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          download={message.document_name || 'file'}
-          className="flex items-center gap-3 p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors group"
+        <button
+          onClick={async () => {
+            try {
+              const response = await fetch(message.document_url!);
+              const blob = await response.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = message.document_name || 'file';
+              document.body.appendChild(a);
+              a.click();
+              window.URL.revokeObjectURL(url);
+              document.body.removeChild(a);
+            } catch {
+              window.open(message.document_url!, "_blank");
+            }
+          }}
+          className="flex items-center gap-3 p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors group active:scale-[0.98] w-full text-left"
         >
-          <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-            <FileText className="h-5 w-5 text-primary" />
+          <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+            <FileText className="h-6 w-6 text-primary" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium truncate">{message.document_name || 'Document'}</div>
             <div className="text-xs text-muted-foreground">{message.document_mime_type || 'File'}</div>
           </div>
-          <Download className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-        </a>
+          <div className="flex-shrink-0 p-2 rounded-full bg-primary/10">
+            <Download className="h-5 w-5 text-primary" />
+          </div>
+        </button>
       )}
 
       {/* Text */}
