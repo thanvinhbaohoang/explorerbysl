@@ -1,6 +1,7 @@
 import { Message, Customer } from "@/hooks/useChatMessages";
 import { Badge } from "@/components/ui/badge";
-import { Users, Mic, Download, FileText } from "lucide-react";
+import { MediaThumbnail } from "@/components/MediaViewer";
+import { Users } from "lucide-react";
 
 interface MediaGroupBubbleProps {
   messages: Message[];
@@ -68,20 +69,21 @@ export const MediaGroupBubble = ({
             className={`relative ${messages.length === 3 && index === 0 ? 'row-span-2' : ''}`}
           >
             {message.message_type === 'photo' && message.photo_url && (
-              <img 
-                src={message.photo_url} 
-                alt="Photo" 
-                className="w-full h-full object-cover aspect-square bg-muted"
+              <MediaThumbnail
+                src={message.photo_url}
+                alt="Photo"
+                type="photo"
+                className="w-full h-full aspect-square"
               />
             )}
             {message.message_type === 'video' && message.video_url && (
-              <video 
-                controls 
-                className="w-full h-full object-cover aspect-square bg-muted"
-                preload="metadata"
-              >
-                <source src={message.video_url} type={message.video_mime_type || 'video/mp4'} />
-              </video>
+              <MediaThumbnail
+                src={message.video_url}
+                alt="Video"
+                type="video"
+                mimeType={message.video_mime_type || 'video/mp4'}
+                className="w-full h-full aspect-square"
+              />
             )}
           </div>
         ))}
