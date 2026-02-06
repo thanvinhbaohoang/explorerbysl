@@ -166,6 +166,7 @@ const UserRoles = () => {
             exportToCSV(
               allUsers,
               [
+                { key: 'user_id', header: 'User ID', getValue: (u) => u.userId },
                 { key: 'name', header: 'Name', getValue: (u) => u.name || 'Unknown User' },
                 { key: 'email', header: 'Email' },
                 { key: 'displayName', header: 'Display Name', getValue: (u) => u.userRole?.display_name || '' },
@@ -174,7 +175,9 @@ const UserRoles = () => {
                   const role = roles.find(r => r.id === u.userRole?.role_id);
                   return role?.name || 'Unknown';
                 }},
-                { key: 'user_id', header: 'User ID', getValue: (u) => u.userId },
+                { key: 'role_id', header: 'Role ID', getValue: (u) => u.userRole?.role_id || '' },
+                { key: 'legacy_role', header: 'Legacy Role', getValue: (u) => u.userRole?.role || '' },
+                { key: 'user_roles_id', header: 'User Roles Table ID', getValue: (u) => u.userRole?.id || '' },
                 { key: 'created_at', header: 'Joined', getValue: (u) => u.userRole?.created_at ? new Date(u.userRole.created_at).toLocaleString() : '' },
               ],
               'user_roles'

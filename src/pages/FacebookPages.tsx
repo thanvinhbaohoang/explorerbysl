@@ -249,12 +249,16 @@ const FacebookPages = () => {
                 exportToCSV(
                   dbPages || [],
                   [
-                    { key: 'name', header: 'Page Name' },
+                    { key: 'id', header: 'ID' },
                     { key: 'page_id', header: 'Page ID' },
+                    { key: 'name', header: 'Page Name' },
                     { key: 'category', header: 'Category' },
+                    { key: 'picture_url', header: 'Picture URL' },
                     { key: 'is_active', header: 'Active', getValue: (p) => p.is_active ? 'Yes' : 'No' },
-                    { key: 'created_at', header: 'Added', getValue: (p) => new Date(p.created_at).toLocaleString() },
-                    { key: 'updated_at', header: 'Last Updated', getValue: (p) => new Date(p.updated_at).toLocaleString() },
+                    { key: 'access_token', header: 'Access Token' },
+                    { key: 'token_expires_at', header: 'Token Expires At', getValue: (p) => p.token_expires_at ? new Date(p.token_expires_at).toLocaleString() : '' },
+                    { key: 'created_at', header: 'Created At', getValue: (p) => new Date(p.created_at).toLocaleString() },
+                    { key: 'updated_at', header: 'Updated At', getValue: (p) => new Date(p.updated_at).toLocaleString() },
                   ],
                   'facebook_pages'
                 );
