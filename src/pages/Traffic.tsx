@@ -356,18 +356,37 @@ const Traffic = () => {
                   exportToCSV(
                     trafficWithStatus,
                     [
-                      { key: 'customer_name', header: 'Customer', getValue: (t: any) => t.customer ? (t.customer.first_name || t.customer.messenger_name || '') + ' ' + (t.customer.last_name || '') : '' },
+                      // Lead/Traffic record columns
+                      { key: 'id', header: 'ID' },
                       { key: 'platform', header: 'Platform' },
+                      { key: 'isNewCustomer', header: 'Status', getValue: (t: any) => t.isNewCustomer ? 'New' : 'Existing' },
+                      { key: 'created_at', header: 'Created At', getValue: (t: any) => new Date(t.created_at).toLocaleString() },
+                      { key: 'updated_at', header: 'Updated At', getValue: (t: any) => t.updated_at ? new Date(t.updated_at).toLocaleString() : '' },
+                      // Customer info
+                      { key: 'customer_name', header: 'Customer Name', getValue: (t: any) => t.customer ? (t.customer.first_name || t.customer.messenger_name || '') + ' ' + (t.customer.last_name || '') : '' },
+                      { key: 'user_id', header: 'Customer ID', getValue: (t: any) => t.user_id || '' },
+                      // UTM parameters
                       { key: 'utm_source', header: 'UTM Source' },
                       { key: 'utm_medium', header: 'UTM Medium' },
                       { key: 'utm_campaign', header: 'UTM Campaign' },
                       { key: 'utm_content', header: 'UTM Content' },
                       { key: 'utm_term', header: 'UTM Term' },
-                      { key: 'messenger_ref', header: 'Post Tag' },
+                      { key: 'utm_campaign_id', header: 'UTM Campaign ID' },
+                      { key: 'utm_adset_id', header: 'UTM Adset ID' },
+                      { key: 'utm_ad_id', header: 'UTM Ad ID' },
+                      // Facebook/Meta tracking
                       { key: 'facebook_click_id', header: 'FB Click ID' },
+                      { key: 'campaign_id', header: 'Campaign ID' },
+                      { key: 'campaign_name', header: 'Campaign Name' },
+                      { key: 'adset_id', header: 'Adset ID' },
+                      { key: 'adset_name', header: 'Adset Name' },
+                      { key: 'ad_id', header: 'Ad ID' },
+                      { key: 'ad_name', header: 'Ad Name' },
+                      // Messenger specific
+                      { key: 'messenger_ref', header: 'Post Tag' },
+                      { key: 'messenger_ad_context', header: 'Messenger Ad Context', getValue: (t: any) => t.messenger_ad_context ? JSON.stringify(t.messenger_ad_context) : '' },
+                      // Other
                       { key: 'referrer', header: 'Referrer' },
-                      { key: 'created_at', header: 'Date', getValue: (t: any) => new Date(t.created_at).toLocaleString() },
-                      { key: 'isNewCustomer', header: 'Status', getValue: (t: any) => t.isNewCustomer ? 'New' : 'Existing' },
                     ],
                     'traffic'
                   );
