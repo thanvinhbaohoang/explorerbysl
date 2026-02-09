@@ -334,21 +334,41 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     });
   }, [filteredBySearch, unreadCounts, allLinkedPlatformsMap, lastMessages]);
 
-  // Format relative time
+  // Format time for conversation list - show actual time so staff can tell when last message was
   const formatRelativeTime = (dateString: string | null) => {
     if (!dateString) return '';
     const date = new Date(dateString);
     const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
     
-    if (diffMins < 1) return 'now';
-    if (diffMins < 60) return `${diffMins}m`;
-    if (diffHours < 24) return `${diffHours}h`;
-    if (diffDays < 7) return `${diffDays}d`;
-    return date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+    // Convert to GMT+7 for display
+    const gmt7Offset = 7 * 60; // minutes
+    const localOffset = date.getTimezoneOffset();
+    const gmt7Date = new Date(date.getTime() + (localOffset + gmt7Offset) * 60000);
+    const gmt7Now = new Date(now.getTime() + (now.getTimezoneOffset() + gmt7Offset) * 60000);
+    
+    const timeStr = gmt7Date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+    
+    // Same day: show time only
+    if (gmt7Date.toDateString() === gmt7Now.toDateString()) {
+      return timeStr;
+    }
+    
+    // Yesterday
+    const yesterday = new Date(gmt7Now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (gmt7Date.toDateString() === yesterday.toDateString()) {
+      return `Yest ${timeStr}`;
+    }
+    
+    // Within 7 days: show day name + time
+    const diffDays = Math.floor((gmt7Now.getTime() - gmt7Date.getTime()) / 86400000);
+    if (diffDays < 7) {
+      const dayName = gmt7Date.toLocaleDateString('en-US', { weekday: 'short' });
+      return `${dayName} ${timeStr}`;
+    }
+    
+    // Older: show date
+    return gmt7Date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
   };
 
   // Get last message for customer (including linked)
