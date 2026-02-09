@@ -1,41 +1,53 @@
 
 
-# Fix: Timestamps Not Showing in Chat Conversation List
+# Fix: Chat Preview Missing Messages and Stale Timestamps
 
-## Problem
+## Problems Found
 
-The timestamp code was added correctly in the previous edit, but it may not be rendering visibly due to two issues:
+1. **"No messages yet" for some conversations**: The `fetchLastMessages` query fetches messages across ALL customers with no limit control. Supabase returns max 1,000 rows by default. Since messages are ordered by timestamp globally, customers whose last message falls outside the top 1,000 get nothing -- so they show "No messages yet" even though they have messages.
 
-1. **Query limit bug**: The `fetchLastMessages` function fetches all messages ordered by timestamp with Supabase's default 1000-row limit. With 1328+ messages, many customers won't get their last message loaded into the `lastMessages` state.
+2. **Stale timestamp (e.g., "26/12" for Harold Than)**: The fallback timestamp comes from `customer.last_message_at`, which may only be updated when the customer sends a message, not when staff replies. If a customer's last activity was Dec 26 but staff replied recently, the preview still shows "26/12".
 
-2. **Potential visual clipping**: The timestamp span might be getting clipped in narrow panel widths despite `flex-shrink-0`.
+## Solution
 
-## Fix
+### 1. Fix the fetchLastMessages query
 
-### 1. Fix `fetchLastMessages` query (lines 131-135)
+Replace the current approach (fetch all messages, deduplicate in JS) with a database function that efficiently gets the latest message per customer using `DISTINCT ON`. This avoids the 1,000-row limit entirely.
 
-Instead of fetching all messages and relying on JS deduplication, use a more efficient approach -- fetch only the distinct latest message per customer using an RPC or simply ensure we don't hit the limit by querying per-batch. The simplest fix: since `customer.last_message_at` is already populated in the database, we can rely on it as the primary timestamp source and only use `lastMessages` for the preview text and real-time updates.
+**Create a database function:**
+```sql
+CREATE OR REPLACE FUNCTION get_latest_messages(p_customer_ids uuid[])
+RETURNS TABLE(customer_id uuid, message_text text, message_type text, timestamp timestamptz)
+AS $$
+  SELECT DISTINCT ON (m.customer_id) 
+    m.customer_id, m.message_text, m.message_type, m.timestamp
+  FROM messages m
+  WHERE m.customer_id = ANY(p_customer_ids)
+  ORDER BY m.customer_id, m.timestamp DESC;
+$$ LANGUAGE sql STABLE;
+```
 
-Change line 543 to prioritize `customer.last_message_at` as timestamp source and ensure it always renders something visible.
+**Update `fetchLastMessages`** to call this RPC instead of the raw query.
 
-### 2. Make timestamp more visible
+### 2. Use the real latest timestamp (not just customer messages)
 
-Add a `whitespace-nowrap` class to the timestamp span to prevent wrapping and ensure it's always visible even in narrow panels.
+The timestamp displayed next to the preview will come from the `lastMessages` state (which includes employee messages) rather than `customer.last_message_at`. The `customer.last_message_at` field will only be used as a last resort fallback.
 
-### 3. Add fallback display
+### 3. Update `customer.last_message_at` on employee messages too
 
-If no timestamp is available at all, show a dash or empty string to make it clear the field exists.
+This is a broader data issue. For now, relying on the RPC result (which includes all message types) solves the display problem without needing a schema change.
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `src/components/ChatConversationList.tsx` | Fix timestamp display: add `whitespace-nowrap`, ensure `lastMessage` query doesn't hit row limit by using `.limit()` per customer approach or relying on `customer.last_message_at` as primary source. Force re-render with a key change if needed. |
+| New migration | Create `get_latest_messages` database function |
+| `src/components/ChatConversationList.tsx` | Replace `fetchLastMessages` to call the new RPC; update timestamp display to prefer RPC timestamp over `customer.last_message_at` |
 
 ## Technical Details
 
-- Modify `fetchLastMessages` to batch queries or add explicit `.limit(1000)` awareness -- simplest: use an RPC that gets `DISTINCT ON (customer_id)` to get exactly one message per customer
-- Alternatively, create a database view or use the existing `customer.last_message_at` field as the sole timestamp source (it's already populated)
-- Add `whitespace-nowrap` and `min-w-[3rem]` to the timestamp `<span>` to guarantee visibility
-- The real-time `lastMessages` state will continue to update timestamps on new messages
+- The `DISTINCT ON (customer_id)` pattern returns exactly one row per customer -- the latest message -- regardless of how many total messages exist. No row limit issues.
+- The RPC accepts a `uuid[]` parameter so it handles all customers in a single call.
+- The timestamp priority becomes: real-time `lastMessages` state (updated via subscription) then RPC result then `customer.last_message_at` as final fallback.
+- Message preview text truncation (30 chars) and formatting remain unchanged.
 
