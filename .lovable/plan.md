@@ -1,59 +1,41 @@
 
 
-# Rename Facebook Pages to System Page + Add Telegram Bot Settings
+# Fix: Timestamps Not Showing in Chat Conversation List
 
-## Overview
+## Problem
 
-Rename the existing `/facebook-pages` route to `/system` and add a new **Telegram Bot Settings** tab to this page. The page will use tabs to organize Facebook Pages management and Telegram Bot settings in one place.
+The timestamp code was added correctly in the previous edit, but it may not be rendering visibly due to two issues:
 
-## What Changes
+1. **Query limit bug**: The `fetchLastMessages` function fetches all messages ordered by timestamp with Supabase's default 1000-row limit. With 1328+ messages, many customers won't get their last message loaded into the `lastMessages` state.
 
-### 1. Rename route and navigation
+2. **Potential visual clipping**: The timestamp span might be getting clipped in narrow panel widths despite `flex-shrink-0`.
 
-- Change route from `/facebook-pages` to `/system` in `App.tsx`
-- Update nav link label from "Pages" to "System" in `AppLayout.tsx`
-- Update the page title from "Facebook Pages" to "System"
+## Fix
 
-### 2. Add Tabs layout to the page
+### 1. Fix `fetchLastMessages` query (lines 131-135)
 
-The page will have two tabs:
-- **Facebook Pages** -- all existing Facebook Pages content (unchanged)
-- **Telegram Bot** -- new section with bot status and welcome message editor
+Instead of fetching all messages and relying on JS deduplication, use a more efficient approach -- fetch only the distinct latest message per customer using an RPC or simply ensure we don't hit the limit by querying per-batch. The simplest fix: since `customer.last_message_at` is already populated in the database, we can rely on it as the primary timestamp source and only use `lastMessages` for the preview text and real-time updates.
 
-### 3. Database: Create `bot_settings` table
+Change line 543 to prioritize `customer.last_message_at` as timestamp source and ensure it always renders something visible.
 
-A simple key-value table to store the welcome message:
+### 2. Make timestamp more visible
 
-| Column | Type | Purpose |
-|--------|------|---------|
-| id | uuid | Primary key |
-| key | text (unique) | Setting identifier |
-| value | text | The setting value |
-| updated_at | timestamptz | Last modified |
-| updated_by | uuid | Who last edited |
+Add a `whitespace-nowrap` class to the timestamp span to prevent wrapping and ensure it's always visible even in narrow panels.
 
-RLS: Authenticated users can read; admins can insert/update.
+### 3. Add fallback display
 
-### 4. Telegram Bot tab content
+If no timestamp is available at all, show a dash or empty string to make it clear the field exists.
 
-- **Bot Status Card**: Calls a new endpoint on the `telegram-bot` edge function to fetch webhook info (`getWebhookInfo`) and bot details (`getMe`). Displays: bot username, webhook URL, pending updates, last error.
-- **Welcome Message Editor**: A textarea pre-filled from `bot_settings` table (key: `telegram_welcome_message`). Save button writes to the database. Falls back to the current hardcoded message if no DB entry exists.
-- **Re-register Webhook Button**: One-click button to call `setWebhook` via the edge function.
-
-### 5. Edge function updates (`telegram-bot`)
-
-- Add handling for authenticated POST requests with `action` field:
-  - `action: "get_status"` -- calls Telegram `getWebhookInfo` + `getMe`, returns result
-  - `action: "set_webhook"` -- calls Telegram `setWebhook`, returns success/failure
-- Modify `handleStart` to query `bot_settings` for `telegram_welcome_message` key, falling back to the current hardcoded text
-
-### 6. Files affected
+## Files Changed
 
 | File | Change |
 |------|--------|
-| `src/App.tsx` | Rename route `/facebook-pages` to `/system` |
-| `src/components/AppLayout.tsx` | Update nav link href and label |
-| `src/pages/FacebookPages.tsx` | Rename to conceptually be "System" page, add Tabs with Facebook Pages + Telegram Bot sections |
-| `supabase/functions/telegram-bot/index.ts` | Add `get_status`, `set_webhook` actions; read welcome message from DB |
-| New migration | Create `bot_settings` table |
+| `src/components/ChatConversationList.tsx` | Fix timestamp display: add `whitespace-nowrap`, ensure `lastMessage` query doesn't hit row limit by using `.limit()` per customer approach or relying on `customer.last_message_at` as primary source. Force re-render with a key change if needed. |
+
+## Technical Details
+
+- Modify `fetchLastMessages` to batch queries or add explicit `.limit(1000)` awareness -- simplest: use an RPC that gets `DISTINCT ON (customer_id)` to get exactly one message per customer
+- Alternatively, create a database view or use the existing `customer.last_message_at` field as the sole timestamp source (it's already populated)
+- Add `whitespace-nowrap` and `min-w-[3rem]` to the timestamp `<span>` to guarantee visibility
+- The real-time `lastMessages` state will continue to update timestamps on new messages
 
