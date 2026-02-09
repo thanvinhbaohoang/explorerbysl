@@ -537,6 +537,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_latest_messages: {
+        Args: { p_customer_ids: string[] }
+        Returns: {
+          customer_id: string
+          message_text: string
+          message_type: string
+          timestamp: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
