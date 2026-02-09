@@ -1,194 +1,59 @@
 
 
-# Retroactive Profile Picture Backfill for All Customers
+# Rename Facebook Pages to System Page + Add Telegram Bot Settings
 
 ## Overview
 
-This plan creates a new edge function that will fetch and store profile pictures for all existing customers who are missing them. The function will handle both Telegram and Messenger customers using the existing helper functions.
+Rename the existing `/facebook-pages` route to `/system` and add a new **Telegram Bot Settings** tab to this page. The page will use tabs to organize Facebook Pages management and Telegram Bot settings in one place.
 
-## Current State
+## What Changes
 
-- **Storage location**: `chat-attachments/profile-pics/{customerId}.jpg`
-- **Database column**: `customer.messenger_profile_pic` (stores the public URL)
-- **Telegram**: Uses `getUserProfilePhotos` and `getFile` APIs
-- **Messenger**: Uses Facebook Graph API with page access tokens from `facebook_pages` table
+### 1. Rename route and navigation
 
-## Implementation
+- Change route from `/facebook-pages` to `/system` in `App.tsx`
+- Update nav link label from "Pages" to "System" in `AppLayout.tsx`
+- Update the page title from "Facebook Pages" to "System"
 
-### New Edge Function: `backfill-profile-pics`
+### 2. Add Tabs layout to the page
 
-**File: `supabase/functions/backfill-profile-pics/index.ts`**
+The page will have two tabs:
+- **Facebook Pages** -- all existing Facebook Pages content (unchanged)
+- **Telegram Bot** -- new section with bot status and welcome message editor
 
-This function will:
+### 3. Database: Create `bot_settings` table
 
-1. Query all customers where `messenger_profile_pic IS NULL`
-2. For each customer:
-   - **Telegram**: Fetch profile photo via Telegram API
-   - **Messenger**: Fetch profile from Facebook Graph API using page token
-3. Download and upload to Supabase Storage
-4. Update `customer.messenger_profile_pic` with the public URL
+A simple key-value table to store the welcome message:
 
-```text
-Flow:
-┌─────────────────────────────────────────────────┐
-│ 1. Query customers with NULL messenger_profile_pic │
-└───────────────────────┬─────────────────────────┘
-                        │
-         ┌──────────────┴──────────────┐
-         ▼                             ▼
-┌─────────────────┐          ┌─────────────────────┐
-│ Telegram User   │          │ Messenger User      │
-│ (telegram_id)   │          │ (messenger_id)      │
-└────────┬────────┘          └──────────┬──────────┘
-         │                              │
-         ▼                              ▼
-┌─────────────────┐          ┌─────────────────────┐
-│ getUserProfile  │          │ FB Graph API        │
-│ Photos API      │          │ /{psid}?fields=     │
-│ + getFile API   │          │   profile_pic       │
-└────────┬────────┘          └──────────┬──────────┘
-         │                              │
-         └──────────────┬───────────────┘
-                        ▼
-         ┌──────────────────────────────┐
-         │ Download image               │
-         │ Upload to chat-attachments   │
-         │   /profile-pics/{id}.jpg     │
-         └──────────────┬───────────────┘
-                        ▼
-         ┌──────────────────────────────┐
-         │ Update customer table        │
-         │ SET messenger_profile_pic    │
-         └──────────────────────────────┘
-```
+| Column | Type | Purpose |
+|--------|------|---------|
+| id | uuid | Primary key |
+| key | text (unique) | Setting identifier |
+| value | text | The setting value |
+| updated_at | timestamptz | Last modified |
+| updated_by | uuid | Who last edited |
 
-### Function Features
+RLS: Authenticated users can read; admins can insert/update.
 
-1. **Batch processing** with configurable limits to avoid timeouts
-2. **Rate limiting** to respect Telegram/Facebook API limits
-3. **Progress reporting** - returns count of processed/updated/failed
-4. **Idempotent** - can be run multiple times safely
-5. **Error handling** - continues on individual failures
+### 4. Telegram Bot tab content
 
-### Code Structure
+- **Bot Status Card**: Calls a new endpoint on the `telegram-bot` edge function to fetch webhook info (`getWebhookInfo`) and bot details (`getMe`). Displays: bot username, webhook URL, pending updates, last error.
+- **Welcome Message Editor**: A textarea pre-filled from `bot_settings` table (key: `telegram_welcome_message`). Save button writes to the database. Falls back to the current hardcoded message if no DB entry exists.
+- **Re-register Webhook Button**: One-click button to call `setWebhook` via the edge function.
 
-```typescript
-// supabase/functions/backfill-profile-pics/index.ts
+### 5. Edge function updates (`telegram-bot`)
 
-// Main logic:
-async function backfillProfilePics(limit: number = 50) {
-  // 1. Get customers missing profile pics
-  const { data: customers } = await supabase
-    .from('customer')
-    .select('id, telegram_id, messenger_id, page_id')
-    .is('messenger_profile_pic', null)
-    .limit(limit);
-  
-  const results = { processed: 0, updated: 0, failed: 0, errors: [] };
-  
-  for (const customer of customers) {
-    // Add delay to respect rate limits
-    await delay(100); // 100ms between requests
-    
-    try {
-      let photoUrl: string | null = null;
-      
-      if (customer.telegram_id) {
-        // Telegram: Use getUserProfilePhotos + getFile APIs
-        photoUrl = await getTelegramProfilePhoto(customer.telegram_id, customer.id);
-      } else if (customer.messenger_id && customer.page_id) {
-        // Messenger: Fetch from Facebook Graph API
-        photoUrl = await getMessengerProfilePhoto(
-          customer.messenger_id, 
-          customer.page_id, 
-          customer.id
-        );
-      }
-      
-      if (photoUrl) {
-        await supabase
-          .from('customer')
-          .update({ messenger_profile_pic: photoUrl })
-          .eq('id', customer.id);
-        results.updated++;
-      }
-      
-      results.processed++;
-    } catch (error) {
-      results.failed++;
-      results.errors.push({ customerId: customer.id, error: String(error) });
-    }
-  }
-  
-  return results;
-}
+- Add handling for authenticated POST requests with `action` field:
+  - `action: "get_status"` -- calls Telegram `getWebhookInfo` + `getMe`, returns result
+  - `action: "set_webhook"` -- calls Telegram `setWebhook`, returns success/failure
+- Modify `handleStart` to query `bot_settings` for `telegram_welcome_message` key, falling back to the current hardcoded text
 
-// Telegram helper (same as existing getUserProfilePhoto)
-async function getTelegramProfilePhoto(telegramId: number, customerId: string) {
-  // 1. Call getUserProfilePhotos API
-  // 2. Get largest photo size
-  // 3. Call getFile to get download URL
-  // 4. Download and upload to storage
-  // 5. Return public URL
-}
+### 6. Files affected
 
-// Messenger helper
-async function getMessengerProfilePhoto(messengerId: string, pageId: string, customerId: string) {
-  // 1. Get page token from facebook_pages table
-  // 2. Call Graph API: /{psid}?fields=profile_pic
-  // 3. Download profile_pic URL
-  // 4. Upload to storage
-  // 5. Return public URL
-}
-```
-
-### API Endpoint
-
-```
-POST /functions/v1/backfill-profile-pics
-Body: { "limit": 50 }  // Optional, defaults to 50
-
-Response:
-{
-  "success": true,
-  "processed": 50,
-  "updated": 42,
-  "failed": 3,
-  "remaining": 128,
-  "errors": [...]
-}
-```
-
-### Usage
-
-The function can be called multiple times to process all customers in batches:
-
-```typescript
-// From admin UI or script
-await supabase.functions.invoke('backfill-profile-pics', {
-  body: { limit: 100 }
-});
-```
-
-## Rate Limiting Considerations
-
-| Platform | Rate Limit | Our Approach |
-|----------|------------|--------------|
-| Telegram | 30 requests/second | 100ms delay between requests |
-| Facebook | 200 calls/hour per user | Page tokens have higher limits; 100ms delay sufficient |
-
-## Files to Create
-
-| File | Purpose |
-|------|---------|
-| `supabase/functions/backfill-profile-pics/index.ts` | Main edge function with all logic |
-
-## Summary
-
-- Creates a new edge function to backfill missing profile pictures
-- Handles both Telegram and Messenger customers
-- Uses existing API patterns from `telegram-bot` and `messenger-webhook`
-- Rate-limited to avoid API throttling
-- Returns progress so you can track completion
-- Can be run multiple times until all customers are processed
+| File | Change |
+|------|--------|
+| `src/App.tsx` | Rename route `/facebook-pages` to `/system` |
+| `src/components/AppLayout.tsx` | Update nav link href and label |
+| `src/pages/FacebookPages.tsx` | Rename to conceptually be "System" page, add Tabs with Facebook Pages + Telegram Bot sections |
+| `supabase/functions/telegram-bot/index.ts` | Add `get_status`, `set_webhook` actions; read welcome message from DB |
+| New migration | Create `bot_settings` table |
 
