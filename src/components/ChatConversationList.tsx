@@ -539,8 +539,8 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                     )}>
                       {displayName}
                     </span>
-                    <span className="text-xs text-muted-foreground flex-shrink-0">
-                      {formatRelativeTime(lastMessage?.timestamp || customer.last_message_at)}
+                    <span className="text-xs text-muted-foreground flex-shrink-0 whitespace-nowrap min-w-[3rem] text-right">
+                      {formatRelativeTime(customer.last_message_at || lastMessage?.timestamp) || '—'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2 mt-0.5">
