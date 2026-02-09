@@ -119,7 +119,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     }
   };
 
-  // Fetch last messages for preview
+  // Fetch last messages for preview using RPC (avoids 1000-row limit)
   const fetchLastMessages = async () => {
     if (allCustomers.length === 0) return;
     
@@ -127,25 +127,25 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     const linkedIds = allCustomers.flatMap(c => allLinkedPlatformsMap[c.id]?.linkedIds || []);
     const allIds = [...new Set([...customerIds, ...linkedIds])];
     
-    // Get last message for each customer
-    const { data } = await supabase
-      .from("messages")
-      .select("customer_id, message_text, message_type, timestamp")
-      .in("customer_id", allIds)
-      .order("timestamp", { ascending: false });
+    const { data, error } = await supabase.rpc('get_latest_messages', {
+      p_customer_ids: allIds,
+    });
+    
+    if (error) {
+      console.error('Failed to fetch latest messages:', error);
+      return;
+    }
     
     if (data) {
       const msgMap: Record<string, { text: string; timestamp: string }> = {};
-      data.forEach(msg => {
-        if (!msgMap[msg.customer_id]) {
-          let text = msg.message_text || '';
-          if (msg.message_type === 'photo') text = '📷 Photo';
-          else if (msg.message_type === 'video') text = '🎥 Video';
-          else if (msg.message_type === 'voice') text = '🎤 Voice message';
-          else if (msg.message_type === 'document') text = '📎 Document';
-          
-          msgMap[msg.customer_id] = { text, timestamp: msg.timestamp };
-        }
+      (data as any[]).forEach((msg: any) => {
+        let text = msg.message_text || '';
+        if (msg.message_type === 'photo') text = '📷 Photo';
+        else if (msg.message_type === 'video') text = '🎥 Video';
+        else if (msg.message_type === 'voice') text = '🎤 Voice message';
+        else if (msg.message_type === 'document') text = '📎 Document';
+        
+        msgMap[msg.customer_id] = { text, timestamp: msg.timestamp };
       });
       setLastMessages(msgMap);
     }
@@ -553,7 +553,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                       {lastMessage?.text ? (lastMessage.text.length > 30 ? lastMessage.text.substring(0, 30) + '…' : lastMessage.text) : 'No messages yet'}
                     </p>
                     <span className="text-[10px] text-muted-foreground flex-shrink-0 whitespace-nowrap">
-                      · {formatRelativeTime(customer.last_message_at || lastMessage?.timestamp) || '—'}
+                      · {formatRelativeTime(lastMessage?.timestamp || customer.last_message_at) || '—'}
                     </span>
                   </div>
                   {hasBothPlatforms && (
