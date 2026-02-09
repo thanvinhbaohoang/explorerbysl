@@ -65,7 +65,7 @@ const App = () => {
                 <Route path="/webhook-debug" element={<ProtectedRoute><WebhookDebug /></ProtectedRoute>} />
                 <Route path="/media-gallery" element={<ProtectedRoute><MediaGallery /></ProtectedRoute>} />
                 <Route path="/monday-import" element={<ProtectedRoute><MondayImport /></ProtectedRoute>} />
-                <Route path="/facebook-pages" element={<ProtectedRoute><FacebookPages /></ProtectedRoute>} />
+                <Route path="/system" element={<ProtectedRoute><FacebookPages /></ProtectedRoute>} />
                 <Route path="/user-roles" element={<ProtectedRoute><UserRoles /></ProtectedRoute>} />
                 <Route path="/docs" element={<ProtectedRoute><Docs /></ProtectedRoute>} />
                 

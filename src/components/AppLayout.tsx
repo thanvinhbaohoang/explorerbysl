@@ -31,7 +31,7 @@ const navLinks: NavLink[] = [
   { href: "/traffic", label: "Traffic" },
   { href: "/ads-insight", label: "Ads Insight" },
   { href: "/docs", label: "Docs" },
-  { href: "/facebook-pages", label: "Pages", permission: 'canViewFacebookPages' },
+  { href: "/system", label: "System", permission: 'canViewFacebookPages' },
   { href: "/monday-import", label: "Import", permission: 'canViewMondayImport' },
   { href: "/user-roles", label: "Roles", permission: 'canViewUserRoles' },
 ];

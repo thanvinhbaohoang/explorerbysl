@@ -207,8 +207,8 @@ async function handleStart(message: any) {
 
   console.log("User started bot:", info);
 
-  // Format bilingual Khmer/English welcome message
-  const msg = `ក្រុមហ៊ុនទេសចរណ៍ អុិចផ្លរឺ
+  // Try to load welcome message from bot_settings table
+  const DEFAULT_WELCOME = `ក្រុមហ៊ុនទេសចរណ៍ អុិចផ្លរឺ
 
 Explorer by SL
 
@@ -219,6 +219,20 @@ Explorer by SL
 លិខិតឆ្លងដែន | Passport
 ជួលខុនដូគ្រប់ប្រទេស | Condo Rental
 អ្នកបកប្រែនិងនាំដើរលេង | Guide Service`;
+
+  let msg = DEFAULT_WELCOME;
+  try {
+    const { data: setting } = await supabase
+      .from('bot_settings')
+      .select('value')
+      .eq('key', 'telegram_welcome_message')
+      .maybeSingle();
+    if (setting?.value) {
+      msg = setting.value;
+    }
+  } catch (e) {
+    console.error("Error reading welcome message from DB, using default:", e);
+  }
 
   // Send warm greeting (no inline buttons - conversation starts here)
   await fetch(`${TELEGRAM_API}/sendMessage`, {
@@ -890,6 +904,49 @@ serve(async (req) => {
       // Parse the body once
       const body = await req.json();
       
+      // Handle get_status action - returns bot info and webhook status
+      if (body.action === "get_status") {
+        try {
+          const [meRes, webhookRes] = await Promise.all([
+            fetch(`${TELEGRAM_API}/getMe`),
+            fetch(`${TELEGRAM_API}/getWebhookInfo`),
+          ]);
+          const meData = await meRes.json();
+          const webhookData = await webhookRes.json();
+          return new Response(
+            JSON.stringify({ success: true, bot: meData.result, webhook: webhookData.result }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+          );
+        } catch (error: any) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+          );
+        }
+      }
+
+      // Handle set_webhook action - re-registers the webhook URL
+      if (body.action === "set_webhook") {
+        try {
+          const webhookUrl = `${SUPABASE_URL}/functions/v1/telegram-bot`;
+          const res = await fetch(`${TELEGRAM_API}/setWebhook`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: webhookUrl }),
+          });
+          const data = await res.json();
+          return new Response(
+            JSON.stringify({ success: data.ok, description: data.description }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+          );
+        } catch (error: any) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+          );
+        }
+      }
+
       // Handle mark_seen action (send typing indicator to show staff is viewing)
       if (body.action === "mark_seen") {
         const { telegram_id } = body;
