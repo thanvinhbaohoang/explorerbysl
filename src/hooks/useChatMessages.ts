@@ -71,7 +71,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   const messagesPerPage = 50;
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(!!selectedCustomer);
   const [messageOffset, setMessageOffset] = useState(0);
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [isLoadingMoreMessages, setIsLoadingMoreMessages] = useState(false);
@@ -97,6 +97,13 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
   const [audioLevels, setAudioLevels] = useState<number[]>([0, 0, 0, 0, 0]);
   const animationFrameRef = useRef<number | null>(null);
+
+  // Reset loading state immediately when customer changes
+  useEffect(() => {
+    if (selectedCustomer?.id) {
+      setIsLoadingMessages(true);
+    }
+  }, [selectedCustomer?.id]);
 
   // Filter messages by platform
   const filteredMessages = useMemo(() => {
