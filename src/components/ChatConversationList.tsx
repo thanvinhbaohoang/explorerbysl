@@ -539,22 +539,22 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                     )}>
                       {displayName}
                     </span>
-                    <span className="text-xs text-muted-foreground flex-shrink-0 whitespace-nowrap min-w-[3rem] text-right">
-                      {formatRelativeTime(customer.last_message_at || lastMessage?.timestamp) || '—'}
-                    </span>
+                    {unreadCount > 0 && (
+                      <Badge variant="destructive" className="h-5 min-w-5 px-1.5 text-xs animate-pulse flex-shrink-0">
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </Badge>
+                    )}
                   </div>
-                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                  <div className="flex items-center gap-1 mt-0.5">
                     <p className={cn(
                       "text-xs truncate",
                       unreadCount > 0 ? "text-foreground font-medium" : "text-muted-foreground"
                     )}>
-                      {lastMessage?.text || 'No messages yet'}
+                      {lastMessage?.text ? (lastMessage.text.length > 30 ? lastMessage.text.substring(0, 30) + '…' : lastMessage.text) : 'No messages yet'}
                     </p>
-                    {unreadCount > 0 && (
-                      <Badge variant="destructive" className="h-5 min-w-5 px-1.5 text-xs animate-pulse">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </Badge>
-                    )}
+                    <span className="text-[10px] text-muted-foreground flex-shrink-0 whitespace-nowrap">
+                      · {formatRelativeTime(customer.last_message_at || lastMessage?.timestamp) || '—'}
+                    </span>
                   </div>
                   {hasBothPlatforms && (
                     <div className="flex gap-1 mt-1">
