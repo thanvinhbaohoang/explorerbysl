@@ -543,6 +543,8 @@ export type Database = {
           customer_id: string
           message_text: string
           message_type: string
+          sender_type: string
+          sent_by_name: string
           timestamp: string
         }[]
       }

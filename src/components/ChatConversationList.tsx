@@ -68,7 +68,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   const loadMoreRef = useRef<HTMLDivElement>(null);
   
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
-  const [lastMessages, setLastMessages] = useState<Record<string, { text: string; timestamp: string }>>({});
+  const [lastMessages, setLastMessages] = useState<Record<string, { text: string; timestamp: string; senderType?: string; sentByName?: string }>>({});
 
   // Accumulate customers across pages
   useEffect(() => {
@@ -137,7 +137,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     }
     
     if (data) {
-      const msgMap: Record<string, { text: string; timestamp: string }> = {};
+      const msgMap: Record<string, { text: string; timestamp: string; senderType?: string; sentByName?: string }> = {};
       (data as any[]).forEach((msg: any) => {
         let text = msg.message_text || '';
         if (msg.message_type === 'photo') text = '📷 Photo';
@@ -145,7 +145,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         else if (msg.message_type === 'voice') text = '🎤 Voice message';
         else if (msg.message_type === 'document') text = '📎 Document';
         
-        msgMap[msg.customer_id] = { text, timestamp: msg.timestamp };
+        msgMap[msg.customer_id] = { text, timestamp: msg.timestamp, senderType: msg.sender_type, sentByName: msg.sent_by_name };
       });
       setLastMessages(msgMap);
     }
@@ -237,7 +237,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           
           setLastMessages(prev => ({
             ...prev,
-            [newMessage.customer_id]: { text, timestamp: newMessage.timestamp },
+            [newMessage.customer_id]: { text, timestamp: newMessage.timestamp, senderType: newMessage.sender_type, sentByName: newMessage.sent_by_name },
           }));
           
           refetch();
@@ -376,7 +376,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     const linkedIds = allLinkedPlatformsMap[customer.id]?.linkedIds || [];
     const allIds = [customer.id, ...linkedIds];
     
-    let latest: { text: string; timestamp: string } | null = null;
+    let latest: { text: string; timestamp: string; senderType?: string; sentByName?: string } | null = null;
     allIds.forEach(id => {
       const msg = lastMessages[id];
       if (msg && (!latest || new Date(msg.timestamp) > new Date(latest.timestamp))) {
@@ -550,7 +550,14 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                       "text-xs truncate",
                       unreadCount > 0 ? "text-foreground font-medium" : "text-muted-foreground"
                     )}>
-                      {lastMessage?.text ? (lastMessage.text.length > 30 ? lastMessage.text.substring(0, 30) + '…' : lastMessage.text) : 'No messages yet'}
+                      {lastMessage ? (
+                        <>
+                          {lastMessage.senderType === 'employee' && (
+                            <span className="text-muted-foreground">{lastMessage.sentByName || 'You'}: </span>
+                          )}
+                          {lastMessage.text.length > 25 ? lastMessage.text.substring(0, 25) + '…' : lastMessage.text}
+                        </>
+                      ) : 'No messages yet'}
                     </p>
                     <span className="text-[10px] text-muted-foreground flex-shrink-0 whitespace-nowrap">
                       · {formatRelativeTime(lastMessage?.timestamp || customer.last_message_at) || '—'}
