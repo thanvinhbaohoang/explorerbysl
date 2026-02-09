@@ -2037,6 +2037,7 @@ const Customers = () => {
         if (!open) setIsDragging(false);
       }}>
         <DialogContent 
+          onOpenAutoFocus={(e) => e.preventDefault()}
           className="w-[95vw] max-w-3xl h-[85vh] sm:h-[80vh] max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden relative"
           onDragEnter={handleDragEnter}
           onDragOver={handleDragOver}
