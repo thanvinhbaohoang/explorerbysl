@@ -1967,7 +1967,7 @@ const Customers = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => loadMessages(customer)}
+                              onClick={() => navigate(`/chat?customer=${customer.id}`)}
                               className="relative"
                             >
                               <MessageSquare className="h-4 w-4 mr-2" />
