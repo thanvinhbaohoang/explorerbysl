@@ -698,7 +698,7 @@ const FacebookPages = () => {
                         )}
                       </div>
                     )}
-                    {isAdmin && systemUserInfo && (
+                    {isAdmin && systemUser && (
                       <div className="mt-4 pt-4 border-t">
                         <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)}>
                           <Settings className="h-4 w-4 mr-2" />
