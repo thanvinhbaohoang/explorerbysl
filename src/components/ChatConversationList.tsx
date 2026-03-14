@@ -469,7 +469,34 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                     (b.last_message_at ? new Date(b.last_message_at).getTime() : 0);
       return bTime - aTime;
     });
-  }, [filteredBySearch, allLinkedPlatformsMap, lastMessages]);
+  }, [filteredByMode, allLinkedPlatformsMap, lastMessages]);
+
+  // Compute waiting time badge for a conversation
+  const getWaitingBadge = (customer: Customer) => {
+    const lastMsg = getLastMessage(customer);
+    if (!lastMsg || lastMsg.senderType === 'employee') return null;
+    
+    const waitMs = Date.now() - new Date(lastMsg.timestamp).getTime();
+    const waitMins = waitMs / 60000;
+    const waitHours = waitMins / 60;
+    const waitDays = waitHours / 24;
+    
+    let label: string;
+    let colorClass: string;
+    
+    if (waitMins < 60) {
+      label = `${Math.max(1, Math.floor(waitMins))}m`;
+      colorClass = "bg-emerald-500/15 text-emerald-600";
+    } else if (waitHours < 24) {
+      label = `${Math.floor(waitHours)}h`;
+      colorClass = "bg-amber-500/15 text-amber-600";
+    } else {
+      label = `${Math.floor(waitDays)}d`;
+      colorClass = "bg-destructive/15 text-destructive";
+    }
+    
+    return { label, colorClass };
+  };
 
   // Format time for conversation list - show actual time so staff can tell when last message was
   const formatRelativeTime = (dateString: string | null) => {
