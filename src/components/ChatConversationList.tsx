@@ -432,6 +432,16 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     });
   }, [allCustomers, searchQuery]);
 
+  // Apply awaiting reply filter
+  const filteredByMode = useMemo(() => {
+    if (filterMode === 'all') return filteredBySearch;
+    return filteredBySearch.filter(customer => {
+      const linkedIds = allLinkedPlatformsMap[customer.id]?.linkedIds || [];
+      const allIds = [customer.id, ...linkedIds];
+      return allIds.some(id => unansweredIds.has(id));
+    });
+  }, [filteredBySearch, filterMode, unansweredIds, allLinkedPlatformsMap]);
+
   // Sort customers by last message time (newest first) — Instagram/Messenger style
   const sortedCustomers = useMemo(() => {
     // Helper to get latest timestamp from real-time lastMessages state
