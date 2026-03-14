@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Facebook, Send, Bell, Loader2, Search, X, Wifi, WifiOff } from "lucide-react";
+import { Facebook, Send, Bell, Loader2, Search, X, Wifi, WifiOff, Clock } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -70,6 +70,10 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [lastMessages, setLastMessages] = useState<Record<string, { text: string; timestamp: string; senderType?: string; sentByName?: string }>>({});
+  
+  // Awaiting reply filter
+  const [filterMode, setFilterMode] = useState<'all' | 'awaiting'>('all');
+  const [unansweredIds, setUnansweredIds] = useState<Set<string>>(new Set());
   
   // Realtime status tracking
   const [realtimeStatus, setRealtimeStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
@@ -358,6 +362,17 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     return () => { supabase.removeChannel(channel); };
   }, [ensureConversationLoaded, navigate, onSelect]);
 
+  // Fetch unanswered customer IDs
+  useEffect(() => {
+    const fetchUnanswered = async () => {
+      const { data, error } = await supabase.rpc('get_unanswered_customer_ids');
+      if (!error && data) {
+        setUnansweredIds(new Set(data.map((r: { customer_id: string }) => r.customer_id)));
+      }
+    };
+    fetchUnanswered();
+  }, [allCustomers.length]);
+
   // Polling fallback: refetch page 1 every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
@@ -417,6 +432,16 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     });
   }, [allCustomers, searchQuery]);
 
+  // Apply awaiting reply filter
+  const filteredByMode = useMemo(() => {
+    if (filterMode === 'all') return filteredBySearch;
+    return filteredBySearch.filter(customer => {
+      const linkedIds = allLinkedPlatformsMap[customer.id]?.linkedIds || [];
+      const allIds = [customer.id, ...linkedIds];
+      return allIds.some(id => unansweredIds.has(id));
+    });
+  }, [filteredBySearch, filterMode, unansweredIds, allLinkedPlatformsMap]);
+
   // Sort customers by last message time (newest first) — Instagram/Messenger style
   const sortedCustomers = useMemo(() => {
     // Helper to get latest timestamp from real-time lastMessages state
@@ -433,7 +458,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       return latest;
     };
 
-    return [...filteredBySearch].sort((a, b) => {
+    return [...filteredByMode].sort((a, b) => {
       const linkedIdsA = allLinkedPlatformsMap[a.id]?.linkedIds || [];
       const linkedIdsB = allLinkedPlatformsMap[b.id]?.linkedIds || [];
       
@@ -444,7 +469,34 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                     (b.last_message_at ? new Date(b.last_message_at).getTime() : 0);
       return bTime - aTime;
     });
-  }, [filteredBySearch, allLinkedPlatformsMap, lastMessages]);
+  }, [filteredByMode, allLinkedPlatformsMap, lastMessages]);
+
+  // Compute waiting time badge for a conversation
+  const getWaitingBadge = (customer: Customer) => {
+    const lastMsg = getLastMessage(customer);
+    if (!lastMsg || lastMsg.senderType === 'employee') return null;
+    
+    const waitMs = Date.now() - new Date(lastMsg.timestamp).getTime();
+    const waitMins = waitMs / 60000;
+    const waitHours = waitMins / 60;
+    const waitDays = waitHours / 24;
+    
+    let label: string;
+    let colorClass: string;
+    
+    if (waitMins < 60) {
+      label = `${Math.max(1, Math.floor(waitMins))}m`;
+      colorClass = "bg-emerald-500/15 text-emerald-600";
+    } else if (waitHours < 24) {
+      label = `${Math.floor(waitHours)}h`;
+      colorClass = "bg-amber-500/15 text-amber-600";
+    } else {
+      label = `${Math.floor(waitDays)}d`;
+      colorClass = "bg-destructive/15 text-destructive";
+    }
+    
+    return { label, colorClass };
+  };
 
   // Format time for conversation list - show actual time so staff can tell when last message was
   const formatRelativeTime = (dateString: string | null) => {
@@ -599,7 +651,11 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           </TooltipProvider>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {searchQuery ? `${sortedCustomers.length} of ${allCustomers.length}` : `${allCustomers.length} customers${hasMore ? '+' : ''}`}
+          {filterMode === 'awaiting' 
+            ? `${sortedCustomers.length} awaiting reply`
+            : searchQuery 
+              ? `${sortedCustomers.length} of ${allCustomers.length}` 
+              : `${allCustomers.length} customers${hasMore ? '+' : ''}`}
         </p>
       </div>
       
@@ -626,6 +682,32 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         </div>
       </div>
       
+      {/* Filter tabs */}
+      <div className="px-3 py-1.5 border-b flex-shrink-0 flex gap-1">
+        <Button
+          variant={filterMode === 'all' ? 'default' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs px-3 rounded-full"
+          onClick={() => setFilterMode('all')}
+        >
+          All
+        </Button>
+        <Button
+          variant={filterMode === 'awaiting' ? 'default' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs px-3 rounded-full gap-1"
+          onClick={() => setFilterMode('awaiting')}
+        >
+          <Clock className="h-3 w-3" />
+          Awaiting Reply
+          {unansweredIds.size > 0 && (
+            <Badge variant="destructive" className="h-4 min-w-4 px-1 text-[10px] ml-0.5">
+              {unansweredIds.size}
+            </Badge>
+          )}
+        </Button>
+      </div>
+      
       <ScrollArea className="flex-1">
         <div className="p-1">
           {sortedCustomers.length === 0 && searchQuery ? (
@@ -644,6 +726,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
             const primaryPlatform = customer.messenger_id ? 'messenger' : 'telegram';
             const unreadCount = getUnreadCount(customer);
             const lastMessage = getLastMessage(customer);
+            const waitingBadge = getWaitingBadge(customer);
             
             return (
               <button
@@ -706,6 +789,11 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                     <span className="text-[10px] text-muted-foreground flex-shrink-0 whitespace-nowrap">
                       · {formatRelativeTime(lastMessage?.timestamp || customer.last_message_at) || '—'}
                     </span>
+                    {waitingBadge && (
+                      <span className={cn("text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0", waitingBadge.colorClass)}>
+                        {waitingBadge.label}
+                      </span>
+                    )}
                   </div>
                   {hasBothPlatforms && (
                     <div className="flex gap-1 mt-1">

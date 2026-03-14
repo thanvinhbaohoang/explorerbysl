@@ -1,52 +1,25 @@
 
 
-# Add "Awaiting Response" Filter + Waiting Time Badges
+# Instant Chat Loading with Skeleton/Spinner
 
-## What We're Building
+## Problem
+When clicking a conversation in `/chat`, there's a noticeable unresponsive delay before the chat panel appears. The `ChatPanel` component mounts, then triggers `loadMessages` in a `useEffect`, which first queries linked customers before fetching messages. During this setup time, the UI feels frozen.
 
-Two features to make sure `/start` messages from new clients never get missed:
+## Solution
+Show the `ChatPanel` immediately on click with a loading state, so the transition feels instant. The existing loading spinner inside `ChatPanel` already works once `isLoadingMessages` is true -- the issue is that the state starts as `false` and only becomes `true` after the `useEffect` fires and `loadMessages` begins.
 
-1. **"Awaiting Response" filter tab** — a toggle at the top of the chat list that filters to only show conversations where no employee has ever replied. This surfaces all unresponded `/start` chats instantly.
-
-2. **Waiting time badge** — a color-coded timer on each conversation showing how long the customer has been waiting since their last message (only when the last message is from the customer). Green < 1h, Yellow < 24h, Red > 24h.
-
-## Technical Plan
-
-### 1. Database: Add RPC function `get_unanswered_customer_ids`
-
-Create a database function that returns customer IDs where no employee message exists. This is more efficient than fetching all messages client-side.
-
-```sql
-CREATE OR REPLACE FUNCTION public.get_unanswered_customer_ids()
-RETURNS TABLE(customer_id uuid)
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = 'public'
-AS $$
-  SELECT DISTINCT m.customer_id
-  FROM messages m
-  WHERE m.customer_id IS NOT NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM messages m2
-      WHERE m2.customer_id = m.customer_id
-        AND m2.sender_type = 'employee'
-    );
-$$;
-```
-
-### 2. UI Changes (`src/components/ChatConversationList.tsx`)
-
-**Filter tabs** — Add a simple toggle row below the search bar with two options: "All" and "Awaiting Reply". When "Awaiting Reply" is active, only show conversations matching the unanswered IDs set.
-
-**Waiting time badge** — For each conversation row, compute waiting time from the last customer message timestamp. Display a small colored badge (e.g., "2h", "1d", "3d") next to the timestamp:
-- Green: < 1 hour
-- Yellow/Amber: 1h–24h  
-- Red: > 24 hours
-
-Only show the badge when the last message `senderType` is `"customer"` (i.e., the ball is in the staff's court).
-
-### Files Changed
+## Changes
 
 | File | Change |
 |------|--------|
-| **Migration SQL** | Add `get_unanswered_customer_ids` RPC function |
-| **`src/components/ChatConversationList.tsx`** | Add filter state + tabs, fetch unanswered IDs, add waiting time badge to each row |
+| `src/hooks/useChatMessages.ts` | Initialize `isLoadingMessages` to `true` instead of `false`, so the spinner shows immediately when the component mounts with a new customer |
+| `src/hooks/useChatMessages.ts` | Add a `useEffect` that resets `isLoadingMessages` to `true` when `selectedCustomer` changes, ensuring the spinner appears instantly on customer switch (before `loadMessages` is even called from ChatPanel) |
+
+## Technical Details
+
+In `useChatMessages.ts`:
+1. Change `useState(false)` to `useState(!!selectedCustomer)` for `isLoadingMessages` -- this ensures the spinner renders on the very first frame when a customer is selected.
+2. Add an effect that watches `selectedCustomer?.id` and sets `isLoadingMessages(true)` immediately, so switching between conversations also shows the spinner without any gap.
+
+The cache check inside `loadMessages` already calls `setIsLoadingMessages(false)` in the `finally` block (and returns early for cached data), so cached conversations will still load near-instantly -- the spinner will flash only briefly or not at all for cached chats.
 
