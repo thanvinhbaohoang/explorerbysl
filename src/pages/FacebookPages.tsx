@@ -599,6 +599,14 @@ const FacebookPages = () => {
                             )}
                           </div>
                         )}
+                        {isAdmin && (
+                          <div className="pt-2 border-t">
+                            <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)} className="gap-1">
+                              <Settings className="h-4 w-4" />
+                              Edit Configuration
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="text-center py-4 space-y-3">
