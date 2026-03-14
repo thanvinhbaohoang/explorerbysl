@@ -70,6 +70,18 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [lastMessages, setLastMessages] = useState<Record<string, { text: string; timestamp: string; senderType?: string; sentByName?: string }>>({});
 
+  // Refs for stable subscription callbacks
+  const allCustomersRef = useRef<Customer[]>([]);
+  const allLinkedPlatformsMapRef = useRef<Record<string, { telegram: boolean; messenger: boolean; linkedIds: string[] }>>({});
+  
+  useEffect(() => {
+    allCustomersRef.current = allCustomers;
+  }, [allCustomers]);
+  
+  useEffect(() => {
+    allLinkedPlatformsMapRef.current = allLinkedPlatformsMap;
+  }, [allLinkedPlatformsMap]);
+
   // Accumulate customers across pages
   useEffect(() => {
     if (customersData?.customers) {
@@ -159,7 +171,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     fetchLastMessages();
   }, [allCustomers]);
 
-  // Real-time subscription for new messages
+  // Real-time subscription for new messages - stable, no allCustomers dependency
   useEffect(() => {
     const channel = supabase
       .channel("chat-list-messages")
@@ -168,10 +180,11 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         { event: "INSERT", schema: "public", table: "messages" },
         (payload) => {
           const newMessage = payload.new as any;
+          const currentCustomers = allCustomersRef.current;
+          const currentLinkedMap = allLinkedPlatformsMapRef.current;
           
           // Update unread count and play sound for customer messages
           if (newMessage.sender_type === "customer") {
-            // Play notification sound
             playMessageNotification();
             
             setUnreadCounts(prev => ({
@@ -180,26 +193,23 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
             }));
             
             // Find customer - check direct match or linked customers
-            let customer = allCustomers.find(c => c.id === newMessage.customer_id);
+            let customer = currentCustomers.find(c => c.id === newMessage.customer_id);
             let parentCustomerId = newMessage.customer_id;
             
-            // If not found directly, check if it's a linked customer
             if (!customer) {
-              for (const [parentId, linkedInfo] of Object.entries(allLinkedPlatformsMap)) {
+              for (const [parentId, linkedInfo] of Object.entries(currentLinkedMap)) {
                 if (linkedInfo.linkedIds.includes(newMessage.customer_id)) {
-                  customer = allCustomers.find(c => c.id === parentId);
+                  customer = currentCustomers.find(c => c.id === parentId);
                   parentCustomerId = parentId;
                   break;
                 }
               }
             }
             
-            // Get customer name
             const customerName = customer?.messenger_name || 
               `${customer?.first_name || ''} ${customer?.last_name || ''}`.trim() || 
               'New Customer';
             
-            // Format message preview (truncate if too long)
             let messagePreview = newMessage.message_text || '';
             if (newMessage.message_type === 'photo') messagePreview = '📷 Photo';
             else if (newMessage.message_type === 'video') messagePreview = '🎥 Video';
@@ -209,18 +219,17 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
               messagePreview = messagePreview.substring(0, 50) + '...';
             }
             
-            // Show improved toast with name and message preview
             toast.success(customerName, {
               description: messagePreview || 'New message',
               icon: <Bell className="h-4 w-4" />,
               action: {
-                label: isOnChatPage ? "View" : "Open Chat",
+                label: "View",
                 onClick: () => {
-                  if (isOnChatPage && customer) {
-                    // Already on chat page with customer loaded - select directly
-                    onSelect(customer);
+                  const latestCustomers = allCustomersRef.current;
+                  const latestCustomer = latestCustomers.find(c => c.id === parentCustomerId);
+                  if (latestCustomer) {
+                    onSelect(latestCustomer);
                   } else {
-                    // Navigate with URL parameter - works even if customer not loaded
                     navigate(`/chat?customer=${parentCustomerId}`);
                   }
                 },
@@ -240,13 +249,41 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
             [newMessage.customer_id]: { text, timestamp: newMessage.timestamp, senderType: newMessage.sender_type, sentByName: newMessage.sent_by_name },
           }));
           
-          refetch();
+          // Update allCustomers locally to set last_message_at for sorting
+          const messageCustomerId = newMessage.customer_id;
+          const messageTimestamp = newMessage.timestamp;
+          
+          setAllCustomers(prev => {
+            // Find if this is a direct customer or linked
+            let parentId = messageCustomerId;
+            for (const [pId, linkedInfo] of Object.entries(allLinkedPlatformsMapRef.current)) {
+              if (linkedInfo.linkedIds.includes(messageCustomerId)) {
+                parentId = pId;
+                break;
+              }
+            }
+            
+            return prev.map(c => {
+              if (c.id === parentId) {
+                return { ...c, last_message_at: messageTimestamp };
+              }
+              return c;
+            });
+          });
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [refetch, allCustomers, isOnChatPage, navigate, onSelect]);
+  }, [navigate, onSelect]);
+
+  // Polling fallback: refetch page 1 every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refetch();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [refetch]);
 
   // Real-time subscription for new customers
   useEffect(() => {
