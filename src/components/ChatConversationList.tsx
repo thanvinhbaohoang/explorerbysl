@@ -785,6 +785,11 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                     <span className="text-[10px] text-muted-foreground flex-shrink-0 whitespace-nowrap">
                       · {formatRelativeTime(lastMessage?.timestamp || customer.last_message_at) || '—'}
                     </span>
+                    {waitingBadge && (
+                      <span className={cn("text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0", waitingBadge.colorClass)}>
+                        {waitingBadge.label}
+                      </span>
+                    )}
                   </div>
                   {hasBothPlatforms && (
                     <div className="flex gap-1 mt-1">
