@@ -244,6 +244,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
         (payload) => {
+          setLastSyncTime(new Date());
           const newMessage = payload.new as any;
           const currentCustomers = allCustomersRef.current;
           const currentLinkedMap = allLinkedPlatformsMapRef.current;
