@@ -317,6 +317,13 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           // Update allCustomers locally to set last_message_at for sorting
           const messageCustomerId = newMessage.customer_id;
           const messageTimestamp = newMessage.timestamp;
+          const isKnownConversation =
+            currentCustomers.some(c => c.id === messageCustomerId) ||
+            Object.values(currentLinkedMap).some(linkedInfo => linkedInfo.linkedIds.includes(messageCustomerId));
+
+          if (!isKnownConversation) {
+            void ensureConversationLoaded(messageCustomerId, messageTimestamp);
+          }
           
           setAllCustomers(prev => {
             // Find if this is a direct customer or linked
