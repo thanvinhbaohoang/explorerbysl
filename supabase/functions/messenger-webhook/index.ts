@@ -8,12 +8,46 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-// System User Token - ONLY used for initial page sync, NOT for messaging
-const systemUserToken = Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN')!;
-// App Secret - REQUIRED for webhook signature verification
-const appSecret = Deno.env.get('FACEBOOK_APP_SECRET');
-// Verify Token - REQUIRED for webhook subscription
-const verifyToken = Deno.env.get('FACEBOOK_VERIFY_TOKEN')!;
+
+// Cache for config values from bot_settings
+const configCache: Map<string, string> = new Map();
+let configCacheTime = 0;
+const CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Helper: read config from bot_settings first, fallback to env var
+async function getConfigValue(supabaseClient: any, key: string, envFallback: string): Promise<string | undefined> {
+  const now = Date.now();
+  
+  // Check cache first
+  if ((now - configCacheTime) < CONFIG_CACHE_TTL && configCache.has(key)) {
+    return configCache.get(key);
+  }
+  
+  // If cache is stale, refresh all config values at once
+  if ((now - configCacheTime) >= CONFIG_CACHE_TTL) {
+    try {
+      const { data } = await supabaseClient
+        .from('bot_settings')
+        .select('key, value')
+        .in('key', ['facebook_app_id', 'facebook_app_secret', 'facebook_system_user_token', 'facebook_verify_token']);
+      
+      configCache.clear();
+      if (data) {
+        for (const row of data) {
+          configCache.set(row.key, row.value);
+        }
+      }
+      configCacheTime = now;
+    } catch (err) {
+      console.error('Error fetching config from bot_settings:', err);
+    }
+  }
+  
+  const dbValue = configCache.get(key);
+  if (dbValue) return dbValue;
+  
+  return Deno.env.get(envFallback) || undefined;
+}
 
 // Cache for page access tokens (from DB only)
 let pageTokensCache: Map<string, string> = new Map();
@@ -22,14 +56,28 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Log configuration status on startup
-console.log('=== Messenger Webhook Configuration ===');
-console.log('SUPABASE_URL:', supabaseUrl ? '✓ Set' : '✗ Missing');
-console.log('SUPABASE_SERVICE_ROLE_KEY:', supabaseServiceKey ? '✓ Set' : '✗ Missing');
-console.log('FACEBOOK_SYSTEM_USER_TOKEN:', systemUserToken ? `✓ Set (length: ${systemUserToken.length})` : '✗ Missing');
-console.log('FACEBOOK_APP_SECRET:', appSecret ? `✓ Set (length: ${appSecret.length})` : '✗ Missing - Signature verification DISABLED');
-console.log('FACEBOOK_VERIFY_TOKEN:', verifyToken ? '✓ Set' : '✗ Missing');
-console.log('======================================');
+// Resolve config values (DB-first with env fallback)
+let systemUserToken: string | undefined;
+let appSecret: string | undefined;
+let verifyToken: string | undefined;
+
+async function initConfig() {
+  systemUserToken = await getConfigValue(supabase, 'facebook_system_user_token', 'FACEBOOK_SYSTEM_USER_TOKEN');
+  appSecret = await getConfigValue(supabase, 'facebook_app_secret', 'FACEBOOK_APP_SECRET');
+  verifyToken = await getConfigValue(supabase, 'facebook_verify_token', 'FACEBOOK_VERIFY_TOKEN');
+  
+  // Log configuration status
+  console.log('=== Messenger Webhook Configuration ===');
+  console.log('SUPABASE_URL:', supabaseUrl ? '✓ Set' : '✗ Missing');
+  console.log('SUPABASE_SERVICE_ROLE_KEY:', supabaseServiceKey ? '✓ Set' : '✗ Missing');
+  console.log('FACEBOOK_SYSTEM_USER_TOKEN:', systemUserToken ? `✓ Set (length: ${systemUserToken.length})` : '✗ Missing');
+  console.log('FACEBOOK_APP_SECRET:', appSecret ? `✓ Set (length: ${appSecret.length})` : '✗ Missing - Signature verification DISABLED');
+  console.log('FACEBOOK_VERIFY_TOKEN:', verifyToken ? '✓ Set' : '✗ Missing');
+  console.log('======================================');
+}
+
+// Initialize config on startup
+initConfig();
 
 // Fetch page tokens from database ONLY - no fallback to API
 async function fetchPageTokens(): Promise<Map<string, string>> {
