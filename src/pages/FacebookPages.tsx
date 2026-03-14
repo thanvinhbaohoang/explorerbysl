@@ -884,7 +884,7 @@ const FacebookPages = () => {
 
               {/* Facebook Configuration Dialog - Admin Only */}
               <Dialog open={fbConfigDialogOpen} onOpenChange={setFbConfigDialogOpen}>
-                <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Settings className="h-5 w-5" />
