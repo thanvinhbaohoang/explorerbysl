@@ -692,7 +692,7 @@ const FacebookPages = () => {
                       <div className="text-center py-4">
                         <div className="text-muted-foreground text-sm mb-3">No system user info available</div>
                         {isAdmin && (
-                          <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)}>
+                          <Button variant="outline" size="sm" onClick={() => { setConfigDialogMode('system'); setFbConfigDialogOpen(true); }}>
                             <Settings className="h-4 w-4 mr-2" />
                             Configure System User
                           </Button>
