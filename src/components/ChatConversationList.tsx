@@ -82,6 +82,67 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     allLinkedPlatformsMapRef.current = allLinkedPlatformsMap;
   }, [allLinkedPlatformsMap]);
 
+  // Ensure a conversation is loaded even when the message comes from a customer not in current pages
+  const ensureConversationLoaded = useCallback(async (messageCustomerId: string, messageTimestamp: string) => {
+    const currentCustomers = allCustomersRef.current;
+    const currentLinkedMap = allLinkedPlatformsMapRef.current;
+
+    const existsDirectly = currentCustomers.some(c => c.id === messageCustomerId);
+    const existsAsLinked = Object.values(currentLinkedMap).some(linked => linked.linkedIds.includes(messageCustomerId));
+    if (existsDirectly || existsAsLinked) return;
+
+    const { data: sourceCustomer, error: sourceError } = await supabase
+      .from("customer")
+      .select("*")
+      .eq("id", messageCustomerId)
+      .maybeSingle();
+
+    if (sourceError || !sourceCustomer) return;
+
+    const parentCustomerId = sourceCustomer.linked_customer_id ?? sourceCustomer.id;
+
+    let parentCustomer = sourceCustomer as Customer;
+    if (sourceCustomer.linked_customer_id) {
+      const { data: fetchedParent, error: parentError } = await supabase
+        .from("customer")
+        .select("*")
+        .eq("id", parentCustomerId)
+        .maybeSingle();
+
+      if (parentError || !fetchedParent) return;
+      parentCustomer = fetchedParent as Customer;
+    }
+
+    const { data: linkedCustomers } = await supabase
+      .from("customer")
+      .select("id, telegram_id, messenger_id")
+      .eq("linked_customer_id", parentCustomerId);
+
+    const linkedIds = linkedCustomers?.map(c => c.id) || [];
+    const hasTelegram = parentCustomer.telegram_id !== null || (linkedCustomers?.some(c => c.telegram_id !== null) ?? false);
+    const hasMessenger = parentCustomer.messenger_id !== null || (linkedCustomers?.some(c => c.messenger_id !== null) ?? false);
+
+    setAllLinkedPlatformsMap(prev => ({
+      ...prev,
+      [parentCustomerId]: {
+        telegram: hasTelegram,
+        messenger: hasMessenger,
+        linkedIds,
+      },
+    }));
+
+    setAllCustomers(prev => {
+      const existing = prev.find(c => c.id === parentCustomerId);
+      const merged: Customer = {
+        ...(existing || parentCustomer),
+        ...parentCustomer,
+        last_message_at: messageTimestamp,
+      };
+
+      return [merged, ...prev.filter(c => c.id !== parentCustomerId)];
+    });
+  }, []);
+
   // Accumulate customers across pages
   useEffect(() => {
     if (customersData?.customers) {
