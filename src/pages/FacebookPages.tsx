@@ -960,7 +960,7 @@ const FacebookPages = () => {
                             value={fbConfig.facebook_system_user_token}
                             onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_system_user_token: e.target.value }))}
                             placeholder="••••••••••••••••"
-                            className="pr-10"
+                            className="pr-10 placeholder:text-muted-foreground/40"
                           />
                           <button
                             type="button"
