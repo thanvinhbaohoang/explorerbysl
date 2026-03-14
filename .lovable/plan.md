@@ -1,25 +1,40 @@
 
 
-# Instant Chat Loading with Skeleton/Spinner
+# Fix: Conversation List Not Updating on New Messages
 
-## Problem
-When clicking a conversation in `/chat`, there's a noticeable unresponsive delay before the chat panel appears. The `ChatPanel` component mounts, then triggers `loadMessages` in a `useEffect`, which first queries linked customers before fetching messages. During this setup time, the UI feels frozen.
+## Root Cause Analysis
 
-## Solution
-Show the `ChatPanel` immediately on click with a loading state, so the transition feels instant. The existing loading spinner inside `ChatPanel` already works once `isLoadingMessages` is true -- the issue is that the state starts as `false` and only becomes `true` after the `useEffect` fires and `loadMessages` begins.
+After reading `ChatConversationList.tsx` and `useCustomersData.ts`, I found two issues causing conversations not to pop to the top on new messages:
 
-## Changes
+1. **Stale closure / frequent re-subscription**: The realtime subscription (line 163) includes `allCustomers` in its dependency array (line 249). Every time `allCustomers` changes (page loads, refetches), the subscription is torn down and recreated. During that gap, events can be missed entirely.
 
-| File | Change |
-|------|--------|
-| `src/hooks/useChatMessages.ts` | Initialize `isLoadingMessages` to `true` instead of `false`, so the spinner shows immediately when the component mounts with a new customer |
-| `src/hooks/useChatMessages.ts` | Add a `useEffect` that resets `isLoadingMessages` to `true` when `selectedCustomer` changes, ensuring the spinner appears instantly on customer switch (before `loadMessages` is even called from ChatPanel) |
+2. **`refetch()` doesn't reliably update the list**: When `refetch()` is called on new message, it refetches whatever page the user has scrolled to (not page 1). Even if it does refetch page 1, the customer's `last_message_at` in the database might not have been updated yet by the time the refetch query runs.
 
-## Technical Details
+3. **No local `last_message_at` update**: While `lastMessages` state is updated (for preview text), the actual `customer.last_message_at` field in `allCustomers` is never updated locally. The sorting does use `lastMessages` timestamps as primary, but any stale closure or missed subscription event means the list stays frozen.
 
-In `useChatMessages.ts`:
-1. Change `useState(false)` to `useState(!!selectedCustomer)` for `isLoadingMessages` -- this ensures the spinner renders on the very first frame when a customer is selected.
-2. Add an effect that watches `selectedCustomer?.id` and sets `isLoadingMessages(true)` immediately, so switching between conversations also shows the spinner without any gap.
+## Planned Changes
 
-The cache check inside `loadMessages` already calls `setIsLoadingMessages(false)` in the `finally` block (and returns early for cached data), so cached conversations will still load near-instantly -- the spinner will flash only briefly or not at all for cached chats.
+### `src/components/ChatConversationList.tsx`
+
+| Change | Why |
+|--------|-----|
+| Use `useRef` for `allCustomers` inside subscription callbacks instead of the state directly in the dependency array | Prevents subscription from being recreated on every customer list change, eliminating the event-missing gap |
+| Remove `allCustomers` from the realtime message subscription dependency array | Keeps a single stable subscription that doesn't reconnect |
+| Add a polling fallback: refetch page 1 every 30 seconds | Catches any events missed by Realtime, ensuring the list eventually updates even if WebSocket drops silently |
+| On new message, also update `allCustomers` locally to set `last_message_at` | Ensures sorting works even without relying on refetch |
+
+### Technical Detail
+
+```text
+Current flow (broken):
+  New message → subscription fires → updates lastMessages → calls refetch()
+  BUT: subscription recreates on allCustomers change → misses events in gap
+  AND: refetch() may fetch wrong page or race with DB update
+
+Fixed flow:
+  New message → stable subscription fires → updates lastMessages + allCustomers locally
+  Polling fallback every 30s → refetches page 1 → catches anything missed
+```
+
+The key fix is using a ref (`allCustomersRef`) so the subscription callback can access the latest customers without needing `allCustomers` as a dependency, keeping the channel stable and persistent.
 
