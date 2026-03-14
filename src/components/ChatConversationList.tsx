@@ -347,7 +347,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [navigate, onSelect]);
+  }, [ensureConversationLoaded, navigate, onSelect]);
 
   // Polling fallback: refetch page 1 every 30 seconds
   useEffect(() => {
