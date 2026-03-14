@@ -651,7 +651,11 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           </TooltipProvider>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {searchQuery ? `${sortedCustomers.length} of ${allCustomers.length}` : `${allCustomers.length} customers${hasMore ? '+' : ''}`}
+          {filterMode === 'awaiting' 
+            ? `${sortedCustomers.length} awaiting reply`
+            : searchQuery 
+              ? `${sortedCustomers.length} of ${allCustomers.length}` 
+              : `${allCustomers.length} customers${hasMore ? '+' : ''}`}
         </p>
       </div>
       
