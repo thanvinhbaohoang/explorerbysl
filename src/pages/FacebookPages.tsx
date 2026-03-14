@@ -988,7 +988,6 @@ const FacebookPages = () => {
                   )}
                 </DialogContent>
               </Dialog>
-              )}
             </div>
           </TabsContent>
 
