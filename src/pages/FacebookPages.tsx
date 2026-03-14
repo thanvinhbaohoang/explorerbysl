@@ -688,7 +688,23 @@ const FacebookPages = () => {
                         )}
                       </div>
                     ) : (
-                      <div className="text-muted-foreground text-sm">No system user info available</div>
+                      <div className="text-center py-4">
+                        <div className="text-muted-foreground text-sm mb-3">No system user info available</div>
+                        {isAdmin && (
+                          <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)}>
+                            <Settings className="h-4 w-4 mr-2" />
+                            Configure System User
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                    {isAdmin && systemUserInfo && (
+                      <div className="mt-4 pt-4 border-t">
+                        <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)}>
+                          <Settings className="h-4 w-4 mr-2" />
+                          Edit Configuration
+                        </Button>
+                      </div>
                     )}
                   </CardContent>
                 </Card>
