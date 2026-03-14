@@ -362,6 +362,17 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     return () => { supabase.removeChannel(channel); };
   }, [ensureConversationLoaded, navigate, onSelect]);
 
+  // Fetch unanswered customer IDs
+  useEffect(() => {
+    const fetchUnanswered = async () => {
+      const { data, error } = await supabase.rpc('get_unanswered_customer_ids');
+      if (!error && data) {
+        setUnansweredIds(new Set(data.map((r: { customer_id: string }) => r.customer_id)));
+      }
+    };
+    fetchUnanswered();
+  }, [allCustomers.length]);
+
   // Polling fallback: refetch page 1 every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
