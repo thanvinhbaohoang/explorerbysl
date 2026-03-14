@@ -722,6 +722,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
             const primaryPlatform = customer.messenger_id ? 'messenger' : 'telegram';
             const unreadCount = getUnreadCount(customer);
             const lastMessage = getLastMessage(customer);
+            const waitingBadge = getWaitingBadge(customer);
             
             return (
               <button
