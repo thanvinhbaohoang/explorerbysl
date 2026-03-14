@@ -267,10 +267,6 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
               }
             }
 
-            // If customer is not in current loaded pages, fetch and inject it immediately
-            if (!customer) {
-              void ensureConversationLoaded(newMessage.customer_id, newMessage.timestamp);
-            }
             const customerName = customer?.messenger_name || 
               `${customer?.first_name || ''} ${customer?.last_name || ''}`.trim() || 
               'New Customer';
