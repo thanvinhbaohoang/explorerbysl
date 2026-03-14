@@ -973,6 +973,8 @@ const FacebookPages = () => {
                   </CardContent>
                 </Card>
               )}
+            </div>
+          </TabsContent>
 
           {/* Telegram Bot Tab */}
           <TabsContent value="telegram-bot">
