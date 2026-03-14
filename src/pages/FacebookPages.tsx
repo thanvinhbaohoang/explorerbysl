@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings, Download, Bot, Webhook, Save, Loader2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings, Download, Bot, Webhook, Save, Loader2, Eye, EyeOff, Info } from "lucide-react";
 import { exportToCSV } from "@/lib/csv-export";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
@@ -109,6 +112,18 @@ const FacebookPages = () => {
   const [welcomeMessageLoading, setWelcomeMessageLoading] = useState(false);
   const [savingMessage, setSavingMessage] = useState(false);
   const [settingWebhook, setSettingWebhook] = useState(false);
+
+  // Facebook config state
+  const [fbConfig, setFbConfig] = useState({
+    facebook_app_id: '',
+    facebook_app_secret: '',
+    facebook_system_user_token: '',
+    facebook_verify_token: '',
+  });
+  const [fbConfigLoading, setFbConfigLoading] = useState(false);
+  const [fbConfigSaving, setFbConfigSaving] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const [showToken, setShowToken] = useState(false);
   
   // Fetch database pages for token management
   const fetchDbPages = async () => {
@@ -327,10 +342,73 @@ const FacebookPages = () => {
     }
   };
 
+  // Facebook config functions
+  const fetchFbConfig = async () => {
+    setFbConfigLoading(true);
+    try {
+      const keys = ['facebook_app_id', 'facebook_app_secret', 'facebook_system_user_token', 'facebook_verify_token'];
+      const { data, error } = await supabase
+        .from('bot_settings')
+        .select('key, value')
+        .in('key', keys);
+      
+      if (error) throw error;
+      if (data) {
+        const config = { ...fbConfig };
+        data.forEach(row => {
+          if (row.key in config) {
+            (config as any)[row.key] = row.value;
+          }
+        });
+        setFbConfig(config);
+      }
+    } catch (err: any) {
+      console.error('Error fetching FB config:', err);
+    } finally {
+      setFbConfigLoading(false);
+    }
+  };
+
+  const saveFbConfig = async () => {
+    setFbConfigSaving(true);
+    try {
+      const entries = Object.entries(fbConfig).filter(([_, v]) => v.trim() !== '');
+      
+      for (const [key, value] of entries) {
+        const { data: existing } = await supabase
+          .from('bot_settings')
+          .select('id')
+          .eq('key', key)
+          .maybeSingle();
+        
+        if (existing) {
+          const { error } = await supabase
+            .from('bot_settings')
+            .update({ value, updated_at: new Date().toISOString(), updated_by: user?.id })
+            .eq('key', key);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('bot_settings')
+            .insert({ key, value, updated_by: user?.id });
+          if (error) throw error;
+        }
+      }
+      
+      toast.success('Facebook configuration saved successfully');
+    } catch (err: any) {
+      console.error('Error saving FB config:', err);
+      toast.error('Failed to save configuration');
+    } finally {
+      setFbConfigSaving(false);
+    }
+  };
+
   useEffect(() => {
     fetchPages();
     fetchAppInfo();
     fetchDbPages();
+    fetchFbConfig();
   }, []);
 
   return (
@@ -766,6 +844,132 @@ const FacebookPages = () => {
                         </div>
                       ))}
                     </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Facebook Configuration Editor - Admin Only */}
+              {isAdmin && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Settings className="h-5 w-5" />
+                      Facebook Configuration
+                      <Badge variant="secondary" className="ml-2">Admin Only</Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      Configure your Facebook App credentials. Update these after completing Facebook App Verification.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {fbConfigLoading ? (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading configuration...
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        <Alert>
+                          <Shield className="h-4 w-4" />
+                          <AlertDescription>
+                            These credentials are stored securely in the database and used by the webhook to communicate with Facebook. Only admins can view or modify them.
+                          </AlertDescription>
+                        </Alert>
+
+                        {/* Facebook App ID */}
+                        <div className="space-y-2">
+                          <Label htmlFor="fb-app-id" className="font-medium">Facebook App ID</Label>
+                          <Input
+                            id="fb-app-id"
+                            value={fbConfig.facebook_app_id}
+                            onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_app_id: e.target.value }))}
+                            placeholder="123456789012345"
+                          />
+                          <p className="text-xs text-muted-foreground flex items-start gap-1">
+                            <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                            Found in your <strong>Facebook App Dashboard → Settings → Basic</strong>. A numeric ID like <code className="bg-muted px-1 rounded">123456789012345</code>.
+                          </p>
+                        </div>
+
+                        {/* Facebook App Secret */}
+                        <div className="space-y-2">
+                          <Label htmlFor="fb-app-secret" className="font-medium">Facebook App Secret</Label>
+                          <div className="relative">
+                            <Input
+                              id="fb-app-secret"
+                              type={showSecret ? 'text' : 'password'}
+                              value={fbConfig.facebook_app_secret}
+                              onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_app_secret: e.target.value }))}
+                              placeholder="••••••••••••••••"
+                              className="pr-10"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowSecret(!showSecret)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            >
+                              {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
+                          <p className="text-xs text-muted-foreground flex items-start gap-1">
+                            <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                            Found in <strong>App Dashboard → Settings → Basic → App Secret</strong>. Click "Show" to reveal it. Used to verify webhook signatures. Never share this publicly.
+                          </p>
+                        </div>
+
+                        {/* System User Token */}
+                        <div className="space-y-2">
+                          <Label htmlFor="fb-sys-token" className="font-medium">System User Token</Label>
+                          <div className="relative">
+                            <Input
+                              id="fb-sys-token"
+                              type={showToken ? 'text' : 'password'}
+                              value={fbConfig.facebook_system_user_token}
+                              onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_system_user_token: e.target.value }))}
+                              placeholder="••••••••••••••••"
+                              className="pr-10"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowToken(!showToken)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            >
+                              {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
+                          <p className="text-xs text-muted-foreground flex items-start gap-1">
+                            <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                            Generated in <strong>Business Settings → System Users → select user → Generate Token</strong>. Must have these permissions: <code className="bg-muted px-1 rounded">pages_messaging</code>, <code className="bg-muted px-1 rounded">pages_read_engagement</code>, and <code className="bg-muted px-1 rounded">pages_manage_metadata</code>.
+                          </p>
+                        </div>
+
+                        {/* Webhook Verify Token */}
+                        <div className="space-y-2">
+                          <Label htmlFor="fb-verify-token" className="font-medium">Webhook Verify Token</Label>
+                          <Input
+                            id="fb-verify-token"
+                            value={fbConfig.facebook_verify_token}
+                            onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_verify_token: e.target.value }))}
+                            placeholder="my-custom-verify-token"
+                          />
+                          <p className="text-xs text-muted-foreground flex items-start gap-1">
+                            <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                            A custom string you create. Must match <strong>exactly</strong> what you entered in <strong>Facebook App Dashboard → Webhooks → Verify Token</strong> field.
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-2">
+                          <Button onClick={saveFbConfig} disabled={fbConfigSaving}>
+                            {fbConfigSaving ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <Save className="h-4 w-4 mr-2" />
+                            )}
+                            {fbConfigSaving ? 'Saving...' : 'Save Configuration'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}
