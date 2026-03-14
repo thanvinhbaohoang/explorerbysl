@@ -69,6 +69,10 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [lastMessages, setLastMessages] = useState<Record<string, { text: string; timestamp: string; senderType?: string; sentByName?: string }>>({});
+  
+  // Realtime status tracking
+  const [realtimeStatus, setRealtimeStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
   // Refs for stable subscription callbacks
   const allCustomersRef = useRef<Customer[]>([]);
