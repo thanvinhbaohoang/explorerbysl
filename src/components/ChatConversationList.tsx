@@ -417,7 +417,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     });
   }, [allCustomers, searchQuery]);
 
-  // Sort customers: unread first, then by last activity (using real-time lastMessages)
+  // Sort customers by last message time (newest first) — Instagram/Messenger style
   const sortedCustomers = useMemo(() => {
     // Helper to get latest timestamp from real-time lastMessages state
     const getLatestTime = (customerId: string, linkedIds: string[]): number => {
@@ -436,21 +436,15 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     return [...filteredBySearch].sort((a, b) => {
       const linkedIdsA = allLinkedPlatformsMap[a.id]?.linkedIds || [];
       const linkedIdsB = allLinkedPlatformsMap[b.id]?.linkedIds || [];
-      const aUnread = [a.id, ...linkedIdsA].reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
-      const bUnread = [b.id, ...linkedIdsB].reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
       
-      // Unread first
-      if (aUnread > 0 && bUnread === 0) return -1;
-      if (bUnread > 0 && aUnread === 0) return 1;
-      
-      // Use real-time timestamps, fall back to database value
+      // Pure timestamp sorting — no unread priority
       const aTime = getLatestTime(a.id, linkedIdsA) || 
                     (a.last_message_at ? new Date(a.last_message_at).getTime() : 0);
       const bTime = getLatestTime(b.id, linkedIdsB) || 
                     (b.last_message_at ? new Date(b.last_message_at).getTime() : 0);
       return bTime - aTime;
     });
-  }, [filteredBySearch, unreadCounts, allLinkedPlatformsMap, lastMessages]);
+  }, [filteredBySearch, allLinkedPlatformsMap, lastMessages]);
 
   // Format time for conversation list - show actual time so staff can tell when last message was
   const formatRelativeTime = (dateString: string | null) => {
