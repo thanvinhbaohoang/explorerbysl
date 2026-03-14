@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
@@ -126,6 +127,7 @@ const FacebookPages = () => {
   const [showSecret, setShowSecret] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [fbConfigDialogOpen, setFbConfigDialogOpen] = useState(false);
+  const [configDialogMode, setConfigDialogMode] = useState<'app' | 'system'>('app');
   
   // Fetch database pages for token management
   const fetchDbPages = async () => {
@@ -601,7 +603,7 @@ const FacebookPages = () => {
                         )}
                         {isAdmin && (
                           <div className="pt-2 border-t">
-                            <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)} className="gap-1">
+                            <Button variant="outline" size="sm" onClick={() => { setConfigDialogMode('app'); setFbConfigDialogOpen(true); }} className="gap-1">
                               <Settings className="h-4 w-4" />
                               Edit Configuration
                             </Button>
@@ -612,7 +614,7 @@ const FacebookPages = () => {
                       <div className="text-center py-4 space-y-3">
                         <div className="text-muted-foreground text-sm">No app info available</div>
                         {isAdmin && (
-                          <Button onClick={() => setFbConfigDialogOpen(true)} className="gap-2">
+                          <Button onClick={() => { setConfigDialogMode('app'); setFbConfigDialogOpen(true); }} className="gap-2">
                             <Settings className="h-4 w-4" />
                             Configure App
                           </Button>
@@ -691,7 +693,7 @@ const FacebookPages = () => {
                       <div className="text-center py-4">
                         <div className="text-muted-foreground text-sm mb-3">No system user info available</div>
                         {isAdmin && (
-                          <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)}>
+                          <Button variant="outline" size="sm" onClick={() => { setConfigDialogMode('system'); setFbConfigDialogOpen(true); }}>
                             <Settings className="h-4 w-4 mr-2" />
                             Configure System User
                           </Button>
@@ -700,7 +702,7 @@ const FacebookPages = () => {
                     )}
                     {isAdmin && systemUser && (
                       <div className="mt-4 pt-4 border-t">
-                        <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)}>
+                        <Button variant="outline" size="sm" onClick={() => { setConfigDialogMode('system'); setFbConfigDialogOpen(true); }}>
                           <Settings className="h-4 w-4 mr-2" />
                           Edit Configuration
                         </Button>
@@ -884,14 +886,16 @@ const FacebookPages = () => {
 
               {/* Facebook Configuration Dialog - Admin Only */}
               <Dialog open={fbConfigDialogOpen} onOpenChange={setFbConfigDialogOpen}>
-                <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+                <DialogContent className="sm:max-w-md">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Settings className="h-5 w-5" />
-                      Facebook Configuration
+                      {configDialogMode === 'app' ? 'App Configuration' : 'System User Configuration'}
                     </DialogTitle>
                     <DialogDescription>
-                      Configure your Facebook App credentials. Update these after completing Facebook App Verification.
+                      {configDialogMode === 'app'
+                        ? 'Configure your Facebook App credentials.'
+                        : 'Configure your System User token and webhook settings.'}
                     </DialogDescription>
                   </DialogHeader>
                   {fbConfigLoading ? (
@@ -901,99 +905,122 @@ const FacebookPages = () => {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <Alert>
-                        <Shield className="h-4 w-4" />
-                        <AlertDescription>
-                          These credentials are stored securely in the database and used by the webhook to communicate with Facebook. Only admins can view or modify them.
-                        </AlertDescription>
-                      </Alert>
+                      {configDialogMode === 'app' ? (
+                        <>
+                          {/* Facebook App ID */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="fb-app-id" className="font-medium text-sm">App ID</Label>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-[260px] text-xs">
+                                  Found in <strong>App Dashboard → Settings → Basic</strong>. A numeric ID like 123456789012345.
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                            <Input
+                              id="fb-app-id"
+                              value={fbConfig.facebook_app_id}
+                              onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_app_id: e.target.value }))}
+                              placeholder="123456789012345"
+                              className="placeholder:text-muted-foreground/40"
+                            />
+                          </div>
 
-                      {/* Facebook App ID */}
-                      <div className="space-y-2">
-                        <Label htmlFor="fb-app-id" className="font-medium">Facebook App ID</Label>
-                        <Input
-                          id="fb-app-id"
-                          value={fbConfig.facebook_app_id}
-                          onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_app_id: e.target.value }))}
-                          placeholder="123456789012345"
-                          className="placeholder:text-muted-foreground/40"
-                        />
-                        <p className="text-xs text-muted-foreground flex items-start gap-1">
-                          <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                          Found in your <strong>Facebook App Dashboard → Settings → Basic</strong>. A numeric ID like <code className="bg-muted px-1 rounded">123456789012345</code>.
-                        </p>
-                      </div>
+                          {/* Facebook App Secret */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="fb-app-secret" className="font-medium text-sm">App Secret</Label>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-[260px] text-xs">
+                                  Found in <strong>App Dashboard → Settings → Basic → App Secret</strong>. Never share publicly.
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                            <div className="relative">
+                              <Input
+                                id="fb-app-secret"
+                                type={showSecret ? 'text' : 'password'}
+                                value={fbConfig.facebook_app_secret}
+                                onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_app_secret: e.target.value }))}
+                                placeholder="••••••••••••••••"
+                                className="pr-10 placeholder:text-muted-foreground/40"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowSecret(!showSecret)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                              >
+                                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </button>
+                            </div>
+                          </div>
 
-                      {/* Facebook App Secret */}
-                      <div className="space-y-2">
-                        <Label htmlFor="fb-app-secret" className="font-medium">Facebook App Secret</Label>
-                        <div className="relative">
-                          <Input
-                            id="fb-app-secret"
-                            type={showSecret ? 'text' : 'password'}
-                            value={fbConfig.facebook_app_secret}
-                            onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_app_secret: e.target.value }))}
-                            placeholder="••••••••••••••••"
-                            className="pr-10 placeholder:text-muted-foreground/40"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowSecret(!showSecret)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          >
-                            {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                        </div>
-                        <p className="text-xs text-muted-foreground flex items-start gap-1">
-                          <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                          Found in <strong>App Dashboard → Settings → Basic → App Secret</strong>. Click "Show" to reveal it. Never share this publicly.
-                        </p>
-                      </div>
-
-                      {/* System User Token */}
-                      <div className="space-y-2">
-                        <Label htmlFor="fb-sys-token" className="font-medium">System User Token</Label>
-                        <div className="relative">
-                          <Input
-                            id="fb-sys-token"
-                            type={showToken ? 'text' : 'password'}
-                            value={fbConfig.facebook_system_user_token}
-                            onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_system_user_token: e.target.value }))}
-                            placeholder="••••••••••••••••"
-                            className="pr-10 placeholder:text-muted-foreground/40"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowToken(!showToken)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          >
-                            {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                        </div>
-                        <p className="text-xs text-muted-foreground flex items-start gap-1">
-                          <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                          Generated in <strong>Business Settings → System Users → select user → Generate Token</strong>. Must have: <code className="bg-muted px-1 rounded">pages_messaging</code>, <code className="bg-muted px-1 rounded">pages_read_engagement</code>, <code className="bg-muted px-1 rounded">pages_manage_metadata</code>.
-                        </p>
-                      </div>
-
-                      {/* Webhook Verify Token */}
-                      <div className="space-y-2">
-                        <Label htmlFor="fb-verify-token" className="font-medium">Webhook Verify Token</Label>
-                        <Input
-                          id="fb-verify-token"
-                          value={fbConfig.facebook_verify_token}
-                          onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_verify_token: e.target.value }))}
-                          placeholder="my-custom-verify-token"
-                          className="placeholder:text-muted-foreground/40"
-                        />
-                        <p className="text-xs text-muted-foreground flex items-start gap-1">
-                          <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                          A custom string you create. Must match <strong>exactly</strong> what you entered in <strong>Facebook App Dashboard → Webhooks → Verify Token</strong> field.
-                        </p>
-                      </div>
+                          {/* Webhook Verify Token */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="fb-verify-token" className="font-medium text-sm">Verify Token</Label>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-[260px] text-xs">
+                                  A custom string you create. Must match exactly what you entered in <strong>Webhooks → Verify Token</strong>.
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                            <Input
+                              id="fb-verify-token"
+                              value={fbConfig.facebook_verify_token}
+                              onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_verify_token: e.target.value }))}
+                              placeholder="my-custom-verify-token"
+                              className="placeholder:text-muted-foreground/40"
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* System User Token */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="fb-sys-token" className="font-medium text-sm">System User Token</Label>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-[280px] text-xs">
+                                  Generated in <strong>Business Settings → System Users → Generate Token</strong>. Requires: pages_messaging, pages_read_engagement, pages_manage_metadata.
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                            <div className="relative">
+                              <Input
+                                id="fb-sys-token"
+                                type={showToken ? 'text' : 'password'}
+                                value={fbConfig.facebook_system_user_token}
+                                onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_system_user_token: e.target.value }))}
+                                placeholder="••••••••••••••••"
+                                className="pr-10 placeholder:text-muted-foreground/40"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowToken(!showToken)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                              >
+                                {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
 
                       <div className="flex items-center gap-2 pt-2">
-                        <Button onClick={saveFbConfig} disabled={fbConfigSaving}>
+                        <Button onClick={saveFbConfig} disabled={fbConfigSaving} className="w-full">
                           {fbConfigSaving ? (
                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                           ) : (
