@@ -548,6 +548,12 @@ export type Database = {
           timestamp: string
         }[]
       }
+      get_unanswered_customer_ids: {
+        Args: never
+        Returns: {
+          customer_id: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
