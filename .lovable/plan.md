@@ -1,25 +1,29 @@
 
 
-# Instant Chat Loading with Skeleton/Spinner
+# Move Facebook Configuration to a Modal in "Connected App" Card
 
-## Problem
-When clicking a conversation in `/chat`, there's a noticeable unresponsive delay before the chat panel appears. The `ChatPanel` component mounts, then triggers `loadMessages` in a `useEffect`, which first queries linked customers before fetching messages. During this setup time, the UI feels frozen.
+## What Changes
 
-## Solution
-Show the `ChatPanel` immediately on click with a loading state, so the transition feels instant. The existing loading spinner inside `ChatPanel` already works once `isLoadingMessages` is true -- the issue is that the state starts as `false` and only becomes `true` after the `useEffect` fires and `loadMessages` begins.
+Move the Facebook Configuration form (App ID, App Secret, System User Token, Verify Token) from a standalone card at the bottom into a **Dialog/modal** that opens from a button in the **"Connected App" card** — specifically when no app info is available or when admin wants to edit.
 
-## Changes
+## Implementation
 
-| File | Change |
-|------|--------|
-| `src/hooks/useChatMessages.ts` | Initialize `isLoadingMessages` to `true` instead of `false`, so the spinner shows immediately when the component mounts with a new customer |
-| `src/hooks/useChatMessages.ts` | Add a `useEffect` that resets `isLoadingMessages` to `true` when `selectedCustomer` changes, ensuring the spinner appears instantly on customer switch (before `loadMessages` is even called from ChatPanel) |
+### Single file change: `src/pages/FacebookPages.tsx`
 
-## Technical Details
+1. **Add a "Configure App" button** inside the Connected App card:
+   - When `!appInfo` (no app info available): Show a prominent button like "Configure App" instead of the plain "No app info available" text
+   - When `appInfo` exists: Add a small "Edit Configuration" button at the bottom of the card content
+   - Both only visible to admins
 
-In `useChatMessages.ts`:
-1. Change `useState(false)` to `useState(!!selectedCustomer)` for `isLoadingMessages` -- this ensures the spinner renders on the very first frame when a customer is selected.
-2. Add an effect that watches `selectedCustomer?.id` and sets `isLoadingMessages(true)` immediately, so switching between conversations also shows the spinner without any gap.
+2. **Add state** for config dialog: `const [fbConfigDialogOpen, setFbConfigDialogOpen] = useState(false)`
 
-The cache check inside `loadMessages` already calls `setIsLoadingMessages(false)` in the `finally` block (and returns early for cached data), so cached conversations will still load near-instantly -- the spinner will flash only briefly or not at all for cached chats.
+3. **Wrap the existing config form** in a `<Dialog>` component instead of a `<Card>`. The form content (all 4 fields + security alert + save button + field descriptions) stays identical — just moves into `<DialogContent>`.
+
+4. **Remove the standalone "Facebook Configuration" `<Card>`** block (lines 851-975).
+
+5. **Connected App card updates** (lines 519-605):
+   - When `!appInfo`: Replace "No app info available" with a call-to-action button + brief explanation text
+   - When `appInfo` exists: Add an "Edit Configuration" icon button for admins
+
+### No other files change. No database changes.
 
