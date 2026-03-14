@@ -126,6 +126,7 @@ const FacebookPages = () => {
   const [showSecret, setShowSecret] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [fbConfigDialogOpen, setFbConfigDialogOpen] = useState(false);
+  const [configDialogMode, setConfigDialogMode] = useState<'app' | 'system'>('app');
   
   // Fetch database pages for token management
   const fetchDbPages = async () => {
