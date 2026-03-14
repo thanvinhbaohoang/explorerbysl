@@ -571,7 +571,39 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   return (
     <div className="h-full flex flex-col md:border-r bg-background">
       <div className="p-4 border-b flex-shrink-0">
-        <h2 className="font-semibold">Conversations</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">Conversations</h2>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className={cn(
+                  "flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium",
+                  realtimeStatus === 'connected' 
+                    ? "bg-emerald-500/10 text-emerald-600" 
+                    : realtimeStatus === 'connecting'
+                    ? "bg-amber-500/10 text-amber-600"
+                    : "bg-destructive/10 text-destructive"
+                )}>
+                  <span className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    realtimeStatus === 'connected' 
+                      ? "bg-emerald-500 animate-pulse" 
+                      : realtimeStatus === 'connecting'
+                      ? "bg-amber-500 animate-pulse"
+                      : "bg-destructive"
+                  )} />
+                  {realtimeStatus === 'connected' ? 'Live' : realtimeStatus === 'connecting' ? '...' : 'Offline'}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                <p>{realtimeStatus === 'connected' ? 'Realtime connected' : realtimeStatus === 'connecting' ? 'Connecting...' : 'Disconnected — using polling fallback'}</p>
+                {lastSyncTime && (
+                  <p className="text-muted-foreground">Last synced: {lastSyncTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
         <p className="text-xs text-muted-foreground mt-0.5">
           {searchQuery ? `${sortedCustomers.length} of ${allCustomers.length}` : `${allCustomers.length} customers${hasMore ? '+' : ''}`}
         </p>
