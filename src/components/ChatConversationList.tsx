@@ -458,7 +458,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       return latest;
     };
 
-    return [...filteredBySearch].sort((a, b) => {
+    return [...filteredByMode].sort((a, b) => {
       const linkedIdsA = allLinkedPlatformsMap[a.id]?.linkedIds || [];
       const linkedIdsB = allLinkedPlatformsMap[b.id]?.linkedIds || [];
       
