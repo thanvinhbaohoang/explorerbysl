@@ -602,7 +602,7 @@ const FacebookPages = () => {
                         )}
                         {isAdmin && (
                           <div className="pt-2 border-t">
-                            <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)} className="gap-1">
+                            <Button variant="outline" size="sm" onClick={() => { setConfigDialogMode('app'); setFbConfigDialogOpen(true); }} className="gap-1">
                               <Settings className="h-4 w-4" />
                               Edit Configuration
                             </Button>
