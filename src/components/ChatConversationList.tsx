@@ -678,6 +678,32 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         </div>
       </div>
       
+      {/* Filter tabs */}
+      <div className="px-3 py-1.5 border-b flex-shrink-0 flex gap-1">
+        <Button
+          variant={filterMode === 'all' ? 'default' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs px-3 rounded-full"
+          onClick={() => setFilterMode('all')}
+        >
+          All
+        </Button>
+        <Button
+          variant={filterMode === 'awaiting' ? 'default' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs px-3 rounded-full gap-1"
+          onClick={() => setFilterMode('awaiting')}
+        >
+          <Clock className="h-3 w-3" />
+          Awaiting Reply
+          {unansweredIds.size > 0 && (
+            <Badge variant="destructive" className="h-4 min-w-4 px-1 text-[10px] ml-0.5">
+              {unansweredIds.size}
+            </Badge>
+          )}
+        </Button>
+      </div>
+      
       <ScrollArea className="flex-1">
         <div className="p-1">
           {sortedCustomers.length === 0 && searchQuery ? (
