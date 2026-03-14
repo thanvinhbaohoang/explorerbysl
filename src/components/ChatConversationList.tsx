@@ -71,6 +71,10 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [lastMessages, setLastMessages] = useState<Record<string, { text: string; timestamp: string; senderType?: string; sentByName?: string }>>({});
   
+  // Awaiting reply filter
+  const [filterMode, setFilterMode] = useState<'all' | 'awaiting'>('all');
+  const [unansweredIds, setUnansweredIds] = useState<Set<string>>(new Set());
+  
   // Realtime status tracking
   const [realtimeStatus, setRealtimeStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
