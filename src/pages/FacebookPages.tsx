@@ -688,7 +688,23 @@ const FacebookPages = () => {
                         )}
                       </div>
                     ) : (
-                      <div className="text-muted-foreground text-sm">No system user info available</div>
+                      <div className="text-center py-4">
+                        <div className="text-muted-foreground text-sm mb-3">No system user info available</div>
+                        {isAdmin && (
+                          <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)}>
+                            <Settings className="h-4 w-4 mr-2" />
+                            Configure System User
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                    {isAdmin && systemUser && (
+                      <div className="mt-4 pt-4 border-t">
+                        <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)}>
+                          <Settings className="h-4 w-4 mr-2" />
+                          Edit Configuration
+                        </Button>
+                      </div>
                     )}
                   </CardContent>
                 </Card>
@@ -868,7 +884,7 @@ const FacebookPages = () => {
 
               {/* Facebook Configuration Dialog - Admin Only */}
               <Dialog open={fbConfigDialogOpen} onOpenChange={setFbConfigDialogOpen}>
-                <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                       <Settings className="h-5 w-5" />
@@ -884,7 +900,7 @@ const FacebookPages = () => {
                       Loading configuration...
                     </div>
                   ) : (
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                       <Alert>
                         <Shield className="h-4 w-4" />
                         <AlertDescription>
@@ -900,6 +916,7 @@ const FacebookPages = () => {
                           value={fbConfig.facebook_app_id}
                           onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_app_id: e.target.value }))}
                           placeholder="123456789012345"
+                          className="placeholder:text-muted-foreground/40"
                         />
                         <p className="text-xs text-muted-foreground flex items-start gap-1">
                           <Info className="h-3 w-3 mt-0.5 shrink-0" />
@@ -917,7 +934,7 @@ const FacebookPages = () => {
                             value={fbConfig.facebook_app_secret}
                             onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_app_secret: e.target.value }))}
                             placeholder="••••••••••••••••"
-                            className="pr-10"
+                            className="pr-10 placeholder:text-muted-foreground/40"
                           />
                           <button
                             type="button"
@@ -943,7 +960,7 @@ const FacebookPages = () => {
                             value={fbConfig.facebook_system_user_token}
                             onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_system_user_token: e.target.value }))}
                             placeholder="••••••••••••••••"
-                            className="pr-10"
+                            className="pr-10 placeholder:text-muted-foreground/40"
                           />
                           <button
                             type="button"
@@ -967,6 +984,7 @@ const FacebookPages = () => {
                           value={fbConfig.facebook_verify_token}
                           onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_verify_token: e.target.value }))}
                           placeholder="my-custom-verify-token"
+                          className="placeholder:text-muted-foreground/40"
                         />
                         <p className="text-xs text-muted-foreground flex items-start gap-1">
                           <Info className="h-3 w-3 mt-0.5 shrink-0" />

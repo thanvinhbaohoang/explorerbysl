@@ -1,29 +1,25 @@
 
 
-# Add Config Button to System User Card + Fix Modal Styling
+# Instant Chat Loading with Skeleton/Spinner
 
-## Changes (single file: `src/pages/FacebookPages.tsx`)
+## Problem
+When clicking a conversation in `/chat`, there's a noticeable unresponsive delay before the chat panel appears. The `ChatPanel` component mounts, then triggers `loadMessages` in a `useEffect`, which first queries linked customers before fetching messages. During this setup time, the UI feels frozen.
 
-### 1. System User Card — Add Configure/Edit buttons (mirroring Connected App card)
+## Solution
+Show the `ChatPanel` immediately on click with a loading state, so the transition feels instant. The existing loading spinner inside `ChatPanel` already works once `isLoadingMessages` is true -- the issue is that the state starts as `false` and only becomes `true` after the `useEffect` fires and `loadMessages` begins.
 
-**When no system user info** (line 690-691): Replace plain text with a call-to-action button "Configure System User" that opens the same `fbConfigDialogOpen` dialog.
-
-**When system user exists** (after the business section, around line 688): Add an "Edit Configuration" button for admins, same pattern as the Connected App card.
-
-### 2. Fix Modal Content Fitting
-
-Update the `DialogContent` (line 871) to use proper width and padding:
-- Change `max-w-lg` to `sm:max-w-xl` for more breathing room
-- Add `p-6` padding and `space-y-4` instead of `space-y-6` to tighten spacing
-- Reduce the inner spacing between form fields so everything fits without excessive scrolling
-
-### 3. Fix Placeholder Text Color
-
-The inputs use the default `placeholder:text-muted-foreground` class from the Input component. The `muted-foreground` in both light/dark themes is quite saturated. Add `placeholder:text-muted-foreground/50` or explicit `placeholder:text-gray-400` to the config inputs so placeholders appear properly light and distinguishable from actual values.
-
-### Files Changed
+## Changes
 
 | File | Change |
 |------|--------|
-| `src/pages/FacebookPages.tsx` | Add admin buttons to System User card, fix dialog width/spacing, lighten placeholder colors on config inputs |
+| `src/hooks/useChatMessages.ts` | Initialize `isLoadingMessages` to `true` instead of `false`, so the spinner shows immediately when the component mounts with a new customer |
+| `src/hooks/useChatMessages.ts` | Add a `useEffect` that resets `isLoadingMessages` to `true` when `selectedCustomer` changes, ensuring the spinner appears instantly on customer switch (before `loadMessages` is even called from ChatPanel) |
+
+## Technical Details
+
+In `useChatMessages.ts`:
+1. Change `useState(false)` to `useState(!!selectedCustomer)` for `isLoadingMessages` -- this ensures the spinner renders on the very first frame when a customer is selected.
+2. Add an effect that watches `selectedCustomer?.id` and sets `isLoadingMessages(true)` immediately, so switching between conversations also shows the spinner without any gap.
+
+The cache check inside `loadMessages` already calls `setIsLoadingMessages(false)` in the `finally` block (and returns early for cached data), so cached conversations will still load near-instantly -- the spinner will flash only briefly or not at all for cached chats.
 
