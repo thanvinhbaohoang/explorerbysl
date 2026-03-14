@@ -181,7 +181,7 @@ const Customers = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
-  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [recordedAudio, setRecordedAudio] = useState<{ file: File; url: string } | null>(null);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const [playbackProgress, setPlaybackProgress] = useState(0);
