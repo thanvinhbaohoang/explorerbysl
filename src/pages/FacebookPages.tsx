@@ -701,7 +701,7 @@ const FacebookPages = () => {
                     )}
                     {isAdmin && systemUser && (
                       <div className="mt-4 pt-4 border-t">
-                        <Button variant="outline" size="sm" onClick={() => setFbConfigDialogOpen(true)}>
+                        <Button variant="outline" size="sm" onClick={() => { setConfigDialogMode('system'); setFbConfigDialogOpen(true); }}>
                           <Settings className="h-4 w-4 mr-2" />
                           Edit Configuration
                         </Button>
