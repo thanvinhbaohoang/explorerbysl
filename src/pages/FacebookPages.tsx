@@ -112,6 +112,18 @@ const FacebookPages = () => {
   const [welcomeMessageLoading, setWelcomeMessageLoading] = useState(false);
   const [savingMessage, setSavingMessage] = useState(false);
   const [settingWebhook, setSettingWebhook] = useState(false);
+
+  // Facebook config state
+  const [fbConfig, setFbConfig] = useState({
+    facebook_app_id: '',
+    facebook_app_secret: '',
+    facebook_system_user_token: '',
+    facebook_verify_token: '',
+  });
+  const [fbConfigLoading, setFbConfigLoading] = useState(false);
+  const [fbConfigSaving, setFbConfigSaving] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const [showToken, setShowToken] = useState(false);
   
   // Fetch database pages for token management
   const fetchDbPages = async () => {
