@@ -70,6 +70,18 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [lastMessages, setLastMessages] = useState<Record<string, { text: string; timestamp: string; senderType?: string; sentByName?: string }>>({});
 
+  // Refs for stable subscription callbacks
+  const allCustomersRef = useRef<Customer[]>([]);
+  const allLinkedPlatformsMapRef = useRef<Record<string, { telegram: boolean; messenger: boolean; linkedIds: string[] }>>({});
+  
+  useEffect(() => {
+    allCustomersRef.current = allCustomers;
+  }, [allCustomers]);
+  
+  useEffect(() => {
+    allLinkedPlatformsMapRef.current = allLinkedPlatformsMap;
+  }, [allLinkedPlatformsMap]);
+
   // Accumulate customers across pages
   useEffect(() => {
     if (customersData?.customers) {
