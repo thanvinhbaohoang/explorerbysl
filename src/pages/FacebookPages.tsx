@@ -916,6 +916,7 @@ const FacebookPages = () => {
                           value={fbConfig.facebook_app_id}
                           onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_app_id: e.target.value }))}
                           placeholder="123456789012345"
+                          className="placeholder:text-muted-foreground/40"
                         />
                         <p className="text-xs text-muted-foreground flex items-start gap-1">
                           <Info className="h-3 w-3 mt-0.5 shrink-0" />
