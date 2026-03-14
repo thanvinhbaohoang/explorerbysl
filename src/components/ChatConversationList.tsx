@@ -345,7 +345,14 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setRealtimeStatus('connected');
+          setLastSyncTime(new Date());
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          setRealtimeStatus('disconnected');
+        }
+      });
 
     return () => { supabase.removeChannel(channel); };
   }, [ensureConversationLoaded, navigate, onSelect]);
