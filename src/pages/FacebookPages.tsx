@@ -342,10 +342,73 @@ const FacebookPages = () => {
     }
   };
 
+  // Facebook config functions
+  const fetchFbConfig = async () => {
+    setFbConfigLoading(true);
+    try {
+      const keys = ['facebook_app_id', 'facebook_app_secret', 'facebook_system_user_token', 'facebook_verify_token'];
+      const { data, error } = await supabase
+        .from('bot_settings')
+        .select('key, value')
+        .in('key', keys);
+      
+      if (error) throw error;
+      if (data) {
+        const config = { ...fbConfig };
+        data.forEach(row => {
+          if (row.key in config) {
+            (config as any)[row.key] = row.value;
+          }
+        });
+        setFbConfig(config);
+      }
+    } catch (err: any) {
+      console.error('Error fetching FB config:', err);
+    } finally {
+      setFbConfigLoading(false);
+    }
+  };
+
+  const saveFbConfig = async () => {
+    setFbConfigSaving(true);
+    try {
+      const entries = Object.entries(fbConfig).filter(([_, v]) => v.trim() !== '');
+      
+      for (const [key, value] of entries) {
+        const { data: existing } = await supabase
+          .from('bot_settings')
+          .select('id')
+          .eq('key', key)
+          .maybeSingle();
+        
+        if (existing) {
+          const { error } = await supabase
+            .from('bot_settings')
+            .update({ value, updated_at: new Date().toISOString(), updated_by: user?.id })
+            .eq('key', key);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('bot_settings')
+            .insert({ key, value, updated_by: user?.id });
+          if (error) throw error;
+        }
+      }
+      
+      toast.success('Facebook configuration saved successfully');
+    } catch (err: any) {
+      console.error('Error saving FB config:', err);
+      toast.error('Failed to save configuration');
+    } finally {
+      setFbConfigSaving(false);
+    }
+  };
+
   useEffect(() => {
     fetchPages();
     fetchAppInfo();
     fetchDbPages();
+    fetchFbConfig();
   }, []);
 
   return (
