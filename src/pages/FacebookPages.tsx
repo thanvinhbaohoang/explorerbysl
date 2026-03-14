@@ -613,7 +613,7 @@ const FacebookPages = () => {
                       <div className="text-center py-4 space-y-3">
                         <div className="text-muted-foreground text-sm">No app info available</div>
                         {isAdmin && (
-                          <Button onClick={() => setFbConfigDialogOpen(true)} className="gap-2">
+                          <Button onClick={() => { setConfigDialogMode('app'); setFbConfigDialogOpen(true); }} className="gap-2">
                             <Settings className="h-4 w-4" />
                             Configure App
                           </Button>
