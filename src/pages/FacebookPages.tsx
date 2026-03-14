@@ -900,7 +900,7 @@ const FacebookPages = () => {
                       Loading configuration...
                     </div>
                   ) : (
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                       <Alert>
                         <Shield className="h-4 w-4" />
                         <AlertDescription>
