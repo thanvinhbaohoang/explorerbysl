@@ -76,8 +76,7 @@ async function initConfig() {
   console.log('======================================');
 }
 
-// Initialize config on startup
-initConfig();
+// Config will be initialized inside serve() with await
 
 // Fetch page tokens from database ONLY - no fallback to API
 async function fetchPageTokens(): Promise<Map<string, string>> {
