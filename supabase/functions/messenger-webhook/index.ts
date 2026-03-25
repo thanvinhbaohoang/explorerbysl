@@ -769,6 +769,9 @@ async function handlePostback(senderId: string, postback: any, pageId: string) {
 }
 
 serve(async (req) => {
+  // Ensure config is loaded before processing any request
+  await initConfig();
+  
   console.log(`[${new Date().toISOString()}] Incoming request: ${req.method} ${req.url}`);
   
   if (req.method === 'OPTIONS') {

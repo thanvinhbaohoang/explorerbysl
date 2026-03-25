@@ -400,6 +400,9 @@ const FacebookPages = () => {
       }
       
       toast.success('Facebook configuration saved successfully');
+      // Refresh the UI to show updated app/system user info
+      fetchAppInfo();
+      setFbConfigDialogOpen(false);
     } catch (err: any) {
       console.error('Error saving FB config:', err);
       toast.error('Failed to save configuration');
