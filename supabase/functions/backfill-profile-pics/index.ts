@@ -13,54 +13,45 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Rate limiting delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Get Telegram profile photo and store permanently
-async function getTelegramProfilePhoto(telegramId: number, customerId: string): Promise<string | null> {
-  try {
-    if (!BOT_TOKEN) {
-      console.error("TELEGRAM_BOT_TOKEN not configured");
-      return null;
-    }
+// Get all active page tokens
+async function getActivePageTokens(): Promise<Array<{ page_id: string; access_token: string }>> {
+  const { data, error } = await supabase
+    .from('facebook_pages')
+    .select('page_id, access_token')
+    .eq('is_active', true);
+  
+  if (error || !data) {
+    console.error("Failed to fetch active pages:", error);
+    return [];
+  }
+  return data;
+}
 
-    // Get user's profile photos
-    const response = await fetch(`${TELEGRAM_API}/getUserProfilePhotos?user_id=${telegramId}&limit=1`);
-    const data = await response.json();
-    
-    if (!data.ok || !data.result.photos || data.result.photos.length === 0) {
-      console.log(`No profile photos found for Telegram user ${telegramId}`);
-      return null;
-    }
-    
-    // Get the largest size of the first photo (last in array is largest)
-    const photoSizes = data.result.photos[0];
-    const largest = photoSizes[photoSizes.length - 1];
-    
-    // Get file path from Telegram
-    const fileResponse = await fetch(`${TELEGRAM_API}/getFile?file_id=${largest.file_id}`);
-    const fileData = await fileResponse.json();
-    
-    if (!fileData.ok || !fileData.result.file_path) {
-      console.error("Failed to get profile photo file path from Telegram");
-      return null;
-    }
-    
-    const telegramFileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
-    
-    // Download the file
-    const downloadResponse = await fetch(telegramFileUrl);
-    if (!downloadResponse.ok) {
-      console.error("Failed to download profile photo from Telegram");
-      return null;
-    }
+// Try to fetch Messenger profile using a page token
+async function fetchMessengerProfile(messengerId: string, pageToken: string): Promise<any | null> {
+  try {
+    const url = `https://graph.facebook.com/v18.0/${messengerId}?fields=first_name,last_name,profile_pic,locale,timezone&access_token=${pageToken}`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const profile = await response.json();
+    if (profile.error) return null;
+    return profile;
+  } catch {
+    return null;
+  }
+}
+
+// Download image and store in Supabase Storage
+async function downloadAndStorePhoto(imageUrl: string, customerId: string): Promise<string | null> {
+  try {
+    const downloadResponse = await fetch(imageUrl);
+    if (!downloadResponse.ok) return null;
     
     const fileBuffer = await downloadResponse.arrayBuffer();
-    
-    // Store in profile-pics folder with customer ID as filename
     const fileName = `profile-pics/${customerId}.jpg`;
     
-    // Upload to Supabase Storage (upsert to allow updates)
     const { error: uploadError } = await supabase.storage
       .from('chat-attachments')
       .upload(fileName, fileBuffer, {
@@ -70,89 +61,41 @@ async function getTelegramProfilePhoto(telegramId: number, customerId: string): 
       });
     
     if (uploadError) {
-      console.error("Failed to upload profile photo to storage:", uploadError);
+      console.error("Failed to upload profile photo:", uploadError);
       return null;
     }
     
-    // Get public URL
     const { data: urlData } = supabase.storage
       .from('chat-attachments')
       .getPublicUrl(fileName);
     
-    console.log(`Telegram profile photo stored for ${customerId}:`, urlData.publicUrl);
     return urlData.publicUrl;
-  } catch (error) {
-    console.error("Error getting Telegram profile photo:", error);
+  } catch {
     return null;
   }
 }
 
-// Get Messenger profile photo and store permanently
-async function getMessengerProfilePhoto(messengerId: string, pageId: string, customerId: string): Promise<string | null> {
+// Get Telegram profile photo
+async function getTelegramProfilePhoto(telegramId: number, customerId: string): Promise<string | null> {
   try {
-    // Get page token from database
-    const { data: pageData, error: pageError } = await supabase
-      .from('facebook_pages')
-      .select('access_token')
-      .eq('page_id', pageId)
-      .eq('is_active', true)
-      .single();
+    if (!BOT_TOKEN) return null;
+
+    const response = await fetch(`${TELEGRAM_API}/getUserProfilePhotos?user_id=${telegramId}&limit=1`);
+    const data = await response.json();
     
-    if (pageError || !pageData?.access_token) {
-      console.error(`No token found for page ${pageId}`);
-      return null;
-    }
+    if (!data.ok || !data.result.photos || data.result.photos.length === 0) return null;
     
-    // Fetch user profile from Facebook
-    const url = `https://graph.facebook.com/v18.0/${messengerId}?fields=profile_pic&access_token=${pageData.access_token}`;
-    const response = await fetch(url);
+    const photoSizes = data.result.photos[0];
+    const largest = photoSizes[photoSizes.length - 1];
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Failed to fetch Messenger profile:", errorText);
-      return null;
-    }
+    const fileResponse = await fetch(`${TELEGRAM_API}/getFile?file_id=${largest.file_id}`);
+    const fileData = await fileResponse.json();
     
-    const profile = await response.json();
+    if (!fileData.ok || !fileData.result.file_path) return null;
     
-    if (!profile.profile_pic) {
-      console.log(`No profile pic found for Messenger user ${messengerId}`);
-      return null;
-    }
-    
-    // Download the profile pic
-    const downloadResponse = await fetch(profile.profile_pic);
-    if (!downloadResponse.ok) {
-      console.error("Failed to download Messenger profile pic");
-      return null;
-    }
-    
-    const arrayBuffer = await downloadResponse.arrayBuffer();
-    const fileName = `profile-pics/${customerId}.jpg`;
-    
-    // Upload to Supabase Storage (upsert to allow updates)
-    const { error: uploadError } = await supabase.storage
-      .from('chat-attachments')
-      .upload(fileName, arrayBuffer, {
-        contentType: 'image/jpeg',
-        cacheControl: '3600',
-        upsert: true,
-      });
-    
-    if (uploadError) {
-      console.error("Failed to upload Messenger profile pic:", uploadError);
-      return null;
-    }
-    
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from('chat-attachments')
-      .getPublicUrl(fileName);
-    
-    console.log(`Messenger profile photo stored for ${customerId}:`, urlData.publicUrl);
-    return urlData.publicUrl;
-  } catch (error) {
-    console.error("Error getting Messenger profile photo:", error);
+    const telegramFileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
+    return await downloadAndStorePhoto(telegramFileUrl, customerId);
+  } catch {
     return null;
   }
 }
@@ -176,17 +119,16 @@ async function backfillProfilePics(limit: number = 50): Promise<{
   };
   
   try {
-    // Count total customers missing profile pics
-    const { count: totalMissing } = await supabase
-      .from('customer')
-      .select('*', { count: 'exact', head: true })
-      .is('messenger_profile_pic', null);
-    
-    // Get customers missing profile pics
+    // Get active pages for inferring page_id
+    const activePages = await getActivePageTokens();
+    console.log(`Found ${activePages.length} active pages for profile lookups`);
+
+    // Get customers that need fixing:
+    // - Missing profile pic OR messenger_name is 'Unknown'
     const { data: customers, error: queryError } = await supabase
       .from('customer')
-      .select('id, telegram_id, messenger_id, page_id')
-      .is('messenger_profile_pic', null)
+      .select('id, telegram_id, messenger_id, messenger_name, page_id')
+      .or('messenger_profile_pic.is.null,messenger_name.eq.Unknown')
       .limit(limit);
     
     if (queryError) {
@@ -194,57 +136,98 @@ async function backfillProfilePics(limit: number = 50): Promise<{
     }
     
     if (!customers || customers.length === 0) {
-      console.log("No customers found with missing profile pictures");
+      console.log("No customers found needing profile updates");
       return results;
     }
     
-    console.log(`Processing ${customers.length} customers...`);
+    // Count total remaining
+    const { count: totalMissing } = await supabase
+      .from('customer')
+      .select('*', { count: 'exact', head: true })
+      .or('messenger_profile_pic.is.null,messenger_name.eq.Unknown');
+
+    console.log(`Processing ${customers.length} customers (${totalMissing} total need fixing)...`);
     
     for (const customer of customers) {
-      // Add delay to respect rate limits (100ms between requests)
       await delay(100);
       
       try {
-        let photoUrl: string | null = null;
-        
         if (customer.telegram_id) {
           // Telegram customer
-          photoUrl = await getTelegramProfilePhoto(customer.telegram_id, customer.id);
-        } else if (customer.messenger_id && customer.page_id) {
-          // Messenger customer
-          photoUrl = await getMessengerProfilePhoto(customer.messenger_id, customer.page_id, customer.id);
-        } else {
-          console.log(`Customer ${customer.id} has neither telegram_id nor messenger_id/page_id`);
+          const photoUrl = await getTelegramProfilePhoto(customer.telegram_id, customer.id);
+          if (photoUrl) {
+            await supabase
+              .from('customer')
+              .update({ messenger_profile_pic: photoUrl })
+              .eq('id', customer.id);
+            results.updated++;
+          }
+          results.processed++;
+          continue;
         }
         
-        if (photoUrl) {
-          const { error: updateError } = await supabase
-            .from('customer')
-            .update({ messenger_profile_pic: photoUrl })
-            .eq('id', customer.id);
+        if (customer.messenger_id) {
+          // Messenger customer - try known page_id first, then all active pages
+          const pagesToTry = customer.page_id
+            ? [{ page_id: customer.page_id, access_token: activePages.find(p => p.page_id === customer.page_id)?.access_token || '' }, ...activePages.filter(p => p.page_id !== customer.page_id)]
+            : activePages;
           
-          if (updateError) {
-            throw new Error(`Failed to update customer: ${updateError.message}`);
+          let profileFound = false;
+          
+          for (const page of pagesToTry) {
+            if (!page.access_token) continue;
+            
+            const profile = await fetchMessengerProfile(customer.messenger_id, page.access_token);
+            if (profile && profile.first_name) {
+              console.log(`Found profile for ${customer.id} via page ${page.page_id}: ${profile.first_name} ${profile.last_name}`);
+              
+              // Download and store profile pic
+              let photoUrl: string | null = null;
+              if (profile.profile_pic) {
+                photoUrl = await downloadAndStorePhoto(profile.profile_pic, customer.id);
+              }
+              
+              // Update customer with name, pic, and page_id
+              const updateData: any = {
+                messenger_name: `${profile.first_name} ${profile.last_name}`,
+                updated_at: new Date().toISOString(),
+              };
+              if (photoUrl) updateData.messenger_profile_pic = photoUrl;
+              if (!customer.page_id) updateData.page_id = page.page_id;
+              if (profile.locale) updateData.locale = profile.locale;
+              if (profile.timezone) updateData.timezone_offset = profile.timezone;
+              
+              await supabase
+                .from('customer')
+                .update(updateData)
+                .eq('id', customer.id);
+              
+              results.updated++;
+              profileFound = true;
+              break;
+            }
+            
+            await delay(50); // Small delay between page attempts
           }
           
-          results.updated++;
-          console.log(`Updated customer ${customer.id} with profile photo`);
+          if (!profileFound) {
+            console.log(`Could not fetch profile for messenger customer ${customer.id}`);
+          }
+          
+          results.processed++;
+          continue;
         }
         
+        // No telegram_id or messenger_id
         results.processed++;
       } catch (error) {
         results.failed++;
-        results.errors.push({
-          customerId: customer.id,
-          error: String(error),
-        });
+        results.errors.push({ customerId: customer.id, error: String(error) });
         console.error(`Error processing customer ${customer.id}:`, error);
       }
     }
     
-    // Calculate remaining
     results.remaining = (totalMissing || 0) - results.processed;
-    
     console.log(`Backfill complete: ${results.processed} processed, ${results.updated} updated, ${results.failed} failed, ${results.remaining} remaining`);
     
   } catch (error) {
@@ -257,54 +240,40 @@ async function backfillProfilePics(limit: number = 50): Promise<{
 }
 
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
   
   try {
-    // Parse request body
     let limit = 50;
     
     if (req.method === 'POST') {
       try {
         const body = await req.json();
         if (body.limit && typeof body.limit === 'number') {
-          limit = Math.min(body.limit, 200); // Cap at 200 to avoid timeouts
+          limit = Math.min(body.limit, 200);
         }
       } catch {
-        // Use default limit if body parsing fails
+        // Use default limit
       }
     }
     
     console.log(`Starting profile picture backfill with limit: ${limit}`);
-    
     const results = await backfillProfilePics(limit);
     
-    return new Response(
-      JSON.stringify(results),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return new Response(JSON.stringify(results), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   } catch (error) {
     console.error("Error in backfill-profile-pics:", error);
     
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: String(error),
-        processed: 0,
-        updated: 0,
-        failed: 0,
-        remaining: 0,
-        errors: [],
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return new Response(JSON.stringify({ 
+      success: false, error: String(error),
+      processed: 0, updated: 0, failed: 0, remaining: 0, errors: [],
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });

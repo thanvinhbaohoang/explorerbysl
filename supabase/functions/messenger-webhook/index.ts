@@ -76,8 +76,7 @@ async function initConfig() {
   console.log('======================================');
 }
 
-// Initialize config on startup
-initConfig();
+// Config will be initialized inside serve() with await
 
 // Fetch page tokens from database ONLY - no fallback to API
 async function fetchPageTokens(): Promise<Map<string, string>> {
@@ -720,15 +719,27 @@ async function handleReferral(senderId: string, referral: any, pageId: string) {
       .insert({
         messenger_id: senderId,
         messenger_name: profile ? `${profile.first_name} ${profile.last_name}` : 'Unknown',
-        messenger_profile_pic: profile?.profile_pic || null,
+        messenger_profile_pic: null,
         locale: profile?.locale || null,
         timezone_offset: profile?.timezone || null,
         first_message_at: new Date().toISOString(),
+        page_id: pageId,
       })
       .select()
       .single();
     
     customer = newCustomer;
+    
+    // Store profile pic permanently if available
+    if (profile?.profile_pic && customer?.id) {
+      const permanentProfilePicUrl = await downloadAndStoreProfilePic(profile.profile_pic, customer.id);
+      if (permanentProfilePicUrl) {
+        await supabase
+          .from('customer')
+          .update({ messenger_profile_pic: permanentProfilePicUrl })
+          .eq('id', customer.id);
+      }
+    }
   }
   
   if (customer) {
@@ -758,6 +769,9 @@ async function handlePostback(senderId: string, postback: any, pageId: string) {
 }
 
 serve(async (req) => {
+  // Ensure config is loaded before processing any request
+  await initConfig();
+  
   console.log(`[${new Date().toISOString()}] Incoming request: ${req.method} ${req.url}`);
   
   if (req.method === 'OPTIONS') {
