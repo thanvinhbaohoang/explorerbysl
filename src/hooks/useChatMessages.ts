@@ -397,7 +397,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
 
       if (response.error) throw response.error;
-      if (response.data?.error && response.data?.code === 'MESSAGING_WINDOW_EXPIRED') {
+      if (response.data?.error) {
         throw new Error(response.data.error);
       }
     } catch (error: any) {
