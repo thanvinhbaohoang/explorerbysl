@@ -719,6 +719,31 @@ const FacebookPages = () => {
                           </div>
                         )}
                       </div>
+                    ) : fbConfig.facebook_system_user_token ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-500" />
+                          <span className="text-xs text-amber-600 dark:text-amber-400">Could not verify with Facebook API</span>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">System User Token</span>
+                            <Badge variant="default" className="text-xs">Configured</Badge>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Preview</span>
+                            <span className="font-mono text-xs">{fbConfig.facebook_system_user_token.slice(0, 6)}••••{fbConfig.facebook_system_user_token.slice(-4)}</span>
+                          </div>
+                        </div>
+                        {isAdmin && (
+                          <div className="pt-2 border-t">
+                            <Button variant="outline" size="sm" onClick={() => { setConfigDialogMode('system'); setFbConfigDialogOpen(true); }}>
+                              <Settings className="h-4 w-4 mr-2" />
+                              Edit Configuration
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div className="text-center py-4">
                         <div className="text-muted-foreground text-sm mb-3">No system user info available</div>
