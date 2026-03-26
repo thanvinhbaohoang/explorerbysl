@@ -617,7 +617,11 @@ const FacebookPages = () => {
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 mb-2">
                           <AlertTriangle className="h-4 w-4 text-amber-500" />
-                          <span className="text-xs text-amber-600 dark:text-amber-400">Could not verify with Facebook API</span>
+                          <span className="text-xs text-amber-600 dark:text-amber-400">
+                            {!fbConfig.facebook_system_user_token
+                              ? "System User Token required to verify app — configure it in the System User card below"
+                              : "Could not verify with Facebook API"}
+                          </span>
                         </div>
                         <div className="space-y-2 text-sm">
                           <div className="flex justify-between">
