@@ -492,6 +492,13 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
         console.log(`Profile refresh failed, keeping Unknown name`);
       }
     }
+
+    // Auto-heal: update page_id on existing customers if missing
+    if (customer && !customer.page_id && pageId) {
+      console.log(`Auto-healing page_id for customer ${customer.id}: setting to ${pageId}`);
+      await supabase.from('customer').update({ page_id: pageId }).eq('id', customer.id);
+      customer.page_id = pageId;
+    }
     
     if (!customer) {
       isNewCustomer = true;
