@@ -61,6 +61,12 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
   
   // Infinite scroll state
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
@@ -422,15 +428,15 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
 
   // Filter customers by search query
   const filteredBySearch = useMemo(() => {
-    if (!searchQuery.trim()) return allCustomers;
-    const query = searchQuery.toLowerCase();
+    if (!debouncedSearch.trim()) return allCustomers;
+    const query = debouncedSearch.toLowerCase();
     return allCustomers.filter(customer => {
       const name = customer.messenger_name || 
         `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
         customer.username || '';
       return name.toLowerCase().includes(query);
     });
-  }, [allCustomers, searchQuery]);
+  }, [allCustomers, debouncedSearch]);
 
   // Apply awaiting reply filter
   const filteredByMode = useMemo(() => {
