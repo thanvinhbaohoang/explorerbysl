@@ -1,49 +1,40 @@
 
 
-# Fix Messenger Customers Showing "Unknown" Names
+# Show Saved Config in Connected App & System User Cards
 
-## Problem Analysis
+## Problem
+When the Facebook Graph API is unreachable (e.g. "API access deactivated"), `appInfo` comes back null. The Connected App card then only shows "No app info available" with a Configure button — even though the client has already saved their App ID, Secret, and System User Token via the config dialog.
 
-I investigated the database and edge function thoroughly. Here's what's happening:
+## Solution
+When `appInfo` is null but `fbConfig.facebook_app_id` has a value, show the saved configuration data instead of the empty "Configure" state. Same for the System User card when `systemUser` is null but `fbConfig.facebook_system_user_token` exists.
 
-**468 out of 469 Messenger customers show "Unknown"** with no profile pic. The root causes:
+## Changes (single file: `src/pages/FacebookPages.tsx`)
 
-1. **`handleReferral` doesn't save `page_id`** — 348 customers (all from ads) have `page_id: null`. Without `page_id`, the system can't look up the page token needed to fetch their Facebook profile. All 348 arrived after March 20 via ad referrals.
+### Connected App card (lines 616-625)
+Replace the "No app info available" fallback with a three-way check:
+1. `appInfo` exists — show full live data (existing code, unchanged)
+2. `appInfo` null but `fbConfig.facebook_app_id` is set — show a "configured but not verified" state displaying:
+   - App ID (masked partially)
+   - App Secret status (configured/not configured)
+   - A warning badge: "Could not verify with Facebook API"
+   - Edit Configuration button for admins
+3. Neither — show original "Configure App" button
 
-2. **`initConfig()` race condition** — Config is loaded asynchronously at module boot without `await`. On cold starts, the first request arrives before `bot_settings` values (app secret, system user token) are loaded. Confirmed: `/app-info` returns "No System User Token configured" on fresh calls even though `bot_settings` has the values.
+### System User card (same pattern)
+When `systemUser` is null but `fbConfig.facebook_system_user_token` is set, show:
+- "System User Token configured" with a check icon
+- Token preview (first/last few chars masked)
+- Warning that live verification failed
+- Edit button for admins
 
-3. **Even customers WITH `page_id` (120) show "Unknown"** — Page tokens were last synced Feb 9. After the client changed App credentials on March 20, old tokens may be invalidated. Profile fetching fails silently.
-
-4. **`saveFbConfig` doesn't refresh the UI** — After saving credentials, the Connected App / System User cards still show "No info available" because `fetchAppInfo()` is never called.
-
-5. **Backfill skips customers without `page_id`** — The existing backfill function requires `page_id` to fetch Messenger profiles, so it can't process the 348 customers missing it.
-
-## Changes
-
-### 1. `supabase/functions/messenger-webhook/index.ts`
-
-**a) Add `page_id` to `handleReferral` insert** (line 720-727):
-Add `page_id: pageId` to the customer insert. Also download and store the profile pic permanently (same pattern as `handleMessage`).
-
-**b) Move `initConfig()` inside `serve()` with `await`** (line 80 → line 760):
-Remove the fire-and-forget `initConfig()` call at line 80. Add `await initConfig()` at the start of the `serve()` handler. The existing 5-minute cache TTL ensures it only hits DB periodically.
-
-### 2. `src/pages/FacebookPages.tsx`
-
-**After successful `saveFbConfig`**: Call `fetchAppInfo()` to refresh the Connected App / System User cards, then close the dialog with `setFbConfigDialogOpen(false)`.
-
-### 3. `supabase/functions/backfill-profile-pics/index.ts`
-
-Update the backfill to handle customers with missing `page_id`:
-- For Messenger customers without `page_id`, infer it by trying each active page from `facebook_pages` table
-- When a profile is successfully fetched, update both `messenger_name`, `messenger_profile_pic`, AND `page_id` on the customer record
-- Also backfill customers whose `messenger_name` is "Unknown" (not just those missing profile pics)
+### Technical Details
+- Use `fbConfig.facebook_app_id` and `fbConfig.facebook_system_user_token` which are already loaded from `bot_settings` via `fetchFbConfig()` on mount
+- Mask sensitive values: show first 4 and last 4 chars of App ID, show "Configured" for secret/token
+- Add an `AlertTriangle` icon with amber styling for the "API unreachable" warning
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `supabase/functions/messenger-webhook/index.ts` | Add `page_id` to `handleReferral`, store profile pic permanently, move `initConfig()` inside `serve()` |
-| `src/pages/FacebookPages.tsx` | Call `fetchAppInfo()` + close dialog after successful save |
-| `supabase/functions/backfill-profile-pics/index.ts` | Handle missing `page_id` by trying all active pages, backfill "Unknown" names |
+| `src/pages/FacebookPages.tsx` | Add fallback display for saved-but-unverified config in both cards |
 
