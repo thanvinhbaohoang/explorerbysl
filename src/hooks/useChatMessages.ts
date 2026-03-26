@@ -397,7 +397,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
 
       if (response.error) throw response.error;
-      if (response.data?.error && response.data?.code === 'MESSAGING_WINDOW_EXPIRED') {
+      if (response.data?.error) {
         throw new Error(response.data.error);
       }
     } catch (error: any) {
@@ -409,6 +409,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       if (isWindowExpired && customerToReply) {
         setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
         toast.error("Cannot send message: The 24-hour messaging window has expired.", { duration: 8000 });
+      } else if (error.message?.includes('Missing page_id') || error.message?.includes('page_id')) {
+        toast.error("Cannot send message: Customer is missing page link. Ask them to send a message first.", { duration: 8000 });
       } else {
         toast.error("Failed to send message");
       }
