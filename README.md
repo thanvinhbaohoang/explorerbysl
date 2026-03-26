@@ -1,110 +1,210 @@
-# Explorer by SL
-
-A unified customer relationship management platform for businesses that engage customers across **Telegram** and **Facebook Messenger**. Built for teams that need real-time conversations, lead attribution, and customer insights — all in one place.
+<p align="center">
+  <h1 align="center">🚀 Explorer by SL</h1>
+  <p align="center">
+    <strong>Omnichannel CRM for Telegram & Messenger — Real-time chat, lead attribution, and customer intelligence in one powerful dashboard.</strong>
+  </p>
+  <p align="center">
+    <img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react" alt="React" />
+    <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript" alt="TypeScript" />
+    <img src="https://img.shields.io/badge/Supabase-Realtime-3FCF8E?style=flat-square&logo=supabase" alt="Supabase" />
+    <img src="https://img.shields.io/badge/Tailwind-CSS-06B6D4?style=flat-square&logo=tailwindcss" alt="Tailwind" />
+    <img src="https://img.shields.io/badge/Vite-5-646CFF?style=flat-square&logo=vite" alt="Vite" />
+  </p>
+</p>
 
 ---
 
-## ✨ Features
+## 🎯 What is Explorer?
 
-### 💬 Omnichannel Chat
-- Unified inbox for **Telegram** and **Messenger** conversations
-- Real-time messaging with text, photos, videos, voice notes, and documents
-- Drag-and-drop file attachments and clipboard paste support
-- Album/batch media sending
-- Voice recording with waveform preview
-- AI-powered chat summaries
-- Linked customer profiles across platforms
+Explorer is a **production-grade customer engagement platform** built for businesses that manage conversations across **Telegram** and **Facebook Messenger**. Instead of juggling multiple apps, your team gets a single real-time inbox with deep analytics, AI-powered summaries, and full lead attribution — from first ad click to latest message.
 
-### 👥 Customer Management
-- Centralized customer directory with search, filters, and pagination
-- Customer identity cards with legal name, nationality, and passport details
-- Notes and action items per customer
-- Platform linking — connect the same person's Telegram and Messenger accounts
-- Profile picture sync from Messenger
+> **Built for operators.** Whether you're running ads on Facebook, managing a Telegram community, or handling customer support — Explorer gives you the visibility and tools to move fast.
 
-### 📊 Analytics & Attribution
-- **Traffic dashboard** — track how customers discover your bot (UTM params, Facebook Click IDs, referrals)
-- **Ads Insight** — view Facebook ad performance data alongside customer conversations
-- Lead source tracking with campaign, ad set, and ad-level attribution
+---
 
-### 🔧 System Administration
-- **Facebook Pages** — manage connected pages, sync tokens, and monitor webhook health
-- **Telegram Bot** — configure welcome messages and webhook registration
-- **Role-based access control** — admin, moderator, and user roles with granular permissions
+## ⚡ Key Features
+
+<table>
+<tr>
+<td width="50%">
+
+### 💬 Unified Inbox
+- Real-time conversations across Telegram & Messenger
+- Send text, photos, videos, voice notes & documents
+- Drag-and-drop attachments, clipboard paste, album batching
+- Voice recording with live waveform visualization
+- AI-powered conversation summaries
+
+</td>
+<td width="50%">
+
+### 👥 Customer Intelligence
+- Centralized directory with advanced search & filters
+- Cross-platform identity linking (same person on TG + Messenger)
+- Customer profiles with notes, action items & identity docs
+- Automatic profile pic sync & language detection
+- Full conversation history across platforms
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 📊 Attribution & Analytics
+- End-to-end lead tracking: UTM → Click → Conversation
+- Facebook Ads insights with campaign-level drill-down
+- Traffic dashboard with source/medium breakdowns
+- Facebook Click ID correlation to customer records
+
+</td>
+<td width="50%">
+
+### 🔐 Team & Access Control
+- Role-based permissions (Admin / Moderator / User)
 - User approval workflow for new team members
+- Employee name attribution on every sent message
+- Audit-friendly action tracking
 
-### 🔔 Real-time Updates
-- Live message notifications with sound alerts
-- Unread message counts per conversation
-- Real-time customer and message subscriptions
+</td>
+</tr>
+</table>
 
----
-
-## 🛠 Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | React 18, TypeScript, Vite |
-| **Styling** | Tailwind CSS, shadcn/ui |
-| **State** | TanStack React Query |
-| **Backend** | Supabase (PostgreSQL, Auth, Edge Functions, Storage, Realtime) |
-| **Integrations** | Facebook Graph API, Telegram Bot API |
-| **Deployment** | Lovable Cloud |
+### 🔔 Real-time Everything
+- **Live message push** — new messages appear instantly via Supabase Realtime
+- **Unread counters** — per-conversation badge counts
+- **Sound notifications** — configurable audio alerts
+- **Webhook health monitoring** — see connection status at a glance
 
 ---
 
-## 📁 Project Structure
+## 🏗 Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     React Frontend                       │
+│  (Vite + TypeScript + Tailwind + shadcn/ui)             │
+├─────────────────────────────────────────────────────────┤
+│              TanStack React Query (State)                │
+├──────────┬──────────┬───────────────┬───────────────────┤
+│ Supabase │ Supabase │   Supabase    │    Supabase       │
+│   Auth   │ Realtime │   Storage     │   PostgreSQL      │
+├──────────┴──────────┴───────────────┴───────────────────┤
+│               Supabase Edge Functions                    │
+│  ┌──────────────┐ ┌────────────────┐ ┌───────────────┐  │
+│  │ telegram-bot │ │ messenger-     │ │ summarize-    │  │
+│  │              │ │ webhook        │ │ chat (AI)     │  │
+│  └──────┬───────┘ └───────┬────────┘ └───────────────┘  │
+│         │                 │                              │
+├─────────┴─────────────────┴──────────────────────────────┤
+│        Telegram Bot API    │    Facebook Graph API        │
+└────────────────────────────┴─────────────────────────────┘
+```
+
+---
+
+## 📂 Project Structure
 
 ```
 src/
-├── components/       # Reusable UI components
-│   ├── ui/           # shadcn/ui primitives
-│   ├── ChatPanel.tsx # Conversation view
+├── components/          # UI components
+│   ├── ui/              # shadcn/ui primitives (40+ components)
+│   ├── ChatPanel.tsx    # Full-featured conversation view
+│   ├── ChatConversationList.tsx
+│   ├── MediaViewer.tsx  # Image/video viewer with zoom
 │   └── ...
-├── contexts/         # Auth context provider
-├── hooks/            # Custom React hooks (chat, customers, roles, traffic)
-├── lib/              # Utilities (CSV export, image conversion, language detection)
-├── pages/            # Route-level page components
-└── integrations/     # Supabase client & type definitions
+├── contexts/            # React context providers
+├── hooks/               # Business logic hooks
+│   ├── useChatMessages  # Chat engine (send, receive, record, upload)
+│   ├── useCustomersData # Customer fetching with pagination
+│   ├── useTrafficData   # Lead attribution queries
+│   └── ...
+├── pages/               # Route-level views
+│   ├── Chat.tsx         # Resizable split-pane inbox
+│   ├── Customers.tsx    # Customer directory
+│   ├── Dashboard.tsx    # Overview & analytics
+│   └── ...
+├── lib/                 # Utilities
+└── integrations/        # Auto-generated Supabase client & types
 
 supabase/
-├── functions/        # Edge functions (webhooks, AI summaries, imports)
-│   ├── telegram-bot/
-│   ├── messenger-webhook/
-│   ├── summarize-chat/
-│   └── ...
+├── functions/
+│   ├── telegram-bot/          # Telegram webhook & message handler
+│   ├── messenger-webhook/     # Facebook Messenger webhook (multi-page)
+│   ├── summarize-chat/        # AI-powered conversation summaries
+│   ├── fetch-facebook-ads/    # Ad performance data fetcher
+│   ├── backfill-profile-pics/ # Batch profile pic downloader
+│   └── monday-import/         # Monday.com data importer
 └── config.toml
 ```
 
 ---
 
+## 🛠 Tech Stack
+
+| Category | Technologies |
+|----------|-------------|
+| **Frontend** | React 18 · TypeScript 5 · Vite 5 |
+| **UI** | Tailwind CSS · shadcn/ui · Radix UI · Lucide Icons |
+| **State & Data** | TanStack React Query · Supabase Realtime subscriptions |
+| **Backend** | Supabase Edge Functions (Deno) · PostgreSQL with RLS |
+| **Storage** | Supabase Storage (chat attachments, profile pics) |
+| **Auth** | Supabase Auth with role-based access control |
+| **APIs** | Facebook Graph API · Telegram Bot API |
+| **Charts** | Recharts |
+| **Deployment** | Lovable Cloud |
+
+---
+
 ## 🚀 Getting Started
 
-1. **Clone the repository**
-   ```bash
-   git clone <repo-url>
-   cd <project-folder>
-   npm install
-   ```
+### Prerequisites
+- Node.js 18+ and npm
+- A [Supabase](https://supabase.com) project
 
-2. **Set up environment variables**
-   Create a `.env` file with your Supabase credentials:
-   ```
-   VITE_SUPABASE_URL=your-supabase-url
-   VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
-   ```
+### Setup
 
-3. **Configure secrets** (in Supabase dashboard)
-   - `TELEGRAM_BOT_TOKEN` — from [@BotFather](https://t.me/BotFather)
-   - `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`, `FACEBOOK_SYSTEM_USER_TOKEN` — from [Meta for Developers](https://developers.facebook.com)
+```bash
+# Clone and install
+git clone <your-repo-url>
+cd explorer-by-sl
+npm install
 
-4. **Run locally**
-   ```bash
-   npm run dev
-   ```
+# Configure environment
+cp .env.example .env
+# Edit .env with your Supabase URL and anon key
+
+# Start dev server
+npm run dev
+```
+
+### Required Secrets (Supabase Dashboard → Edge Function Secrets)
+
+| Secret | Source |
+|--------|--------|
+| `TELEGRAM_BOT_TOKEN` | [@BotFather](https://t.me/BotFather) |
+| `FACEBOOK_APP_ID` | [Meta for Developers](https://developers.facebook.com) |
+| `FACEBOOK_APP_SECRET` | Meta App Dashboard → Settings → Basic |
+| `FACEBOOK_SYSTEM_USER_TOKEN` | Meta Business Suite → System Users |
+| `FACEBOOK_VERIFY_TOKEN` | Any random string (must match webhook config) |
+
+---
+
+## 🔑 Key Design Decisions
+
+- **Multi-page Messenger support** — handles multiple Facebook Pages from a single webhook, with per-page access tokens stored in the database
+- **Cross-platform customer linking** — bidirectional linking between Telegram and Messenger identities for unified conversation history
+- **Optimistic UI** — messages appear instantly in the chat with pending state, rolled back on failure
+- **Auto-healing data** — webhook automatically backfills missing customer metadata (profile pics, names, page IDs) on every incoming message
+- **Row-Level Security** — all database tables protected with Supabase RLS policies; role checks via `SECURITY DEFINER` functions to prevent recursive policy evaluation
 
 ---
 
 ## 📄 License
 
-Private project — all rights reserved.
+Private project — All rights reserved.
+
+---
+
+<p align="center">
+  Built with ❤️ using <a href="https://lovable.dev">Lovable</a>
+</p>
