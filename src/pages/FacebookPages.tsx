@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings, Download, Bot, Webhook, Save, Loader2, Eye, EyeOff, Info } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings, Download, Bot, Webhook, Save, Loader2, Eye, EyeOff, Info, AlertTriangle } from "lucide-react";
 import { exportToCSV } from "@/lib/csv-export";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -613,6 +613,33 @@ const FacebookPages = () => {
                           </div>
                         )}
                       </div>
+                    ) : fbConfig.facebook_app_id ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-500" />
+                          <span className="text-xs text-amber-600 dark:text-amber-400">Could not verify with Facebook API</span>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">App ID</span>
+                            <span className="font-mono">{fbConfig.facebook_app_id.slice(0, 4)}••••{fbConfig.facebook_app_id.slice(-4)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">App Secret</span>
+                            <Badge variant={fbConfig.facebook_app_secret ? "default" : "secondary"} className="text-xs">
+                              {fbConfig.facebook_app_secret ? "Configured" : "Not set"}
+                            </Badge>
+                          </div>
+                        </div>
+                        {isAdmin && (
+                          <div className="pt-2 border-t">
+                            <Button variant="outline" size="sm" onClick={() => { setConfigDialogMode('app'); setFbConfigDialogOpen(true); }} className="gap-1">
+                              <Settings className="h-4 w-4" />
+                              Edit Configuration
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div className="text-center py-4 space-y-3">
                         <div className="text-muted-foreground text-sm">No app info available</div>
@@ -689,6 +716,31 @@ const FacebookPages = () => {
                                 View on Facebook
                               </a>
                             )}
+                          </div>
+                        )}
+                      </div>
+                    ) : fbConfig.facebook_system_user_token ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-500" />
+                          <span className="text-xs text-amber-600 dark:text-amber-400">Could not verify with Facebook API</span>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">System User Token</span>
+                            <Badge variant="default" className="text-xs">Configured</Badge>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Preview</span>
+                            <span className="font-mono text-xs">{fbConfig.facebook_system_user_token.slice(0, 6)}••••{fbConfig.facebook_system_user_token.slice(-4)}</span>
+                          </div>
+                        </div>
+                        {isAdmin && (
+                          <div className="pt-2 border-t">
+                            <Button variant="outline" size="sm" onClick={() => { setConfigDialogMode('system'); setFbConfigDialogOpen(true); }}>
+                              <Settings className="h-4 w-4 mr-2" />
+                              Edit Configuration
+                            </Button>
                           </div>
                         )}
                       </div>
