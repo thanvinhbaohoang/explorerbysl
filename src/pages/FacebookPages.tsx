@@ -18,7 +18,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { useAuth } from "@/contexts/AuthContext";
 import { UpdateTokenDialog } from "@/components/UpdateTokenDialog";
-
 interface FacebookPage {
   id: string;
   name: string;
