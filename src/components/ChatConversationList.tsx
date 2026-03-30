@@ -424,17 +424,20 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     return () => { supabase.removeChannel(channel); };
   }, [refetch, isOnChatPage, navigate, onSelect]);
 
-  // Filter customers by search query
-  const filteredBySearch = useMemo(() => {
-    if (!debouncedSearch.trim()) return allCustomers;
-    const query = debouncedSearch.toLowerCase();
+  // Search results for dropdown (decoupled from main list)
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const query = searchQuery.toLowerCase();
     return allCustomers.filter(customer => {
       const name = customer.messenger_name || 
         `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
         customer.username || '';
       return name.toLowerCase().includes(query);
-    });
-  }, [allCustomers, debouncedSearch]);
+    }).slice(0, 8);
+  }, [allCustomers, searchQuery]);
+
+  // Main list always shows all customers (no search filtering)
+  const filteredBySearch = allCustomers;
 
   // Apply awaiting reply filter
   const filteredByMode = useMemo(() => {
