@@ -400,6 +400,12 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         (payload) => {
           const newCustomer = payload.new as Customer;
           
+          // Suppress notifications for broken Messenger records
+          if (isBrokenMessengerCustomer(newCustomer)) {
+            refetch();
+            return;
+          }
+          
           // Play new customer notification sound
           playNewCustomerNotification();
           
@@ -407,7 +413,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           
           toast.success(`New customer: ${customerName}`, {
             icon: <Bell className="h-4 w-4" />,
-            duration: 8000, // Longer duration for new customers
+            duration: 8000,
             action: {
               label: "Chat Now",
               onClick: () => {
