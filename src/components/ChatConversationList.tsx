@@ -241,9 +241,11 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     fetchUnreadCounts();
   }, []);
 
+  const customerIdKey = useMemo(() => allCustomers.map(c => c.id).join(','), [allCustomers]);
+
   useEffect(() => {
     fetchLastMessages();
-  }, [allCustomers]);
+  }, [customerIdKey]);
 
   // Real-time subscription for new messages - stable, no allCustomers dependency
   useEffect(() => {
