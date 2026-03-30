@@ -39,6 +39,11 @@ interface CustomersData {
   linkedPlatformsMap: LinkedPlatformsMap;
 }
 
+// Helper to identify broken Messenger records (Unknown name, no first_name)
+export const isBrokenMessengerCustomer = (customer: { messenger_id: string | null; messenger_name: string | null; first_name: string | null }): boolean => {
+  return !!(customer.messenger_id && customer.messenger_name === 'Unknown' && !customer.first_name);
+};
+
 export const useCustomersData = (page: number, itemsPerPage: number = 10) => {
   return useQuery({
     queryKey: ["customers", page, itemsPerPage],
@@ -64,11 +69,14 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10) => {
 
       if (error) throw error;
 
-      let linkedPlatformsMap: LinkedPlatformsMap = {};
-      let customersWithLeads = (customersData || []) as Customer[];
+      // Filter out broken Messenger customers (Unknown name + no first_name)
+      const cleanedCustomers = (customersData || []).filter(c => !isBrokenMessengerCustomer(c));
 
-      if (customersData && customersData.length > 0) {
-        const customerIds = customersData.map(c => c.id);
+      let linkedPlatformsMap: LinkedPlatformsMap = {};
+      let customersWithLeads = cleanedCustomers as Customer[];
+
+      if (cleanedCustomers.length > 0) {
+        const customerIds = cleanedCustomers.map(c => c.id);
 
         // Fetch customers that link to these primary customers
         const { data: linkedCustomers } = await supabase
@@ -77,9 +85,8 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10) => {
           .in("linked_customer_id", customerIds);
 
         // Build the map
-        customersData.forEach(customer => {
+        cleanedCustomers.forEach(customer => {
           const linkedToThis = linkedCustomers?.filter(lc => lc.linked_customer_id === customer.id) || [];
-          // Only include linked IDs (not the primary customer ID) to avoid duplication
           const linkedIds = linkedToThis.map(lc => lc.id);
           const hasTelegram = customer.telegram_id !== null || linkedToThis.some(lc => lc.telegram_id !== null);
           const hasMessenger = customer.messenger_id !== null || linkedToThis.some(lc => lc.messenger_id !== null);
@@ -98,7 +105,7 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10) => {
           .in("user_id", customerIds);
 
         // Merge lead source data with customers
-        customersWithLeads = customersData.map(customer => ({
+        customersWithLeads = cleanedCustomers.map(customer => ({
           ...customer,
           lead_source: leadsData?.find(lead => lead.user_id === customer.id),
         })) as Customer[];
@@ -110,7 +117,7 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10) => {
         linkedPlatformsMap,
       };
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes - data won't refetch for 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache for 10 minutes
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 };

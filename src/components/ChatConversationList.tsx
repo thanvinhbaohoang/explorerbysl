@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useCustomersData } from "@/hooks/useCustomersData";
+import { useCustomersData, isBrokenMessengerCustomer } from "@/hooks/useCustomersData";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +80,9 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   // Awaiting reply filter
   const [filterMode, setFilterMode] = useState<'all' | 'awaiting'>('all');
   const [unansweredIds, setUnansweredIds] = useState<Set<string>>(new Set());
+  
+  // Platform filter
+  const [platformFilter, setPlatformFilter] = useState<'all' | 'telegram' | 'messenger'>('all');
   
   // Realtime status tracking
   const [realtimeStatus, setRealtimeStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
@@ -397,6 +400,12 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         (payload) => {
           const newCustomer = payload.new as Customer;
           
+          // Suppress notifications for broken Messenger records
+          if (isBrokenMessengerCustomer(newCustomer)) {
+            refetch();
+            return;
+          }
+          
           // Play new customer notification sound
           playNewCustomerNotification();
           
@@ -404,7 +413,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           
           toast.success(`New customer: ${customerName}`, {
             icon: <Bell className="h-4 w-4" />,
-            duration: 8000, // Longer duration for new customers
+            duration: 8000,
             action: {
               label: "Chat Now",
               onClick: () => {
@@ -448,6 +457,22 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     });
   }, [filteredBySearch, filterMode, unansweredIds, allLinkedPlatformsMap]);
 
+  // Apply platform filter
+  const filteredByPlatform = useMemo(() => {
+    if (platformFilter === 'all') return filteredByMode;
+    if (platformFilter === 'telegram') {
+      return filteredByMode.filter(c => {
+        const platforms = allLinkedPlatformsMap[c.id];
+        return c.telegram_id !== null || platforms?.telegram;
+      });
+    }
+    // messenger
+    return filteredByMode.filter(c => {
+      const platforms = allLinkedPlatformsMap[c.id];
+      return c.messenger_id !== null || platforms?.messenger;
+    });
+  }, [filteredByMode, platformFilter, allLinkedPlatformsMap]);
+
   // Sort customers by last message time (newest first) — Instagram/Messenger style
   const sortedCustomers = useMemo(() => {
     // Helper to get latest timestamp from real-time lastMessages state
@@ -464,7 +489,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       return latest;
     };
 
-    return [...filteredByMode].sort((a, b) => {
+    return [...filteredByPlatform].sort((a, b) => {
       const linkedIdsA = allLinkedPlatformsMap[a.id]?.linkedIds || [];
       const linkedIdsB = allLinkedPlatformsMap[b.id]?.linkedIds || [];
       
@@ -475,7 +500,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                     (b.last_message_at ? new Date(b.last_message_at).getTime() : 0);
       return bTime - aTime;
     });
-  }, [filteredByMode, allLinkedPlatformsMap, lastMessages]);
+  }, [filteredByPlatform, allLinkedPlatformsMap, lastMessages]);
 
   // Compute waiting time badge for a conversation
   const getWaitingBadge = (customer: Customer) => {
@@ -689,7 +714,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       </div>
       
       {/* Filter tabs */}
-      <div className="px-3 py-1.5 border-b flex-shrink-0 flex gap-1">
+      <div className="px-3 py-1.5 border-b flex-shrink-0 flex gap-1 flex-wrap">
         <Button
           variant={filterMode === 'all' ? 'default' : 'ghost'}
           size="sm"
@@ -711,6 +736,35 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
               {unansweredIds.size}
             </Badge>
           )}
+        </Button>
+        
+        <div className="w-px bg-border mx-1 self-stretch" />
+        
+        <Button
+          variant={platformFilter === 'all' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs px-2 rounded-full"
+          onClick={() => setPlatformFilter('all')}
+        >
+          All Platforms
+        </Button>
+        <Button
+          variant={platformFilter === 'telegram' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs px-2 rounded-full gap-1"
+          onClick={() => setPlatformFilter('telegram')}
+        >
+          <Send className="h-3 w-3" />
+          Telegram
+        </Button>
+        <Button
+          variant={platformFilter === 'messenger' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs px-2 rounded-full gap-1"
+          onClick={() => setPlatformFilter('messenger')}
+        >
+          <Facebook className="h-3 w-3" />
+          Messenger
         </Button>
       </div>
       
