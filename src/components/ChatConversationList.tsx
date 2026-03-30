@@ -63,12 +63,8 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 250);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   
   // Infinite scroll state
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
