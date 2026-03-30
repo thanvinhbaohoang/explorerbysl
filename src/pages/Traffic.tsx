@@ -311,8 +311,11 @@ const Traffic = () => {
     return filtered;
   }, [trafficData, customerStatusFilter, searchTerm]);
 
-  // Pagination calculations (data is already paginated from DB)
-  const totalTrafficPages = Math.ceil(totalTraffic / itemsPerPage);
+  // Pagination: use filtered count when customerStatusFilter is active
+  const effectiveTotal = customerStatusFilter ? filteredTrafficData.length : totalTraffic;
+  const totalTrafficPages = customerStatusFilter
+    ? Math.ceil(effectiveTotal / itemsPerPage)
+    : Math.ceil(totalTraffic / itemsPerPage);
 
   return (
     <div className="min-h-screen bg-background p-8">

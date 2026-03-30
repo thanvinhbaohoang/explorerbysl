@@ -1845,7 +1845,7 @@ const Customers = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredCustomers.map((customer) => {
+                    {customers.map((customer) => {
                       const platforms = linkedPlatformsMap[customer.id];
                       const hasBothPlatforms = platforms?.telegram && platforms?.messenger;
                       const primaryPlatform = customer.messenger_id ? 'messenger' : 'telegram';
