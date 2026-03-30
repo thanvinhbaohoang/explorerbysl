@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Facebook, Send, Bell, Loader2, Search, X, Wifi, WifiOff, Clock } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverAnchor } from "@/components/ui/popover";
+import { Command, CommandList, CommandItem, CommandEmpty } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
@@ -61,12 +63,8 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 250);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   
   // Infinite scroll state
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
@@ -243,9 +241,11 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     fetchUnreadCounts();
   }, []);
 
+  const customerIdKey = useMemo(() => allCustomers.map(c => c.id).join(','), [allCustomers]);
+
   useEffect(() => {
     fetchLastMessages();
-  }, [allCustomers]);
+  }, [customerIdKey]);
 
   // Real-time subscription for new messages - stable, no allCustomers dependency
   useEffect(() => {
@@ -426,17 +426,20 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     return () => { supabase.removeChannel(channel); };
   }, [refetch, isOnChatPage, navigate, onSelect]);
 
-  // Filter customers by search query
-  const filteredBySearch = useMemo(() => {
-    if (!debouncedSearch.trim()) return allCustomers;
-    const query = debouncedSearch.toLowerCase();
+  // Search results for dropdown (decoupled from main list)
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const query = searchQuery.toLowerCase();
     return allCustomers.filter(customer => {
       const name = customer.messenger_name || 
         `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
         customer.username || '';
       return name.toLowerCase().includes(query);
-    });
-  }, [allCustomers, debouncedSearch]);
+    }).slice(0, 8);
+  }, [allCustomers, searchQuery]);
+
+  // Main list always shows all customers (no search filtering)
+  const filteredBySearch = allCustomers;
 
   // Apply awaiting reply filter
   const filteredByMode = useMemo(() => {
@@ -659,33 +662,90 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         <p className="text-xs text-muted-foreground mt-0.5">
           {filterMode === 'awaiting' 
             ? `${sortedCustomers.length} awaiting reply`
-            : searchQuery 
-              ? `${sortedCustomers.length} of ${allCustomers.length}` 
-              : `${allCustomers.length} customers${hasMore ? '+' : ''}`}
+            : `${allCustomers.length} customers${hasMore ? '+' : ''}`}
         </p>
       </div>
       
-      {/* Search input */}
+      {/* Search input with dropdown */}
       <div className="px-3 py-2 border-b flex-shrink-0">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search customers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8 h-9"
-          />
-          {searchQuery && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6"
-              onClick={() => setSearchQuery("")}
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          )}
-        </div>
+        <Popover open={searchOpen && searchQuery.length > 0} onOpenChange={setSearchOpen}>
+          <PopoverAnchor asChild>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                ref={searchInputRef}
+                placeholder="Search customers..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setSearchOpen(true);
+                }}
+                onFocus={() => { if (searchQuery) setSearchOpen(true); }}
+                className="pl-9 pr-8 h-9"
+              />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6"
+                  onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          </PopoverAnchor>
+          <PopoverContent
+            className="p-0 w-[var(--radix-popover-trigger-width)]"
+            align="start"
+            sideOffset={4}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <Command>
+              <CommandList>
+                <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
+                  No customers found
+                </CommandEmpty>
+                {searchResults.map(customer => {
+                  const name = customer.messenger_name || 
+                    `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
+                    'Unknown';
+                  const platform = customer.messenger_id ? 'messenger' : 'telegram';
+                  return (
+                    <CommandItem
+                      key={customer.id}
+                      value={name}
+                      onSelect={() => {
+                        handleSelect(customer);
+                        setSearchQuery("");
+                        setSearchOpen(false);
+                      }}
+                      className="flex items-center gap-3 px-3 py-2 cursor-pointer"
+                    >
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={customer.messenger_profile_pic || undefined} />
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                          {getInitials(name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="flex-1 truncate text-sm">{name}</span>
+                      <div className={cn(
+                        "w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0",
+                        platform === 'messenger' ? "bg-primary" : "bg-secondary"
+                      )}>
+                        {platform === 'messenger' ? (
+                          <Facebook className="h-3 w-3 text-primary-foreground" />
+                        ) : (
+                          <Send className="h-3 w-3 text-secondary-foreground" />
+                        )}
+                      </div>
+                    </CommandItem>
+                  );
+                })}
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
       
       {/* Filter tabs */}
@@ -716,13 +776,6 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       
       <ScrollArea className="flex-1">
         <div className="p-1">
-          {sortedCustomers.length === 0 && searchQuery ? (
-            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-              <Search className="h-8 w-8 mb-3 opacity-50" />
-              <p className="text-sm">No customers found</p>
-              <p className="text-xs mt-1">Try a different search term</p>
-            </div>
-          ) : null}
           {sortedCustomers.map(customer => {
             const displayName = customer.messenger_name || 
               `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
