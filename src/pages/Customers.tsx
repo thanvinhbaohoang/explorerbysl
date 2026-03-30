@@ -1825,7 +1825,7 @@ const Customers = () => {
 
             {isLoading ? (
               <TableSkeleton rows={10} columns={8} />
-            ) : filteredCustomers.length === 0 ? (
+            ) : customers.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 {customers.length === 0 ? 'No customers yet. Share your bot to get started!' : 'No customers match your search.'}
               </div>
