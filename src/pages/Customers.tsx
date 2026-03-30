@@ -151,7 +151,7 @@ const Customers = () => {
   const [customerPlatformFilter, setCustomerPlatformFilter] = useState<string>("all");
   
   // Use cached customers data
-  const { data: customersData, isLoading, refetch: refetchCustomers } = useCustomersData(customersPage, itemsPerPage);
+  const { data: customersData, isLoading, refetch: refetchCustomers } = useCustomersData(customersPage, itemsPerPage, debouncedSearchTerm, customerPlatformFilter);
   const customers = customersData?.customers || [];
   const totalCustomers = customersData?.total || 0;
   const linkedPlatformsMap = customersData?.linkedPlatformsMap || {};
