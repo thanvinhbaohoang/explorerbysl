@@ -426,17 +426,52 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     return () => { supabase.removeChannel(channel); };
   }, [refetch, isOnChatPage, navigate, onSelect]);
 
-  // Search results for dropdown (decoupled from main list)
-  const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const query = searchQuery.toLowerCase();
-    return allCustomers.filter(customer => {
-      const name = customer.messenger_name || 
-        `${customer.first_name || ''} ${customer.last_name || ''}`.trim() ||
-        customer.username || '';
-      return name.toLowerCase().includes(query);
-    }).slice(0, 8);
-  }, [allCustomers, searchQuery]);
+  // Search results from database (searches ALL customers, not just loaded ones)
+  const [searchResults, setSearchResults] = useState<Customer[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      const query = searchQuery.trim();
+      try {
+        // Search across all customer fields using ilike
+        const { data, error } = await supabase
+          .from("customer")
+          .select("*")
+          .is("linked_customer_id", null)
+          .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,username.ilike.%${query}%,messenger_name.ilike.%${query}%`)
+          .order("last_message_at", { ascending: false, nullsFirst: false })
+          .limit(8);
+
+        if (error) throw error;
+        setSearchResults((data || []) as Customer[]);
+      } catch (err) {
+        console.error("Search error:", err);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery]);
 
   // Main list always shows all customers (no search filtering)
   const filteredBySearch = allCustomers;
@@ -703,9 +738,16 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           >
             <Command>
               <CommandList>
-                <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
-                  No customers found
-                </CommandEmpty>
+                {isSearching ? (
+                  <div className="py-4 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Searching...
+                  </div>
+                ) : (
+                  <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
+                    No customers found
+                  </CommandEmpty>
+                )}
                 {searchResults.map(customer => {
                   const name = customer.messenger_name || 
                     `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
