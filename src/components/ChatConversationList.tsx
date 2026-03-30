@@ -774,13 +774,6 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       
       <ScrollArea className="flex-1">
         <div className="p-1">
-          {sortedCustomers.length === 0 && searchQuery ? (
-            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-              <Search className="h-8 w-8 mb-3 opacity-50" />
-              <p className="text-sm">No customers found</p>
-              <p className="text-xs mt-1">Try a different search term</p>
-            </div>
-          ) : null}
           {sortedCustomers.map(customer => {
             const displayName = customer.messenger_name || 
               `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
