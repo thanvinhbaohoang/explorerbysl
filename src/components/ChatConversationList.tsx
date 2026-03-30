@@ -714,7 +714,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       </div>
       
       {/* Filter tabs */}
-      <div className="px-3 py-1.5 border-b flex-shrink-0 flex gap-1">
+      <div className="px-3 py-1.5 border-b flex-shrink-0 flex gap-1 flex-wrap">
         <Button
           variant={filterMode === 'all' ? 'default' : 'ghost'}
           size="sm"
@@ -736,6 +736,35 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
               {unansweredIds.size}
             </Badge>
           )}
+        </Button>
+        
+        <div className="w-px bg-border mx-1 self-stretch" />
+        
+        <Button
+          variant={platformFilter === 'all' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs px-2 rounded-full"
+          onClick={() => setPlatformFilter('all')}
+        >
+          All Platforms
+        </Button>
+        <Button
+          variant={platformFilter === 'telegram' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs px-2 rounded-full gap-1"
+          onClick={() => setPlatformFilter('telegram')}
+        >
+          <Send className="h-3 w-3" />
+          Telegram
+        </Button>
+        <Button
+          variant={platformFilter === 'messenger' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 text-xs px-2 rounded-full gap-1"
+          onClick={() => setPlatformFilter('messenger')}
+        >
+          <Facebook className="h-3 w-3" />
+          Messenger
         </Button>
       </div>
       
