@@ -39,15 +39,29 @@ interface CustomersData {
   linkedPlatformsMap: LinkedPlatformsMap;
 }
 
-export const useCustomersData = (page: number, itemsPerPage: number = 10) => {
+export const useCustomersData = (page: number, itemsPerPage: number = 10, searchTerm: string = "", platformFilter: string = "all") => {
   return useQuery({
-    queryKey: ["customers", page, itemsPerPage],
+    queryKey: ["customers", page, itemsPerPage, searchTerm, platformFilter],
     queryFn: async (): Promise<CustomersData> => {
-      // Get total count of PRIMARY customers only (those without linked_customer_id)
-      const { count, error: countError } = await supabase
+      // Build base query for count
+      let countQuery = supabase
         .from("customer")
         .select("*", { count: "exact", head: true })
         .is("linked_customer_id", null);
+
+      // Apply platform filter
+      if (platformFilter === "telegram") {
+        countQuery = countQuery.not("telegram_id", "is", null).is("messenger_id", null);
+      } else if (platformFilter === "messenger") {
+        countQuery = countQuery.not("messenger_id", "is", null);
+      }
+
+      // Apply search filter
+      if (searchTerm) {
+        countQuery = countQuery.or(`first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%,messenger_name.ilike.%${searchTerm}%`);
+      }
+
+      const { count, error: countError } = await countQuery;
 
       if (countError) throw countError;
 
