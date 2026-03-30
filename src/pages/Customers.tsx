@@ -151,7 +151,7 @@ const Customers = () => {
   const [customerPlatformFilter, setCustomerPlatformFilter] = useState<string>("all");
   
   // Use cached customers data
-  const { data: customersData, isLoading, refetch: refetchCustomers } = useCustomersData(customersPage, itemsPerPage);
+  const { data: customersData, isLoading, refetch: refetchCustomers } = useCustomersData(customersPage, itemsPerPage, debouncedSearchTerm, customerPlatformFilter);
   const customers = customersData?.customers || [];
   const totalCustomers = customersData?.total || 0;
   const linkedPlatformsMap = customersData?.linkedPlatformsMap || {};
@@ -203,34 +203,10 @@ const Customers = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Filter customers client-side based on search and platform filter
-  const filteredCustomers = useMemo(() => {
-    let filtered = customers;
-    
-    // Platform filter
-    if (customerPlatformFilter === 'telegram') {
-      filtered = filtered.filter(c => c.telegram_id && !c.messenger_id);
-    } else if (customerPlatformFilter === 'messenger') {
-      filtered = filtered.filter(c => c.messenger_id);
-    }
-    
-    // Search filter
-    if (debouncedSearchTerm) {
-      const search = debouncedSearchTerm.toLowerCase();
-      filtered = filtered.filter(c => {
-        const name = c.messenger_name || `${c.first_name || ''} ${c.last_name || ''}`.trim();
-        const username = c.username || '';
-        const sourceTag = c.lead_source?.messenger_ref || '';
-        const campaign = c.lead_source?.campaign_name || '';
-        return name.toLowerCase().includes(search) ||
-               username.toLowerCase().includes(search) ||
-               sourceTag.toLowerCase().includes(search) ||
-               campaign.toLowerCase().includes(search);
-      });
-    }
-    
-    return filtered;
-  }, [customers, customerPlatformFilter, debouncedSearchTerm]);
+  // Reset page when platform filter changes
+  useEffect(() => {
+    setCustomersPage(1);
+  }, [customerPlatformFilter]);
 
   // Scroll to bottom of messages
   const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
@@ -1849,7 +1825,7 @@ const Customers = () => {
 
             {isLoading ? (
               <TableSkeleton rows={10} columns={8} />
-            ) : filteredCustomers.length === 0 ? (
+            ) : customers.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 {customers.length === 0 ? 'No customers yet. Share your bot to get started!' : 'No customers match your search.'}
               </div>
@@ -1869,7 +1845,7 @@ const Customers = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredCustomers.map((customer) => {
+                    {customers.map((customer) => {
                       const platforms = linkedPlatformsMap[customer.id];
                       const hasBothPlatforms = platforms?.telegram && platforms?.messenger;
                       const primaryPlatform = customer.messenger_id ? 'messenger' : 'telegram';
