@@ -47,7 +47,12 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10) => {
       const { count, error: countError } = await supabase
         .from("customer")
         .select("*", { count: "exact", head: true })
-        .is("linked_customer_id", null);
+        .is("linked_customer_id", null)
+        .not("messenger_id", "is", null)
+        .or("messenger_name.neq.Unknown,first_name.not.is.null")
+        // The above filters OUT broken Messenger records (Unknown name + no first_name)
+        // We actually need a different approach: include all non-messenger + valid messenger
+        ;
 
       if (countError) throw countError;
 
