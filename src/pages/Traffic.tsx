@@ -138,7 +138,7 @@ const Traffic = () => {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [sourceFilter, setSourceFilter] = useState<string>("");
   const [campaignFilter, setCampaignFilter] = useState<string>("");
-  const [platformFilter, setPlatformFilter] = useState<string>("telegram");
+  const [platformFilter, setPlatformFilter] = useState<string>("");
   const [postTagFilter, setPostTagFilter] = useState<string>("");
 
   // Date range filter
