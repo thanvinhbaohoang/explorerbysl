@@ -81,6 +81,9 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   const [filterMode, setFilterMode] = useState<'all' | 'awaiting'>('all');
   const [unansweredIds, setUnansweredIds] = useState<Set<string>>(new Set());
   
+  // Platform filter
+  const [platformFilter, setPlatformFilter] = useState<'all' | 'telegram' | 'messenger'>('all');
+  
   // Realtime status tracking
   const [realtimeStatus, setRealtimeStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
