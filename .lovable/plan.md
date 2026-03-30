@@ -1,47 +1,49 @@
 
 
-# Fix: Can't Reply to Messenger Customers (Missing page_id)
+# Search Dropdown for Chat Customer Lookup
 
-## Root Cause
+## Problem
+The current search filters the entire conversation list inline, causing re-renders and a janky experience. Users want a quick lookup dropdown instead.
 
-Most Messenger customers (8 out of 10 recent ones) have `page_id: null` in the database. When you try to reply, the edge function rejects the request with `"Missing page_id - required to send messages"`.
+## Approach
+Replace the inline filter-search with a **Popover + Command** pattern (like a spotlight/command palette). When the user types in the search input, a dropdown appears below it showing matching customers. Selecting a customer from the dropdown opens their chat directly — without filtering the main conversation list.
 
-The `handleMessage` function in the webhook only sets `page_id` when **creating new customers** (line 512). It never updates `page_id` on existing customers who already have `null`.
+The main list stays untouched during search. The search only controls the dropdown results.
 
-## Fix
+## Changes
 
-### 1. Edge function: Update `page_id` on existing customers (messenger-webhook/index.ts)
+### `src/components/ChatConversationList.tsx`
 
-In `handleMessage`, after finding an existing customer, if their `page_id` is null, update it with the current `pageId` from the webhook event. This auto-heals existing records as customers send new messages.
+1. **Decouple search from list filtering** — Remove `debouncedSearch` from the `filteredBySearch` memo so the conversation list always shows all customers regardless of search input.
+
+2. **Add a search results dropdown** — Use `Popover` (anchored to the search input) that opens when the input has text and closes when cleared or a result is clicked. Inside the popover, render a simple list of matching customers (name, platform icon, avatar) — max ~6 results.
+
+3. **Search logic** — Query `allCustomers` client-side (already loaded) with a simple `.filter()` on name/username. Show results immediately, no debounce needed since it's just array filtering with no side effects.
+
+4. **On select** — Call `onSelect(customer)` and clear the search input, closing the dropdown. The conversation list remains unchanged.
+
+5. **Keyboard support** — Use arrow keys to navigate results, Enter to select. The `Command` component from shadcn/ui handles this natively.
+
+### Implementation Detail
 
 ```
-// After line 494 (after the "Unknown name" refresh block)
-if (customer && !customer.page_id && pageId) {
-  await supabase.from('customer').update({ page_id: pageId }).eq('id', customer.id);
-  customer.page_id = pageId;
-}
+Search Input (always enabled, never disables)
+  └─ Popover (open when searchQuery.length > 0)
+       └─ Command + CommandList
+            └─ CommandItem per matching customer (avatar + name + platform badge)
+                 └─ onClick → onSelect(customer), clear search
 ```
 
-### 2. Database migration: Backfill `page_id` for existing customers
-
-Set `page_id` for all Messenger customers that have `null` using data from their messages. Since there are currently 2 active pages, and most customers message from `109469038735899`, we can backfill from the messages table or default to the active page.
-
-```sql
-UPDATE customer c
-SET page_id = fp.page_id
-FROM (SELECT DISTINCT ON (page_id) page_id FROM facebook_pages WHERE is_active = true LIMIT 1) fp
-WHERE c.messenger_id IS NOT NULL AND c.page_id IS NULL;
-```
-
-### 3. Frontend: Better error message (ChatPanel / useChatMessages)
-
-When a reply fails due to missing `page_id`, show a specific toast message instead of the generic "Failed to send message". The error from the edge function already contains the text.
+- Import `Popover`, `PopoverContent`, `PopoverAnchor` from existing UI components
+- Import `Command`, `CommandList`, `CommandItem`, `CommandEmpty` from existing UI components
+- Remove the `debouncedSearch` state and its effect — not needed anymore
+- Keep `searchQuery` state for the input value only
+- Filter matches inline: `allCustomers.filter(...)` capped at 8 results
+- The existing filter tabs (All / Awaiting Reply) and conversation list remain completely independent of search
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `supabase/functions/messenger-webhook/index.ts` | Auto-update `page_id` on existing customers when null |
-| Migration SQL | Backfill `page_id` for all existing Messenger customers |
-| `src/hooks/useChatMessages.ts` | Surface `page_id` missing error in toast |
+| `src/components/ChatConversationList.tsx` | Replace inline search filtering with a Command dropdown popover |
 
