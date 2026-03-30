@@ -1,49 +1,47 @@
 
 
-# Search Dropdown for Chat Customer Lookup
+# Fix: Pagination Count Not Reflecting Applied Filters
 
 ## Problem
-The current search filters the entire conversation list inline, causing re-renders and a janky experience. Users want a quick lookup dropdown instead.
+When filters are applied on /customers and /traffic, the table still shows 267 pages because:
+- **Customers**: Platform and search filters are applied **client-side** on already-paginated data (10 rows), but pagination uses the **unfiltered** database count (`totalCustomers`).
+- **Traffic**: The `customerStatusFilter` is applied client-side after fetching, so `totalTraffic` doesn't reflect it.
 
-## Approach
-Replace the inline filter-search with a **Popover + Command** pattern (like a spotlight/command palette). When the user types in the search input, a dropdown appears below it showing matching customers. Selecting a customer from the dropdown opens their chat directly — without filtering the main conversation list.
+## Solution
+Move all filters to the **database query level** so the count and pagination are always accurate.
 
-The main list stays untouched during search. The search only controls the dropdown results.
+### 1. `src/hooks/useCustomersData.ts` — Accept filter parameters
 
-## Changes
+- Add `searchTerm` and `platformFilter` parameters to the hook
+- Apply them in the Supabase query (both the count query and the data query):
+  - **Platform filter**: `telegram` → `.not('telegram_id', 'is', null).is('messenger_id', null)` / `messenger` → `.not('messenger_id', 'is', null)`
+  - **Search filter**: `.or('first_name.ilike.%term%,last_name.ilike.%term%,username.ilike.%term%,messenger_name.ilike.%term%')`
+- Update the `queryKey` to include the new filter params so React Query caches correctly
 
-### `src/components/ChatConversationList.tsx`
+### 2. `src/pages/Customers.tsx` — Pass filters to hook, remove client-side filtering
 
-1. **Decouple search from list filtering** — Remove `debouncedSearch` from the `filteredBySearch` memo so the conversation list always shows all customers regardless of search input.
+- Pass `debouncedSearchTerm` and `customerPlatformFilter` to `useCustomersData()`
+- Remove the `filteredCustomers` useMemo (no longer needed — DB returns pre-filtered data)
+- Use `customers` directly in the table render
+- Reset page to 1 when filters change (already done for search, add for platform filter)
 
-2. **Add a search results dropdown** — Use `Popover` (anchored to the search input) that opens when the input has text and closes when cleared or a result is clicked. Inside the popover, render a simple list of matching customers (name, platform icon, avatar) — max ~6 results.
+### 3. `src/hooks/useTrafficData.ts` — Add `customerStatusFilter` to the DB query
 
-3. **Search logic** — Query `allCustomers` client-side (already loaded) with a simple `.filter()` on name/username. Show results immediately, no debounce needed since it's just array filtering with no side effects.
+- The `customerStatusFilter` ("new" vs "existing") depends on comparing `lead.created_at` with `customer.first_message_at`, which is computed after fetching. This cannot easily be moved to the DB query.
+- Instead, when `customerStatusFilter` is active, fetch **all matching rows** (remove `.range()`) and apply the filter, then slice for the current page — OR use the filtered count for pagination.
+- Simpler approach: compute `filteredTotal` from `filteredTrafficData.length` when `customerStatusFilter` is active and use that for pagination.
 
-4. **On select** — Call `onSelect(customer)` and clear the search input, closing the dropdown. The conversation list remains unchanged.
+### 4. `src/pages/Traffic.tsx` — Fix pagination to use filtered count
 
-5. **Keyboard support** — Use arrow keys to navigate results, Enter to select. The `Command` component from shadcn/ui handles this natively.
-
-### Implementation Detail
-
-```
-Search Input (always enabled, never disables)
-  └─ Popover (open when searchQuery.length > 0)
-       └─ Command + CommandList
-            └─ CommandItem per matching customer (avatar + name + platform badge)
-                 └─ onClick → onSelect(customer), clear search
-```
-
-- Import `Popover`, `PopoverContent`, `PopoverAnchor` from existing UI components
-- Import `Command`, `CommandList`, `CommandItem`, `CommandEmpty` from existing UI components
-- Remove the `debouncedSearch` state and its effect — not needed anymore
-- Keep `searchQuery` state for the input value only
-- Filter matches inline: `allCustomers.filter(...)` capped at 8 results
-- The existing filter tabs (All / Awaiting Reply) and conversation list remain completely independent of search
+- When `customerStatusFilter` is set, use `filteredTrafficData.length` as the basis for showing "no more pages" — but since this is a client-side filter on one page of data, the real fix is to adjust `totalTrafficPages` to reflect filtering.
+- Since customer status can't easily be moved to DB, show a note that pagination may be approximate when status filter is active, OR fetch without pagination when status filter is active (data volume should be manageable).
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `src/components/ChatConversationList.tsx` | Replace inline search filtering with a Command dropdown popover |
+| `src/hooks/useCustomersData.ts` | Add `searchTerm` and `platformFilter` params, apply in DB query |
+| `src/pages/Customers.tsx` | Pass filters to hook, remove client-side `filteredCustomers` memo |
+| `src/hooks/useTrafficData.ts` | No change needed (filters already DB-side except customerStatus) |
+| `src/pages/Traffic.tsx` | Use filtered count for pagination when customerStatusFilter is active |
 
