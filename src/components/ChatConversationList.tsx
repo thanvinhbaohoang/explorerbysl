@@ -664,27 +664,86 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         </p>
       </div>
       
-      {/* Search input */}
+      {/* Search input with dropdown */}
       <div className="px-3 py-2 border-b flex-shrink-0">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search customers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8 h-9"
-          />
-          {searchQuery && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6"
-              onClick={() => setSearchQuery("")}
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          )}
-        </div>
+        <Popover open={searchOpen && searchQuery.length > 0} onOpenChange={setSearchOpen}>
+          <PopoverAnchor asChild>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                ref={searchInputRef}
+                placeholder="Search customers..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setSearchOpen(true);
+                }}
+                onFocus={() => { if (searchQuery) setSearchOpen(true); }}
+                className="pl-9 pr-8 h-9"
+              />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6"
+                  onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          </PopoverAnchor>
+          <PopoverContent
+            className="p-0 w-[var(--radix-popover-trigger-width)]"
+            align="start"
+            sideOffset={4}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <Command>
+              <CommandList>
+                <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
+                  No customers found
+                </CommandEmpty>
+                {searchResults.map(customer => {
+                  const name = customer.messenger_name || 
+                    `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
+                    'Unknown';
+                  const platform = customer.messenger_id ? 'messenger' : 'telegram';
+                  return (
+                    <CommandItem
+                      key={customer.id}
+                      value={name}
+                      onSelect={() => {
+                        handleSelect(customer);
+                        setSearchQuery("");
+                        setSearchOpen(false);
+                      }}
+                      className="flex items-center gap-3 px-3 py-2 cursor-pointer"
+                    >
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={customer.messenger_profile_pic || undefined} />
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                          {getInitials(name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="flex-1 truncate text-sm">{name}</span>
+                      <div className={cn(
+                        "w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0",
+                        platform === 'messenger' ? "bg-primary" : "bg-secondary"
+                      )}>
+                        {platform === 'messenger' ? (
+                          <Facebook className="h-3 w-3 text-primary-foreground" />
+                        ) : (
+                          <Send className="h-3 w-3 text-secondary-foreground" />
+                        )}
+                      </div>
+                    </CommandItem>
+                  );
+                })}
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
       
       {/* Filter tabs */}
