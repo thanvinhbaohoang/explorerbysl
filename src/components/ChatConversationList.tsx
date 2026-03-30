@@ -483,7 +483,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       return latest;
     };
 
-    return [...filteredByMode].sort((a, b) => {
+    return [...filteredByPlatform].sort((a, b) => {
       const linkedIdsA = allLinkedPlatformsMap[a.id]?.linkedIds || [];
       const linkedIdsB = allLinkedPlatformsMap[b.id]?.linkedIds || [];
       
@@ -494,7 +494,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                     (b.last_message_at ? new Date(b.last_message_at).getTime() : 0);
       return bTime - aTime;
     });
-  }, [filteredByMode, allLinkedPlatformsMap, lastMessages]);
+  }, [filteredByPlatform, allLinkedPlatformsMap, lastMessages]);
 
   // Compute waiting time badge for a conversation
   const getWaitingBadge = (customer: Customer) => {
