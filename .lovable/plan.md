@@ -1,47 +1,44 @@
 
 
-# Fix: Can't Reply to Messenger Customers (Missing page_id)
+# Filter Out Broken "Unknown" Messenger Customers & Pause Messenger Visibility
 
-## Root Cause
+## Problem
+The broken Facebook integration created hundreds of "Unknown" Messenger customers with no useful data. These clutter /chat, /customers, and /traffic, overwhelming employees.
 
-Most Messenger customers (8 out of 10 recent ones) have `page_id: null` in the database. When you try to reply, the edge function rejects the request with `"Missing page_id - required to send messages"`.
+## Approach
+Add a **platform filter** across all three views so Messenger records are hidden by default until the integration is fixed. Also filter out "Unknown" named customers specifically.
 
-The `handleMessage` function in the webhook only sets `page_id` when **creating new customers** (line 512). It never updates `page_id` on existing customers who already have `null`.
+## Changes
 
-## Fix
+### 1. `src/hooks/useCustomersData.ts` — Exclude broken Messenger customers at query level
+- Add a filter to exclude customers where `messenger_id IS NOT NULL` AND `messenger_name = 'Unknown'` AND `first_name IS NULL` (these are the broken records)
+- This cleans up /customers and /chat simultaneously since both use this hook
 
-### 1. Edge function: Update `page_id` on existing customers (messenger-webhook/index.ts)
+### 2. `src/components/ChatConversationList.tsx` — Add platform filter toggle
+- Add a filter bar with "All", "Telegram", "Messenger" chips (similar to existing "All" / "Awaiting Reply")
+- Default to "Telegram" (or "All minus Unknown") so broken Messenger contacts are hidden
+- Add the filter logic in `filteredByMode` or a new `filteredByPlatform` memo stage
 
-In `handleMessage`, after finding an existing customer, if their `page_id` is null, update it with the current `pageId` from the webhook event. This auto-heals existing records as customers send new messages.
+### 3. `src/pages/Customers.tsx` — Add platform filter dropdown
+- Add a platform filter dropdown (All / Telegram / Messenger) to the existing filter bar
+- Default to showing all but filtering out broken "Unknown" Messenger records
+- Apply filter client-side on the fetched data
 
-```
-// After line 494 (after the "Unknown name" refresh block)
-if (customer && !customer.page_id && pageId) {
-  await supabase.from('customer').update({ page_id: pageId }).eq('id', customer.id);
-  customer.page_id = pageId;
-}
-```
+### 4. `src/pages/Traffic.tsx` / `src/hooks/useTrafficData.ts` — Default platform filter to Telegram
+- The traffic page already has a `platformFilter` dropdown — just change its default from `"all"` to `"telegram"`
+- This hides Messenger traffic entries by default until the integration is fixed
 
-### 2. Database migration: Backfill `page_id` for existing customers
+### 5. `src/components/ChatConversationList.tsx` — Suppress "New customer" toasts for Unknown Messenger
+- In the real-time customer INSERT handler, skip the toast notification if the new customer is a Messenger user with name "Unknown"
 
-Set `page_id` for all Messenger customers that have `null` using data from their messages. Since there are currently 2 active pages, and most customers message from `109469038735899`, we can backfill from the messages table or default to the active page.
-
-```sql
-UPDATE customer c
-SET page_id = fp.page_id
-FROM (SELECT DISTINCT ON (page_id) page_id FROM facebook_pages WHERE is_active = true LIMIT 1) fp
-WHERE c.messenger_id IS NOT NULL AND c.page_id IS NULL;
-```
-
-### 3. Frontend: Better error message (ChatPanel / useChatMessages)
-
-When a reply fails due to missing `page_id`, show a specific toast message instead of the generic "Failed to send message". The error from the edge function already contains the text.
-
-## Files Changed
+## Summary
 
 | File | Change |
 |------|--------|
-| `supabase/functions/messenger-webhook/index.ts` | Auto-update `page_id` on existing customers when null |
-| Migration SQL | Backfill `page_id` for all existing Messenger customers |
-| `src/hooks/useChatMessages.ts` | Surface `page_id` missing error in toast |
+| `src/hooks/useCustomersData.ts` | Filter out broken Messenger customers (Unknown name, no first_name) |
+| `src/components/ChatConversationList.tsx` | Add platform filter chips, default hide broken records, suppress Unknown toasts |
+| `src/pages/Customers.tsx` | Add platform filter, hide broken Unknown Messenger records |
+| `src/pages/Traffic.tsx` | Default platform filter to "telegram" |
+
+This is a **UI-only** change — no data is deleted. Once the Messenger integration is fixed, employees can switch filters back to "All" to see everything.
 
