@@ -451,6 +451,22 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     });
   }, [filteredBySearch, filterMode, unansweredIds, allLinkedPlatformsMap]);
 
+  // Apply platform filter
+  const filteredByPlatform = useMemo(() => {
+    if (platformFilter === 'all') return filteredByMode;
+    if (platformFilter === 'telegram') {
+      return filteredByMode.filter(c => {
+        const platforms = allLinkedPlatformsMap[c.id];
+        return c.telegram_id !== null || platforms?.telegram;
+      });
+    }
+    // messenger
+    return filteredByMode.filter(c => {
+      const platforms = allLinkedPlatformsMap[c.id];
+      return c.messenger_id !== null || platforms?.messenger;
+    });
+  }, [filteredByMode, platformFilter, allLinkedPlatformsMap]);
+
   // Sort customers by last message time (newest first) — Instagram/Messenger style
   const sortedCustomers = useMemo(() => {
     // Helper to get latest timestamp from real-time lastMessages state
