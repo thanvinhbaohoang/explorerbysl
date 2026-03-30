@@ -738,9 +738,16 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           >
             <Command>
               <CommandList>
-                <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
-                  No customers found
-                </CommandEmpty>
+                {isSearching ? (
+                  <div className="py-4 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Searching...
+                  </div>
+                ) : (
+                  <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
+                    No customers found
+                  </CommandEmpty>
+                )}
                 {searchResults.map(customer => {
                   const name = customer.messenger_name || 
                     `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
