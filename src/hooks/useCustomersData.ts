@@ -65,14 +65,27 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10, search
 
       if (countError) throw countError;
 
-      // Fetch paginated data - only PRIMARY customers
+      // Fetch paginated data - only PRIMARY customers with filters
       const from = (page - 1) * itemsPerPage;
       const to = from + itemsPerPage - 1;
 
-      const { data: customersData, error } = await supabase
+      let dataQuery = supabase
         .from("customer")
         .select("*")
-        .is("linked_customer_id", null)
+        .is("linked_customer_id", null);
+
+      // Apply same filters to data query
+      if (platformFilter === "telegram") {
+        dataQuery = dataQuery.not("telegram_id", "is", null).is("messenger_id", null);
+      } else if (platformFilter === "messenger") {
+        dataQuery = dataQuery.not("messenger_id", "is", null);
+      }
+
+      if (searchTerm) {
+        dataQuery = dataQuery.or(`first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%,messenger_name.ilike.%${searchTerm}%`);
+      }
+
+      const { data: customersData, error } = await dataQuery
         .order("last_message_at", { ascending: false, nullsFirst: false })
         .range(from, to);
 

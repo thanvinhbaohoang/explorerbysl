@@ -203,34 +203,10 @@ const Customers = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Filter customers client-side based on search and platform filter
-  const filteredCustomers = useMemo(() => {
-    let filtered = customers;
-    
-    // Platform filter
-    if (customerPlatformFilter === 'telegram') {
-      filtered = filtered.filter(c => c.telegram_id && !c.messenger_id);
-    } else if (customerPlatformFilter === 'messenger') {
-      filtered = filtered.filter(c => c.messenger_id);
-    }
-    
-    // Search filter
-    if (debouncedSearchTerm) {
-      const search = debouncedSearchTerm.toLowerCase();
-      filtered = filtered.filter(c => {
-        const name = c.messenger_name || `${c.first_name || ''} ${c.last_name || ''}`.trim();
-        const username = c.username || '';
-        const sourceTag = c.lead_source?.messenger_ref || '';
-        const campaign = c.lead_source?.campaign_name || '';
-        return name.toLowerCase().includes(search) ||
-               username.toLowerCase().includes(search) ||
-               sourceTag.toLowerCase().includes(search) ||
-               campaign.toLowerCase().includes(search);
-      });
-    }
-    
-    return filtered;
-  }, [customers, customerPlatformFilter, debouncedSearchTerm]);
+  // Reset page when platform filter changes
+  useEffect(() => {
+    setCustomersPage(1);
+  }, [customerPlatformFilter]);
 
   // Scroll to bottom of messages
   const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
