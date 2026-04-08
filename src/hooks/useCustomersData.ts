@@ -39,15 +39,20 @@ interface CustomersData {
   linkedPlatformsMap: LinkedPlatformsMap;
 }
 
-export const useCustomersData = (page: number, itemsPerPage: number = 10, searchTerm: string = "", platformFilter: string = "all") => {
+export const useCustomersData = (page: number, itemsPerPage: number = 10, searchTerm: string = "", platformFilter: string = "all", messengerEnabled: boolean = true) => {
   return useQuery({
-    queryKey: ["customers", page, itemsPerPage, searchTerm, platformFilter],
+    queryKey: ["customers", page, itemsPerPage, searchTerm, platformFilter, messengerEnabled],
     queryFn: async (): Promise<CustomersData> => {
       // Build base query for count
       let countQuery = supabase
         .from("customer")
         .select("*", { count: "exact", head: true })
         .is("linked_customer_id", null);
+
+      // Hide messenger customers when integration is disabled
+      if (!messengerEnabled) {
+        countQuery = countQuery.or("messenger_id.is.null,messenger_name.neq.Unknown");
+      }
 
       // Apply platform filter
       if (platformFilter === "telegram") {
