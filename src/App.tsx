@@ -48,7 +48,7 @@ const App = () => {
             <AppLayout>
               <Routes>
                 {/* Redirect root to customers */}
-                <Route path="/" element={<Navigate to="/customers" replace />} />
+                <Route path="/" element={<Navigate to="/traffic" replace />} />
                 <Route path="/auth" element={<Auth />} />
                 <Route path="/test-login" element={<TestLogin />} />
                 <Route path="/pending-approval" element={<PendingApproval />} />
