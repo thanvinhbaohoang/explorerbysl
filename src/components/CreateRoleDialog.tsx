@@ -24,9 +24,21 @@ const defaultPermissions: RolePermissions = {
   canViewMondayImport: false,
   canViewUserRoles: false,
   canManageRoles: false,
+  canViewChat: true,
+  canViewCustomers: true,
+  canViewTraffic: true,
+  canViewAdsInsight: true,
+  canViewDocs: true,
+  canViewDashboard: true,
 };
 
 const permissionLabels: Record<keyof RolePermissions, string> = {
+  canViewChat: "View Chat",
+  canViewCustomers: "View Customers",
+  canViewTraffic: "View Traffic",
+  canViewAdsInsight: "View Ads Insight",
+  canViewDocs: "View Docs",
+  canViewDashboard: "View Dashboard",
   canExportCustomers: "Export Customer Data (CSV)",
   canExportTraffic: "Export Traffic Data (CSV)",
   canExportAds: "Export Ads Data (CSV)",

@@ -22,15 +22,15 @@ interface AppLayoutProps {
 interface NavLink {
   href: string;
   label: string;
-  permission?: 'canViewFacebookPages' | 'canViewMondayImport' | 'canViewUserRoles';
+  permission?: keyof import("@/hooks/useUserPermissions").RolePermissions;
 }
 
 const navLinks: NavLink[] = [
-  { href: "/chat", label: "Chat" },
-  { href: "/customers", label: "Customers" },
-  { href: "/traffic", label: "Traffic" },
-  { href: "/ads-insight", label: "Ads Insight" },
-  { href: "/docs", label: "Docs" },
+  { href: "/chat", label: "Chat", permission: 'canViewChat' },
+  { href: "/customers", label: "Customers", permission: 'canViewCustomers' },
+  { href: "/traffic", label: "Traffic", permission: 'canViewTraffic' },
+  { href: "/ads-insight", label: "Ads Insight", permission: 'canViewAdsInsight' },
+  { href: "/docs", label: "Docs", permission: 'canViewDocs' },
   { href: "/system", label: "System", permission: 'canViewFacebookPages' },
   { href: "/monday-import", label: "Import", permission: 'canViewMondayImport' },
   { href: "/user-roles", label: "Roles", permission: 'canViewUserRoles' },
