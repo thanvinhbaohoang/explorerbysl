@@ -26,6 +26,7 @@ import MondayImport from "./pages/MondayImport";
 import FacebookPages from "./pages/FacebookPages";
 import UserRoles from "./pages/UserRoles";
 import Docs from "./pages/Docs";
+import FacebookConnect from "./pages/FacebookConnect";
 import NotFound from "./pages/NotFound";
 import PendingApproval from "./pages/PendingApproval";
 
@@ -66,6 +67,7 @@ const App = () => {
                 <Route path="/media-gallery" element={<ProtectedRoute><MediaGallery /></ProtectedRoute>} />
                 <Route path="/monday-import" element={<ProtectedRoute><MondayImport /></ProtectedRoute>} />
                 <Route path="/system" element={<ProtectedRoute><FacebookPages /></ProtectedRoute>} />
+                <Route path="/facebook-connect" element={<ProtectedRoute><FacebookConnect /></ProtectedRoute>} />
                 <Route path="/user-roles" element={<ProtectedRoute><UserRoles /></ProtectedRoute>} />
                 <Route path="/docs" element={<ProtectedRoute><Docs /></ProtectedRoute>} />
                 
