@@ -57,19 +57,19 @@ const App = () => {
                 <Route path="/redirect" element={<ProtectedRoute><Redirect /></ProtectedRoute>} />
                 <Route path="/telegram" element={<Telegram />} />
                 <Route path="/ad/*" element={<ProtectedRoute><Ad /></ProtectedRoute>} />
-                <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
-                <Route path="/customers/:id" element={<ProtectedRoute><CustomerDetail /></ProtectedRoute>} />
-                <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
-                <Route path="/traffic" element={<ProtectedRoute><Traffic /></ProtectedRoute>} />
-                <Route path="/ads-insight" element={<ProtectedRoute><AdsInsight /></ProtectedRoute>} />
-                <Route path="/ads-insight/:adId" element={<ProtectedRoute><AdDetail /></ProtectedRoute>} />
+                <Route path="/dashboard" element={<ProtectedRoute requiredPermission="canViewDashboard"><Dashboard /></ProtectedRoute>} />
+                <Route path="/customers" element={<ProtectedRoute requiredPermission="canViewCustomers"><Customers /></ProtectedRoute>} />
+                <Route path="/customers/:id" element={<ProtectedRoute requiredPermission="canViewCustomers"><CustomerDetail /></ProtectedRoute>} />
+                <Route path="/chat" element={<ProtectedRoute requiredPermission="canViewChat"><Chat /></ProtectedRoute>} />
+                <Route path="/traffic" element={<ProtectedRoute requiredPermission="canViewTraffic"><Traffic /></ProtectedRoute>} />
+                <Route path="/ads-insight" element={<ProtectedRoute requiredPermission="canViewAdsInsight"><AdsInsight /></ProtectedRoute>} />
+                <Route path="/ads-insight/:adId" element={<ProtectedRoute requiredPermission="canViewAdsInsight"><AdDetail /></ProtectedRoute>} />
                 <Route path="/webhook-debug" element={<ProtectedRoute><WebhookDebug /></ProtectedRoute>} />
                 <Route path="/media-gallery" element={<ProtectedRoute><MediaGallery /></ProtectedRoute>} />
-                <Route path="/monday-import" element={<ProtectedRoute><MondayImport /></ProtectedRoute>} />
-                <Route path="/system" element={<ProtectedRoute><FacebookPages /></ProtectedRoute>} />
-                <Route path="/user-roles" element={<ProtectedRoute><UserRoles /></ProtectedRoute>} />
-                <Route path="/docs" element={<ProtectedRoute><Docs /></ProtectedRoute>} />
+                <Route path="/monday-import" element={<ProtectedRoute requiredPermission="canViewMondayImport"><MondayImport /></ProtectedRoute>} />
+                <Route path="/system" element={<ProtectedRoute requiredPermission="canViewFacebookPages"><FacebookPages /></ProtectedRoute>} />
+                <Route path="/user-roles" element={<ProtectedRoute requiredPermission="canViewUserRoles"><UserRoles /></ProtectedRoute>} />
+                <Route path="/docs" element={<ProtectedRoute requiredPermission="canViewDocs"><Docs /></ProtectedRoute>} />
                 
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
