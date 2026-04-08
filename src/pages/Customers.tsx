@@ -1983,26 +1983,53 @@ const Customers = () => {
                             {formatDateGMT7(customer.last_message_at)}
                           </TableCell>
                           <TableCell>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => navigate(`/chat?customer=${customer.id}`)}
-                              className="relative"
-                            >
-                              <MessageSquare className="h-4 w-4 mr-2" />
-                              Chat
-                              {(() => {
-                                // Get all linked IDs from the linkedPlatformsMap
-                                const linkedIds = linkedPlatformsMap[customer.id]?.linkedIds || [];
-                                const allIds = [customer.id, ...linkedIds];
-                                const count = allIds.reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
-                                return count > 0 ? (
-                                  <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 bg-destructive text-destructive-foreground text-xs font-medium rounded-full flex items-center justify-center animate-pulse">
-                                    {count > 99 ? '99+' : count}
-                                  </span>
-                                ) : null;
-                              })()}
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => navigate(`/chat?customer=${customer.id}`)}
+                                className="relative"
+                              >
+                                <MessageSquare className="h-4 w-4 mr-2" />
+                                Chat
+                                {(() => {
+                                  const linkedIds = linkedPlatformsMap[customer.id]?.linkedIds || [];
+                                  const allIds = [customer.id, ...linkedIds];
+                                  const count = allIds.reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
+                                  return count > 0 ? (
+                                    <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 bg-destructive text-destructive-foreground text-xs font-medium rounded-full flex items-center justify-center animate-pulse">
+                                      {count > 99 ? '99+' : count}
+                                    </span>
+                                  ) : null;
+                                })()}
+                              </Button>
+                              {isAdmin && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        This will permanently delete <strong>{displayName || 'this customer'}</strong> and all their messages, notes, and related data. This action cannot be undone.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                        onClick={() => deleteCustomer(customer.id, displayName || 'Unknown')}
+                                      >
+                                        Delete
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
