@@ -50,6 +50,7 @@ const App = () => {
                 {/* Redirect root to customers */}
                 <Route path="/" element={<Navigate to="/customers" replace />} />
                 <Route path="/auth" element={<Auth />} />
+                <Route path="/test-login" element={<TestLogin />} />
                 <Route path="/pending-approval" element={<PendingApproval />} />
                 
                 {/* Protected routes */}
