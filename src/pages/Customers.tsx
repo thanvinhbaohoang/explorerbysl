@@ -29,6 +29,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Pagination,
   PaginationContent,
   PaginationEllipsis,
@@ -141,7 +152,7 @@ const getPageNumbers = (currentPage: number, totalPages: number): (number | 'ell
 const Customers = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { permissions } = useUserPermissions();
+  const { permissions, isAdmin } = useUserPermissions();
   const queryClient = useQueryClient();
   const { isEnabled: messengerEnabled } = useMessengerIntegration();
   const [customersPage, setCustomersPage] = useState(1);
@@ -1428,6 +1439,36 @@ const Customers = () => {
     }
   };
 
+  // Delete a customer (admin only)
+  const deleteCustomer = async (customerId: string, customerName: string) => {
+    try {
+      // Delete related records first (messages, notes, action items, summaries, leads)
+      await Promise.all([
+        supabase.from("messages").delete().eq("customer_id", customerId),
+        supabase.from("customer_notes").delete().eq("customer_id", customerId),
+        supabase.from("customer_action_items").delete().eq("customer_id", customerId),
+        supabase.from("customer_summaries").delete().eq("customer_id", customerId),
+        supabase.from("telegram_leads").delete().eq("user_id", customerId),
+      ]);
+
+      // Unlink any customers linked to this one
+      await supabase
+        .from("customer")
+        .update({ linked_customer_id: null })
+        .eq("linked_customer_id", customerId);
+
+      // Delete the customer
+      const { error } = await supabase.from("customer").delete().eq("id", customerId);
+      if (error) throw error;
+
+      toast.success(`Customer "${customerName}" deleted successfully`);
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+    } catch (error: any) {
+      console.error("Error deleting customer:", error);
+      toast.error("Failed to delete customer: " + error.message);
+    }
+  };
+
   // Check for potential matching customers across platforms
   const checkForLinkingSuggestion = async (newCustomer: Customer) => {
     const newName = newCustomer.messenger_name || 
@@ -1942,26 +1983,53 @@ const Customers = () => {
                             {formatDateGMT7(customer.last_message_at)}
                           </TableCell>
                           <TableCell>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => navigate(`/chat?customer=${customer.id}`)}
-                              className="relative"
-                            >
-                              <MessageSquare className="h-4 w-4 mr-2" />
-                              Chat
-                              {(() => {
-                                // Get all linked IDs from the linkedPlatformsMap
-                                const linkedIds = linkedPlatformsMap[customer.id]?.linkedIds || [];
-                                const allIds = [customer.id, ...linkedIds];
-                                const count = allIds.reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
-                                return count > 0 ? (
-                                  <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 bg-destructive text-destructive-foreground text-xs font-medium rounded-full flex items-center justify-center animate-pulse">
-                                    {count > 99 ? '99+' : count}
-                                  </span>
-                                ) : null;
-                              })()}
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => navigate(`/chat?customer=${customer.id}`)}
+                                className="relative"
+                              >
+                                <MessageSquare className="h-4 w-4 mr-2" />
+                                Chat
+                                {(() => {
+                                  const linkedIds = linkedPlatformsMap[customer.id]?.linkedIds || [];
+                                  const allIds = [customer.id, ...linkedIds];
+                                  const count = allIds.reduce((sum, id) => sum + (unreadCounts[id] || 0), 0);
+                                  return count > 0 ? (
+                                    <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1 bg-destructive text-destructive-foreground text-xs font-medium rounded-full flex items-center justify-center animate-pulse">
+                                      {count > 99 ? '99+' : count}
+                                    </span>
+                                  ) : null;
+                                })()}
+                              </Button>
+                              {isAdmin && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        This will permanently delete <strong>{displayName || 'this customer'}</strong> and all their messages, notes, and related data. This action cannot be undone.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                        onClick={() => deleteCustomer(customer.id, displayName || 'Unknown')}
+                                      >
+                                        Delete
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
