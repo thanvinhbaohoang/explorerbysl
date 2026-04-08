@@ -161,6 +161,7 @@ const Dashboard = () => {
       const { data, error } = await supabase
         .from("customer")
         .select("*")
+        .not("messenger_name", "eq", "Unknown")
         .order("created_at", { ascending: false })
         .range(from, to);
 

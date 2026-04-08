@@ -452,6 +452,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           .from("customer")
           .select("*")
           .is("linked_customer_id", null)
+          .not("messenger_name", "eq", "Unknown")
           .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,username.ilike.%${query}%,messenger_name.ilike.%${query}%`)
           .order("last_message_at", { ascending: false, nullsFirst: false })
           .limit(8);
