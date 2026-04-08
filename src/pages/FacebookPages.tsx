@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings, Download, Bot, Webhook, Save, Loader2, Eye, EyeOff, Info, AlertTriangle } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings, Download, Bot, Webhook, Save, Loader2, Eye, EyeOff, Info, AlertTriangle, Power } from "lucide-react";
 import { exportToCSV } from "@/lib/csv-export";
+import { Switch } from "@/components/ui/switch";
+import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -14,6 +16,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { useAuth } from "@/contexts/AuthContext";
@@ -86,6 +89,7 @@ const FacebookPages = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { permissions, isAdmin, isLoading: permissionsLoading } = useUserPermissions();
+  const { isEnabled: messengerEnabled, isLoading: messengerToggleLoading, toggle: toggleMessenger, isToggling } = useMessengerIntegration();
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [dbPages, setDbPages] = useState<DbPage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -458,6 +462,30 @@ const FacebookPages = () => {
           {/* Facebook Pages Tab */}
           <TabsContent value="facebook-pages">
             <div className="space-y-6">
+              {/* Messenger Integration Toggle */}
+              <Card className={!messengerEnabled ? "border-destructive/50" : "border-green-500/50"}>
+                <CardContent className="flex items-center justify-between py-4">
+                  <div className="flex items-center gap-3">
+                    <Power className={cn("h-5 w-5", messengerEnabled ? "text-green-500" : "text-destructive")} />
+                    <div>
+                      <p className="font-medium text-foreground">Messenger Integration</p>
+                      <p className="text-sm text-muted-foreground">
+                        {messengerEnabled
+                          ? "Active — Messenger customers are visible across Chat, Customers, and Traffic"
+                          : "Paused — Messenger customers are hidden from all views"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {(messengerToggleLoading || isToggling) && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                    <Switch
+                      checked={messengerEnabled}
+                      onCheckedChange={(checked) => toggleMessenger(checked)}
+                      disabled={messengerToggleLoading || isToggling}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
               {/* Action buttons */}
               <div className="flex items-center justify-end gap-4">
                 {lastRefreshed && (

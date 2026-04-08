@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCustomersData } from "@/hooks/useCustomersData";
+import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { toast } from "sonner";
 import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
@@ -142,6 +143,7 @@ const Customers = () => {
   const { user } = useAuth();
   const { permissions } = useUserPermissions();
   const queryClient = useQueryClient();
+  const { isEnabled: messengerEnabled } = useMessengerIntegration();
   const [customersPage, setCustomersPage] = useState(1);
   const itemsPerPage = 10;
   
@@ -151,7 +153,7 @@ const Customers = () => {
   const [customerPlatformFilter, setCustomerPlatformFilter] = useState<string>("all");
   
   // Use cached customers data
-  const { data: customersData, isLoading, refetch: refetchCustomers } = useCustomersData(customersPage, itemsPerPage, debouncedSearchTerm, customerPlatformFilter);
+  const { data: customersData, isLoading, refetch: refetchCustomers } = useCustomersData(customersPage, itemsPerPage, debouncedSearchTerm, customerPlatformFilter, messengerEnabled);
   const customers = customersData?.customers || [];
   const totalCustomers = customersData?.total || 0;
   const linkedPlatformsMap = customersData?.linkedPlatformsMap || {};

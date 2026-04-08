@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useCustomersData } from "@/hooks/useCustomersData";
+import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -57,9 +58,11 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   const location = useLocation();
   const isOnChatPage = location.pathname === '/chat';
   
+  const { isEnabled: messengerEnabled } = useMessengerIntegration();
+  
   const [page, setPage] = useState(1);
   const itemsPerPage = 50;
-  const { data: customersData, isLoading, refetch } = useCustomersData(page, itemsPerPage);
+  const { data: customersData, isLoading, refetch } = useCustomersData(page, itemsPerPage, "", "all", messengerEnabled);
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -448,11 +451,18 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       const query = searchQuery.trim();
       try {
         // Search across all customer fields using ilike
-        const { data, error } = await supabase
+        let searchQ = supabase
           .from("customer")
           .select("*")
           .is("linked_customer_id", null)
-          .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,username.ilike.%${query}%,messenger_name.ilike.%${query}%`)
+          .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,username.ilike.%${query}%,messenger_name.ilike.%${query}%`);
+
+        // Hide broken messenger customers when integration is disabled
+        if (!messengerEnabled) {
+          searchQ = searchQ.or("messenger_id.is.null,messenger_name.neq.Unknown");
+        }
+
+        const { data, error } = await searchQ
           .order("last_message_at", { ascending: false, nullsFirst: false })
           .limit(8);
 
@@ -471,7 +481,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchQuery]);
+  }, [searchQuery, messengerEnabled]);
 
   // Main list always shows all customers (no search filtering)
   const filteredBySearch = allCustomers;
