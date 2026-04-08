@@ -42,14 +42,18 @@ Deno.serve(async (req) => {
     if (path === "/auth-url" || path === "/auth-url/") {
       const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/fb-exchange-token/callback`;
       const scopes = "pages_messaging,pages_show_list,pages_manage_metadata";
-      const state = crypto.randomUUID();
+      
+      // Store the app origin in state so callback can redirect back
+      const callerOrigin = url.searchParams.get("origin") || "";
+      const statePayload = JSON.stringify({ nonce: crypto.randomUUID(), origin: callerOrigin });
+      const state = btoa(statePayload);
 
       const authUrl =
         `https://www.facebook.com/v21.0/dialog/oauth?` +
         `client_id=${FB_APP_ID}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&scope=${scopes}` +
-        `&state=${state}` +
+        `&state=${encodeURIComponent(state)}` +
         `&response_type=code`;
 
       return new Response(
@@ -62,20 +66,34 @@ Deno.serve(async (req) => {
     if (path === "/callback" || path === "/callback/") {
       const code = url.searchParams.get("code");
       const errorParam = url.searchParams.get("error");
+      const stateParam = url.searchParams.get("state");
+
+      // Parse origin from state
+      let appOrigin = "";
+      try {
+        const stateData = JSON.parse(atob(decodeURIComponent(stateParam || "")));
+        appOrigin = stateData.origin || "";
+      } catch { /* ignore */ }
+
+      const makeRedirect = (params: string) => {
+        if (appOrigin) {
+          return Response.redirect(`${appOrigin}/facebook-connect?${params}`, 302);
+        }
+        // Fallback to HTML if no origin
+        return new Response(
+          `<html><body><p>Done. You can close this window.</p></body></html>`,
+          { headers: { "Content-Type": "text/html" } }
+        );
+      };
 
       if (errorParam) {
         const errorDesc = url.searchParams.get("error_description") || "Authorization denied";
-        return new Response(
-          `<html><body><script>window.opener?.postMessage({type:'fb-oauth-error',error:'${errorDesc.replace(/'/g, "\\'")}'},'*');window.close();</script><p>Authorization failed: ${errorDesc}. You can close this window.</p></body></html>`,
-          { headers: { "Content-Type": "text/html" } }
-        );
+        console.error("OAuth error:", errorParam, errorDesc);
+        return makeRedirect(`fb_status=error&message=${encodeURIComponent(errorDesc)}`);
       }
 
       if (!code) {
-        return new Response(
-          `<html><body><script>window.opener?.postMessage({type:'fb-oauth-error',error:'No authorization code received'},'*');window.close();</script><p>No authorization code received.</p></body></html>`,
-          { headers: { "Content-Type": "text/html" } }
-        );
+        return makeRedirect(`fb_status=error&message=${encodeURIComponent("No authorization code received")}`);
       }
 
       const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/fb-exchange-token/callback`;
@@ -89,13 +107,11 @@ Deno.serve(async (req) => {
         `&code=${code}`
       );
       const tokenData = await tokenRes.json();
+      console.log("Step 1 - Token exchange status:", tokenRes.status, "has access_token:", !!tokenData.access_token, "error:", tokenData.error?.message || "none");
 
       if (tokenData.error) {
         const errMsg = tokenData.error.message || "Token exchange failed";
-        return new Response(
-          `<html><body><script>window.opener?.postMessage({type:'fb-oauth-error',error:'${errMsg.replace(/'/g, "\\'")}'},'*');window.close();</script><p>Error: ${errMsg}</p></body></html>`,
-          { headers: { "Content-Type": "text/html" } }
-        );
+        return makeRedirect(`fb_status=error&message=${encodeURIComponent(errMsg)}`);
       }
 
       // Step 2: Exchange for long-lived token
@@ -109,19 +125,18 @@ Deno.serve(async (req) => {
       const llData = await llRes.json();
       const longLivedToken = llData.access_token || tokenData.access_token;
       const expiresIn = llData.expires_in;
+      console.log("Step 2 - Long-lived token exchange status:", llRes.status, "has access_token:", !!llData.access_token, "expires_in:", expiresIn, "error:", llData.error?.message || "none");
 
       // Step 3: Fetch pages
       const pagesRes = await fetch(
         `https://graph.facebook.com/v21.0/me/accounts?access_token=${longLivedToken}&fields=id,name,access_token`
       );
       const pagesData = await pagesRes.json();
+      console.log("Step 3 - Pages fetch status:", pagesRes.status, "pages count:", pagesData.data?.length || 0, "error:", pagesData.error?.message || "none");
 
       if (pagesData.error) {
         const errMsg = pagesData.error.message || "Failed to fetch pages";
-        return new Response(
-          `<html><body><script>window.opener?.postMessage({type:'fb-oauth-error',error:'${errMsg.replace(/'/g, "\\'")}'},'*');window.close();</script><p>Error: ${errMsg}</p></body></html>`,
-          { headers: { "Content-Type": "text/html" } }
-        );
+        return makeRedirect(`fb_status=error&message=${encodeURIComponent(errMsg)}`);
       }
 
       const pages = pagesData.data || [];
@@ -148,10 +163,7 @@ Deno.serve(async (req) => {
 
       console.log(`fb-exchange-token: Upserted ${upsertedCount}/${pages.length} pages`);
 
-      return new Response(
-        `<html><body><script>window.opener?.postMessage({type:'fb-oauth-success',pages:${pages.length}},'*');window.close();</script><p>Connected ${pages.length} page(s). This window will close.</p></body></html>`,
-        { headers: { "Content-Type": "text/html" } }
-      );
+      return makeRedirect(`fb_status=success&pages=${pages.length}`);
     }
 
     return new Response(JSON.stringify({ error: "Not found" }), {
