@@ -43,6 +43,12 @@ const defaultPermissions: RolePermissions = {
   canViewMondayImport: false,
   canViewUserRoles: false,
   canManageRoles: false,
+  canViewChat: true,
+  canViewCustomers: true,
+  canViewTraffic: true,
+  canViewAdsInsight: true,
+  canViewDocs: true,
+  canViewDashboard: true,
 };
 
 export const useUserPermissions = (): UserPermissionsResult => {
