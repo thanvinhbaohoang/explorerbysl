@@ -35,6 +35,7 @@ interface DbPage {
   page_id: string;
   name: string;
   picture_url?: string;
+  access_token?: string;
 }
 
 interface AppInfo {
