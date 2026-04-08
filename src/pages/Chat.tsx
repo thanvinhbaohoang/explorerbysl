@@ -6,6 +6,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 import { MessageSquare } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useCustomersData } from "@/hooks/useCustomersData";
+import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 
 interface Customer {
   id: string;
