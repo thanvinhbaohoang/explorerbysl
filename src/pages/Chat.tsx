@@ -36,7 +36,8 @@ const Chat = () => {
   const customerId = searchParams.get('customer');
   
   // Fetch customers data to enable URL-based customer selection
-  const { data: customersData } = useCustomersData(1, 100);
+  const { isEnabled: messengerEnabled } = useMessengerIntegration();
+  const { data: customersData } = useCustomersData(1, 100, "", "all", messengerEnabled);
   const customers = (customersData?.customers || []) as Customer[];
 
   // Auto-select customer from URL parameter

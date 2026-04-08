@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCustomersData } from "@/hooks/useCustomersData";
+import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { toast } from "sonner";
 import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
