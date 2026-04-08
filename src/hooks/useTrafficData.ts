@@ -72,11 +72,11 @@ interface TrafficQueryParams {
   itemsPerPage: number;
 }
 
-export const useTrafficData = (params: TrafficQueryParams) => {
-  const { page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, startDate, endDate, itemsPerPage } = params;
+export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?: boolean }) => {
+  const { page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, startDate, endDate, itemsPerPage, messengerEnabled = true } = params;
 
   return useQuery({
-    queryKey: ["traffic", page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, startDate, endDate],
+    queryKey: ["traffic", page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, startDate, endDate, messengerEnabled],
     queryFn: async () => {
       let userIdsToInclude: string[] = [];
 

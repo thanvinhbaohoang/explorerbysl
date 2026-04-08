@@ -481,7 +481,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchQuery]);
+  }, [searchQuery, messengerEnabled]);
 
   // Main list always shows all customers (no search filtering)
   const filteredBySearch = allCustomers;
