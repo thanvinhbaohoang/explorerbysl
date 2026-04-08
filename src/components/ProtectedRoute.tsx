@@ -30,7 +30,16 @@ const ProtectedRoute = ({ children, requiredPermission }: ProtectedRouteProps) =
   }
 
   if (requiredPermission && !isAdmin && !permissions[requiredPermission]) {
-    return <Navigate to="/" replace />;
+    // Redirect to first available page based on permissions
+    const fallbackRoutes: { permission: keyof RolePermissions; path: string }[] = [
+      { permission: "canViewTraffic", path: "/traffic" },
+      { permission: "canViewCustomers", path: "/customers" },
+      { permission: "canViewChat", path: "/chat" },
+      { permission: "canViewAdsInsight", path: "/ads-insight" },
+      { permission: "canViewDocs", path: "/docs" },
+    ];
+    const fallback = fallbackRoutes.find(r => permissions[r.permission]);
+    return <Navigate to={fallback?.path || "/pending-approval"} replace />;
   }
 
   return <>{children}</>;
