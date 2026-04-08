@@ -1,89 +1,53 @@
 
 
-# Facebook Login for Business — Clean Rebuild
+# Fix: Facebook Connect — 0 Pages + Infinite Loading
 
-## Context
-You already have a working `facebook-oauth` edge function and `facebook_pages` table that do most of what you're describing. Rather than creating fully parallel infrastructure, I recommend **updating the existing functions and adding the missing pieces**. However, since you've explicitly requested new table/function names, I'll build exactly what you asked for.
+## Root Causes
 
-## What Gets Built
+**1. Window doesn't close / infinite loading**: Modern browsers null out `window.opener` when navigating cross-origin (app domain → facebook.com → supabase.co). The `postMessage` never reaches the parent window, so `setConnecting(false)` never fires and the popup stays open.
 
-### 1. Database: Three New Tables
+**2. 0 pages returned**: The `/me/accounts` call returns empty. This needs debugging — likely the user token lacks `pages_show_list` scope, or the long-lived token exchange silently failed. Adding logging will help diagnose.
 
-**`connected_pages`** — stores authorized Facebook Pages
-| Column | Type | Notes |
-|--------|------|-------|
-| id | uuid | PK, auto-generated |
-| page_id | text | unique, Facebook Page ID |
-| page_name | text | |
-| page_access_token | text | long-lived Page Access Token |
-| token_expires_at | timestamptz | nullable |
-| created_at | timestamptz | default now() |
+## Fix Approach
 
-**`fb_contacts`** — stores Messenger sender profiles
-| Column | Type | Notes |
-|--------|------|-------|
-| id | uuid | PK |
-| psid | text | Facebook Page-Scoped ID |
-| page_id | text | which page they messaged |
-| first_name | text | nullable |
-| last_name | text | nullable |
-| profile_pic | text | nullable |
-| created_at | timestamptz | default now() |
-| unique(psid, page_id) | | one contact per page |
+### Edge Function (`fb-exchange-token/index.ts`)
 
-**`fb_messages`** — stores inbound/outbound messages
-| Column | Type | Notes |
-|--------|------|-------|
-| id | uuid | PK |
-| psid | text | sender/recipient PSID |
-| page_id | text | |
-| message_text | text | nullable |
-| direction | text | 'inbound' or 'outbound' |
-| created_time | timestamptz | default now() |
+- **Add debug logging** for each step: log the token exchange response, long-lived token exchange response, and pages response (without exposing tokens — just status/counts).
+- **On callback success, redirect to the app** instead of relying on `window.opener.postMessage`. Redirect to something like `https://explorerbysl.lovable.app/facebook-connect?fb_connected=true&pages=N` (or the preview URL). This bypasses the cross-origin `window.opener` problem entirely.
+- **On callback error**, redirect with `?fb_error=message` instead of postMessage.
 
-All tables get RLS: authenticated SELECT, service_role INSERT/UPDATE.
+### Frontend (`FacebookConnect.tsx`)
 
-### 2. Edge Function: `fb-exchange-token`
+- **On mount, check URL params** for `fb_connected=true` or `fb_error`. If present, show toast, clean URL params, and refresh pages list.
+- **Remove popup approach** — instead of `window.open()`, navigate the current window (or keep popup but handle via redirect). Simplest: use `window.location.href` to go to the auth URL directly, then the callback redirects back.
+- **Alternative (keep popup)**: The popup approach can still work if the callback redirects the popup to a page on the app domain that then does `window.opener.postMessage`. But the simplest fix is to use full-page redirect.
 
-Handles the OAuth callback and token exchange:
-- **GET `/auth-url`** — builds the Facebook OAuth URL with scopes `pages_messaging,pages_show_list,pages_manage_metadata`
-- **GET `/callback`** — receives OAuth redirect, exchanges code → short-lived token → long-lived token, calls `/me/accounts`, upserts each page into `connected_pages`
-- Reads `FB_APP_ID` and `FB_APP_SECRET` from environment variables (Deno.env)
+### Recommended: Full-page redirect flow
 
-### 3. Edge Function: `fb-webhook`
+1. User clicks "Connect Facebook Page"
+2. Frontend navigates to `fb-exchange-token/auth-url`, gets the OAuth URL
+3. Frontend does `window.location.href = authUrl` (full redirect, no popup)
+4. Facebook redirects to `fb-exchange-token/callback`
+5. Callback processes tokens, then redirects to `{APP_ORIGIN}/facebook-connect?fb_status=success&pages=N`
+6. FacebookConnect page reads query params on mount, shows toast, cleans URL
 
-Handles Meta webhook verification and inbound messages:
-- **GET** — responds to `hub.verify_token` challenge using `FB_VERIFY_TOKEN` env var
-- **POST** — processes `messaging` events:
-  - Looks up page token from `connected_pages` by recipient page_id
-  - Fetches sender profile via `GET /{PSID}?fields=first_name,last_name,profile_pic` using that page token
-  - Upserts contact into `fb_contacts`
-  - Inserts message into `fb_messages`
+### Changes needed for the redirect approach
 
-### 4. Frontend: Connect Button
+**Edge function changes:**
+- Accept a `redirect_origin` query param in `/auth-url` and store it (or pass via OAuth `state`)
+- In `/callback`, after processing, do a 302 redirect to `{redirect_origin}/facebook-connect?fb_status=success&pages=N` instead of returning HTML
+- On error, redirect to `{redirect_origin}/facebook-connect?fb_status=error&message=...`
+- Add console.log for token data, pages data to debug the 0 pages issue
 
-Update `FacebookPages.tsx` to call the new `fb-exchange-token/auth-url` endpoint and open the OAuth popup. On success, refresh the connected pages list from the new `connected_pages` table.
+**Frontend changes:**
+- `handleConnect`: fetch auth URL, then `window.location.href = authUrl` (no popup)
+- `useEffect` on mount: parse `fb_status` from URL, show toast, call `navigate('/facebook-connect', { replace: true })` to clean params
+- Remove popup/message listener code
 
-### 5. Environment Variables
-
-Uses existing secrets (already configured):
-- `FACEBOOK_APP_ID` → `FB_APP_ID`
-- `FACEBOOK_APP_SECRET` → `FB_APP_SECRET`  
-- `FACEBOOK_VERIFY_TOKEN` → `FB_VERIFY_TOKEN`
-
-No new secrets needed — these are already set.
-
-## Files Changed
+## Technical Details
 
 | File | Change |
 |------|--------|
-| Migration SQL | Create `connected_pages`, `fb_contacts`, `fb_messages` tables with RLS |
-| `supabase/functions/fb-exchange-token/index.ts` | New — OAuth flow + token exchange |
-| `supabase/functions/fb-webhook/index.ts` | New — webhook verification + message handling |
-| `supabase/config.toml` | Add `fb-exchange-token` and `fb-webhook` with `verify_jwt = false` |
-| `src/pages/FacebookPages.tsx` | Update Connect button to use new `fb-exchange-token` endpoint, fetch from `connected_pages` |
-
-## Note on Existing Infrastructure
-
-The existing `facebook-oauth`, `messenger-webhook` functions and `facebook_pages` table will remain untouched. You can deprecate them later once the new setup is verified working.
+| `supabase/functions/fb-exchange-token/index.ts` | Add logging, switch callback from HTML/postMessage to 302 redirect back to app |
+| `src/pages/FacebookConnect.tsx` | Replace popup flow with full-page redirect, read query params on mount |
 
