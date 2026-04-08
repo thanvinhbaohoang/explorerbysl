@@ -10,6 +10,12 @@ export interface RolePermissions {
   canViewMondayImport: boolean;
   canViewUserRoles: boolean;
   canManageRoles: boolean;
+  canViewChat: boolean;
+  canViewCustomers: boolean;
+  canViewTraffic: boolean;
+  canViewAdsInsight: boolean;
+  canViewDocs: boolean;
+  canViewDashboard: boolean;
 }
 
 export interface RoleData {
@@ -37,6 +43,12 @@ const defaultPermissions: RolePermissions = {
   canViewMondayImport: false,
   canViewUserRoles: false,
   canManageRoles: false,
+  canViewChat: true,
+  canViewCustomers: true,
+  canViewTraffic: true,
+  canViewAdsInsight: true,
+  canViewDocs: true,
+  canViewDashboard: true,
 };
 
 export const useUserPermissions = (): UserPermissionsResult => {

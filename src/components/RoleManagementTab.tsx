@@ -28,6 +28,12 @@ import { CreateRoleDialog } from "./CreateRoleDialog";
 import type { RolePermissions } from "@/hooks/useUserPermissions";
 
 const permissionLabels: Record<keyof RolePermissions, string> = {
+  canViewChat: "Chat",
+  canViewCustomers: "Customers",
+  canViewTraffic: "Traffic",
+  canViewAdsInsight: "Ads",
+  canViewDocs: "Docs",
+  canViewDashboard: "Dashboard",
   canExportCustomers: "Export Customers",
   canExportTraffic: "Export Traffic",
   canExportAds: "Export Ads",
