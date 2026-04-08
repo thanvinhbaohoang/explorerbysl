@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.facebook-oauth]
 verify_jwt = false
+
+[functions.fb-exchange-token]
+verify_jwt = false
+
+[functions.fb-webhook]
+verify_jwt = false
