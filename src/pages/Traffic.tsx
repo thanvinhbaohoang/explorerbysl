@@ -182,6 +182,7 @@ const Traffic = () => {
     startDate: startDateStr,
     endDate: endDateStr,
     itemsPerPage,
+    messengerEnabled,
   });
 
   const trafficData = trafficResult?.data || [];
