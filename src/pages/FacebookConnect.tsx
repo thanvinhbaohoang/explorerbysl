@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Facebook, ArrowLeft, RefreshCw, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +18,7 @@ interface ConnectedPage {
 
 const FacebookConnect = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [pages, setPages] = useState<ConnectedPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -39,15 +40,29 @@ const FacebookConnect = () => {
     setLoading(false);
   };
 
+  // Handle OAuth redirect result
   useEffect(() => {
-    fetchPages();
+    const fbStatus = searchParams.get("fb_status");
+    if (fbStatus === "success") {
+      const pagesCount = searchParams.get("pages") || "0";
+      toast.success(`Connected ${pagesCount} page(s) successfully!`);
+      fetchPages();
+      navigate("/facebook-connect", { replace: true });
+    } else if (fbStatus === "error") {
+      const message = searchParams.get("message") || "Authorization failed";
+      toast.error(message);
+      navigate("/facebook-connect", { replace: true });
+    } else {
+      fetchPages();
+    }
   }, []);
 
   const handleConnect = async () => {
     setConnecting(true);
     try {
+      const origin = window.location.origin;
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fb-exchange-token/auth-url`
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fb-exchange-token/auth-url?origin=${encodeURIComponent(origin)}`
       );
       const { authUrl, error: urlError } = await res.json();
       if (urlError) {
@@ -55,33 +70,8 @@ const FacebookConnect = () => {
         setConnecting(false);
         return;
       }
-
-      const popup = window.open(authUrl, "fb-oauth", "width=600,height=700,scrollbars=yes");
-
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data?.type === "fb-oauth-success") {
-          toast.success(`Connected ${event.data.pages} page(s) successfully!`);
-          fetchPages();
-          window.removeEventListener("message", handleMessage);
-          setConnecting(false);
-        } else if (event.data?.type === "fb-oauth-error") {
-          toast.error(event.data.error || "Authorization failed");
-          window.removeEventListener("message", handleMessage);
-          setConnecting(false);
-        }
-      };
-      window.addEventListener("message", handleMessage);
-
-      const pollTimer = setInterval(() => {
-        if (popup?.closed) {
-          clearInterval(pollTimer);
-          setTimeout(() => {
-            window.removeEventListener("message", handleMessage);
-            fetchPages();
-            setConnecting(false);
-          }, 1000);
-        }
-      }, 1000);
+      // Full-page redirect instead of popup
+      window.location.href = authUrl;
     } catch (err: any) {
       toast.error(err.message || "Failed to start authorization");
       setConnecting(false);
@@ -116,7 +106,6 @@ const FacebookConnect = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-        {/* Header */}
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-5 w-5" />
@@ -129,7 +118,6 @@ const FacebookConnect = () => {
           </div>
         </div>
 
-        {/* Connect Card */}
         <Card className="border-dashed border-2">
           <CardContent className="flex flex-col items-center justify-center py-10 gap-4">
             <div className="rounded-full bg-primary/10 p-4">
@@ -157,7 +145,6 @@ const FacebookConnect = () => {
           </CardContent>
         </Card>
 
-        {/* Connected Pages List */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Connected Pages</h2>
@@ -207,7 +194,6 @@ const FacebookConnect = () => {
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0 space-y-3">
-                    {/* Token display */}
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-medium text-muted-foreground">Page Access Token</span>
@@ -226,7 +212,6 @@ const FacebookConnect = () => {
                       </div>
                     </div>
 
-                    {/* Meta */}
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>Connected: {new Date(page.created_at).toLocaleDateString()}</span>
                       {page.token_expires_at && (
@@ -234,7 +219,6 @@ const FacebookConnect = () => {
                       )}
                     </div>
 
-                    {/* Facebook link */}
                     <a
                       href={`https://www.facebook.com/${page.page_id}`}
                       target="_blank"
