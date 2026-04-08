@@ -88,6 +88,7 @@ const FacebookPages = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { permissions, isAdmin, isLoading: permissionsLoading } = useUserPermissions();
+  const { isEnabled: messengerEnabled, isLoading: messengerToggleLoading, toggle: toggleMessenger, isToggling } = useMessengerIntegration();
   const [pages, setPages] = useState<FacebookPage[]>([]);
   const [dbPages, setDbPages] = useState<DbPage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
