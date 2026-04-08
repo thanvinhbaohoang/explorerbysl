@@ -47,7 +47,8 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10, search
       let countQuery = supabase
         .from("customer")
         .select("*", { count: "exact", head: true })
-        .is("linked_customer_id", null);
+        .is("linked_customer_id", null)
+        .not("messenger_name", "eq", "Unknown");
 
       // Apply platform filter
       if (platformFilter === "telegram") {
@@ -72,7 +73,8 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10, search
       let dataQuery = supabase
         .from("customer")
         .select("*")
-        .is("linked_customer_id", null);
+        .is("linked_customer_id", null)
+        .not("messenger_name", "eq", "Unknown");
 
       // Apply same filters to data query
       if (platformFilter === "telegram") {

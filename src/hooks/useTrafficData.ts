@@ -137,7 +137,7 @@ export const useTrafficData = (params: TrafficQueryParams) => {
       if (error) throw error;
 
       // Fetch customer data for each lead
-      const trafficWithCustomers = await Promise.all(
+      const trafficWithCustomers = (await Promise.all(
         (leads || []).map(async (lead) => {
           if (lead.user_id) {
             const { data: customer } = await supabase
@@ -145,6 +145,11 @@ export const useTrafficData = (params: TrafficQueryParams) => {
               .select("id, telegram_id, username, first_name, last_name, messenger_id, messenger_name, first_message_at")
               .eq("id", lead.user_id)
               .maybeSingle();
+
+            // Filter out leads linked to Unknown Messenger customers
+            if (customer?.messenger_name === 'Unknown') {
+              return null;
+            }
 
             const leadCreatedAt = new Date(lead.created_at || '');
             const customerFirstMessage = customer?.first_message_at ? new Date(customer.first_message_at) : null;
@@ -164,7 +169,7 @@ export const useTrafficData = (params: TrafficQueryParams) => {
             isNewCustomer: false,
           };
         })
-      );
+      )).filter(Boolean);
 
       return { data: trafficWithCustomers as TrafficData[], total: count || 0 };
     },
