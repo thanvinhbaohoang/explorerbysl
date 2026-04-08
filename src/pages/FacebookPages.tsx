@@ -979,43 +979,75 @@ const FacebookPages = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
-                      {dbPages.map((dbPage) => (
+                      {dbPages.map((dbPage) => {
+                        const isRevealed = revealedTokens.has(dbPage.id);
+                        const token = dbPage.access_token || '';
+                        const maskedToken = token ? `${token.slice(0, 6)}${'•'.repeat(20)}${token.slice(-4)}` : '—';
+                        return (
                         <div
                           key={dbPage.id}
-                          className="flex items-center justify-between p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors"
+                          className="flex flex-col gap-2 p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors"
                         >
-                          <div className="flex items-center gap-3">
-                            {dbPage.picture_url ? (
-                              <img
-                                src={dbPage.picture_url}
-                                alt={dbPage.name}
-                                className="h-8 w-8 rounded-full"
-                              />
-                            ) : (
-                              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                                <span className="text-primary text-sm font-medium">
-                                  {dbPage.name.charAt(0)}
-                                </span>
-                              </div>
-                            )}
-                            <div>
-                              <div className="font-medium text-sm">{dbPage.name}</div>
-                              <div className="text-xs text-muted-foreground font-mono">
-                                {dbPage.page_id}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              {dbPage.picture_url ? (
+                                <img
+                                  src={dbPage.picture_url}
+                                  alt={dbPage.name}
+                                  className="h-8 w-8 rounded-full"
+                                />
+                              ) : (
+                                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                                  <span className="text-primary text-sm font-medium">
+                                    {dbPage.name.charAt(0)}
+                                  </span>
+                                </div>
+                              )}
+                              <div>
+                                <div className="font-medium text-sm">{dbPage.name}</div>
+                                <div className="text-xs text-muted-foreground font-mono">
+                                  {dbPage.page_id}
+                                </div>
                               </div>
                             </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setRevealedTokens(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(dbPage.id)) next.delete(dbPage.id);
+                                    else next.add(dbPage.id);
+                                    return next;
+                                  });
+                                }}
+                                className="gap-1 text-muted-foreground"
+                              >
+                                {isRevealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                                {isRevealed ? 'Hide' : 'Show'} Token
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleUpdateToken(dbPage)}
+                                className="gap-1"
+                              >
+                                <Key className="h-3 w-3" />
+                                Update Token
+                              </Button>
+                            </div>
                           </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleUpdateToken(dbPage)}
-                            className="gap-1"
-                          >
-                            <Key className="h-3 w-3" />
-                            Update Token
-                          </Button>
+                          {token && (
+                            <div className="pl-11">
+                              <code className="text-xs text-muted-foreground font-mono break-all select-all bg-muted/50 px-2 py-1 rounded">
+                                {isRevealed ? token : maskedToken}
+                              </code>
+                            </div>
+                          )}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </CardContent>
                 </Card>
