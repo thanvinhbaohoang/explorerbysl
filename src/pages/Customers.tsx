@@ -141,7 +141,7 @@ const getPageNumbers = (currentPage: number, totalPages: number): (number | 'ell
 const Customers = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { permissions } = useUserPermissions();
+  const { permissions, isAdmin } = useUserPermissions();
   const queryClient = useQueryClient();
   const { isEnabled: messengerEnabled } = useMessengerIntegration();
   const [customersPage, setCustomersPage] = useState(1);
