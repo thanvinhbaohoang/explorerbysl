@@ -1439,6 +1439,36 @@ const Customers = () => {
     }
   };
 
+  // Delete a customer (admin only)
+  const deleteCustomer = async (customerId: string, customerName: string) => {
+    try {
+      // Delete related records first (messages, notes, action items, summaries, leads)
+      await Promise.all([
+        supabase.from("messages").delete().eq("customer_id", customerId),
+        supabase.from("customer_notes").delete().eq("customer_id", customerId),
+        supabase.from("customer_action_items").delete().eq("customer_id", customerId),
+        supabase.from("customer_summaries").delete().eq("customer_id", customerId),
+        supabase.from("telegram_leads").delete().eq("user_id", customerId),
+      ]);
+
+      // Unlink any customers linked to this one
+      await supabase
+        .from("customer")
+        .update({ linked_customer_id: null })
+        .eq("linked_customer_id", customerId);
+
+      // Delete the customer
+      const { error } = await supabase.from("customer").delete().eq("id", customerId);
+      if (error) throw error;
+
+      toast.success(`Customer "${customerName}" deleted successfully`);
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+    } catch (error: any) {
+      console.error("Error deleting customer:", error);
+      toast.error("Failed to delete customer: " + error.message);
+    }
+  };
+
   // Check for potential matching customers across platforms
   const checkForLinkingSuggestion = async (newCustomer: Customer) => {
     const newName = newCustomer.messenger_name || 
