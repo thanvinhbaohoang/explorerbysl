@@ -58,9 +58,11 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   const location = useLocation();
   const isOnChatPage = location.pathname === '/chat';
   
+  const { isEnabled: messengerEnabled } = useMessengerIntegration();
+  
   const [page, setPage] = useState(1);
   const itemsPerPage = 50;
-  const { data: customersData, isLoading, refetch } = useCustomersData(page, itemsPerPage);
+  const { data: customersData, isLoading, refetch } = useCustomersData(page, itemsPerPage, "", "all", messengerEnabled);
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
