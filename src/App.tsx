@@ -28,6 +28,7 @@ import UserRoles from "./pages/UserRoles";
 import Docs from "./pages/Docs";
 import NotFound from "./pages/NotFound";
 import PendingApproval from "./pages/PendingApproval";
+import TestLogin from "./pages/TestLogin";
 
 const queryClient = new QueryClient();
 
@@ -49,6 +50,7 @@ const App = () => {
                 {/* Redirect root to customers */}
                 <Route path="/" element={<Navigate to="/customers" replace />} />
                 <Route path="/auth" element={<Auth />} />
+                <Route path="/test-login" element={<TestLogin />} />
                 <Route path="/pending-approval" element={<PendingApproval />} />
                 
                 {/* Protected routes */}
