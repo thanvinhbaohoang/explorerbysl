@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.capture-traffic]
 verify_jwt = false
+
+[functions.facebook-oauth]
+verify_jwt = false
