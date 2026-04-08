@@ -89,6 +89,7 @@ import { TableSkeleton } from "@/components/TableSkeleton";
 import { cn } from "@/lib/utils";
 import { useTrafficFilterOptions, useTrafficData } from "@/hooks/useTrafficData";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
+import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 
 interface MessengerAdContext {
   ad_id?: string;
