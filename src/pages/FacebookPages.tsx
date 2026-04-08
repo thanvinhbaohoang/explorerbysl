@@ -494,7 +494,7 @@ const FacebookPages = () => {
                   onClick={async () => {
                     try {
                       const res = await fetch(
-                        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fb-exchange-token/auth-url`
+                        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/facebook-oauth/auth-url`
                       );
                       const { authUrl, error: urlError } = await res.json();
                       if (urlError) {

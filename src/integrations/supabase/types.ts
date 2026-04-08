@@ -38,33 +38,6 @@ export type Database = {
         }
         Relationships: []
       }
-      connected_pages: {
-        Row: {
-          created_at: string
-          id: string
-          page_access_token: string
-          page_id: string
-          page_name: string
-          token_expires_at: string | null
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          page_access_token: string
-          page_id: string
-          page_name: string
-          token_expires_at?: string | null
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          page_access_token?: string
-          page_id?: string
-          page_name?: string
-          token_expires_at?: string | null
-        }
-        Relationships: []
-      }
       customer: {
         Row: {
           created_at: string
@@ -310,63 +283,6 @@ export type Database = {
           picture_url?: string | null
           token_expires_at?: string | null
           updated_at?: string
-        }
-        Relationships: []
-      }
-      fb_contacts: {
-        Row: {
-          created_at: string
-          first_name: string | null
-          id: string
-          last_name: string | null
-          page_id: string
-          profile_pic: string | null
-          psid: string
-        }
-        Insert: {
-          created_at?: string
-          first_name?: string | null
-          id?: string
-          last_name?: string | null
-          page_id: string
-          profile_pic?: string | null
-          psid: string
-        }
-        Update: {
-          created_at?: string
-          first_name?: string | null
-          id?: string
-          last_name?: string | null
-          page_id?: string
-          profile_pic?: string | null
-          psid?: string
-        }
-        Relationships: []
-      }
-      fb_messages: {
-        Row: {
-          created_time: string
-          direction: string
-          id: string
-          message_text: string | null
-          page_id: string
-          psid: string
-        }
-        Insert: {
-          created_time?: string
-          direction?: string
-          id?: string
-          message_text?: string | null
-          page_id: string
-          psid: string
-        }
-        Update: {
-          created_time?: string
-          direction?: string
-          id?: string
-          message_text?: string | null
-          page_id?: string
-          psid?: string
         }
         Relationships: []
       }

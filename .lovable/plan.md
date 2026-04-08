@@ -1,53 +1,79 @@
 
 
-# Fix: Facebook Connect — 0 Pages + Infinite Loading
+# Facebook Login for Business — Page Authorization Flow
 
-## Root Causes
+## Overview
+Replace the current System User Token approach with **Facebook Login for Business**, allowing Page admins to log in via Facebook OAuth directly in your app and grant access to their Pages. This eliminates the need for App Review, System User Tokens, and manual token management.
 
-**1. Window doesn't close / infinite loading**: Modern browsers null out `window.opener` when navigating cross-origin (app domain → facebook.com → supabase.co). The `postMessage` never reaches the parent window, so `setConnecting(false)` never fires and the popup stays open.
+## How It Works
 
-**2. 0 pages returned**: The `/me/accounts` call returns empty. This needs debugging — likely the user token lacks `pages_show_list` scope, or the long-lived token exchange silently failed. Adding logging will help diagnose.
+```text
+Page Admin clicks "Connect Facebook Page" on /system
+  → Facebook OAuth popup opens (Login for Business)
+  → Admin grants pages_messaging + pages_read_engagement
+  → App receives short-lived User Access Token
+  → Exchange for long-lived token (60 days)
+  → Fetch /me/accounts to get Page Access Tokens
+  → Store Page Access Tokens in facebook_pages table
+  → Webhook immediately works for those pages
+```
 
-## Fix Approach
+## Changes
 
-### Edge Function (`fb-exchange-token/index.ts`)
+### 1. Edge Function: `facebook-oauth` (new)
 
-- **Add debug logging** for each step: log the token exchange response, long-lived token exchange response, and pages response (without exposing tokens — just status/counts).
-- **On callback success, redirect to the app** instead of relying on `window.opener.postMessage`. Redirect to something like `https://explorerbysl.lovable.app/facebook-connect?fb_connected=true&pages=N` (or the preview URL). This bypasses the cross-origin `window.opener` problem entirely.
-- **On callback error**, redirect with `?fb_error=message` instead of postMessage.
+A new edge function to handle the OAuth token exchange flow:
+- **`GET /callback`** — Receives the OAuth redirect from Facebook, exchanges the authorization code for a user access token, then exchanges for a long-lived token, fetches the user's pages via `/me/accounts`, and upserts page tokens into `facebook_pages`.
+- **`GET /auth-url`** — Returns the Facebook OAuth URL with the correct scopes (`pages_messaging`, `pages_read_engagement`, `pages_manage_metadata`) and redirect URI.
+- Uses `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` from `bot_settings` (already stored).
 
-### Frontend (`FacebookConnect.tsx`)
+### 2. `src/pages/FacebookPages.tsx` — Add "Connect Facebook Page" button
 
-- **On mount, check URL params** for `fb_connected=true` or `fb_error`. If present, show toast, clean URL params, and refresh pages list.
-- **Remove popup approach** — instead of `window.open()`, navigate the current window (or keep popup but handle via redirect). Simplest: use `window.location.href` to go to the auth URL directly, then the callback redirects back.
-- **Alternative (keep popup)**: The popup approach can still work if the callback redirects the popup to a page on the app domain that then does `window.opener.postMessage`. But the simplest fix is to use full-page redirect.
+- Add a prominent "Connect Facebook Page" button that calls the `/auth-url` endpoint and opens the Facebook OAuth flow in a popup window.
+- Listen for the popup to close, then refresh the pages list.
+- Keep the existing manual System User Token config as a fallback/advanced option.
+- Remove or demote the "Sync Pages" button (no longer primary flow).
 
-### Recommended: Full-page redirect flow
+### 3. `supabase/functions/messenger-webhook/index.ts` — No changes needed
 
-1. User clicks "Connect Facebook Page"
-2. Frontend navigates to `fb-exchange-token/auth-url`, gets the OAuth URL
-3. Frontend does `window.location.href = authUrl` (full redirect, no popup)
-4. Facebook redirects to `fb-exchange-token/callback`
-5. Callback processes tokens, then redirects to `{APP_ORIGIN}/facebook-connect?fb_status=success&pages=N`
-6. FacebookConnect page reads query params on mount, shows toast, cleans URL
+The webhook already reads page tokens from the `facebook_pages` table. As long as the OAuth flow stores tokens there, everything works.
 
-### Changes needed for the redirect approach
+### 4. Database — No schema changes needed
 
-**Edge function changes:**
-- Accept a `redirect_origin` query param in `/auth-url` and store it (or pass via OAuth `state`)
-- In `/callback`, after processing, do a 302 redirect to `{redirect_origin}/facebook-connect?fb_status=success&pages=N` instead of returning HTML
-- On error, redirect to `{redirect_origin}/facebook-connect?fb_status=error&message=...`
-- Add console.log for token data, pages data to debug the 0 pages issue
+The `facebook_pages` table already has `access_token`, `page_id`, `name`, `is_active`, etc. The OAuth flow will upsert into the same table.
 
-**Frontend changes:**
-- `handleConnect`: fetch auth URL, then `window.location.href = authUrl` (no popup)
-- `useEffect` on mount: parse `fb_status` from URL, show toast, call `navigate('/facebook-connect', { replace: true })` to clean params
-- Remove popup/message listener code
+### 5. Secrets required
 
-## Technical Details
+- `FACEBOOK_APP_ID` — already stored in `bot_settings`
+- `FACEBOOK_APP_SECRET` — already stored in `bot_settings`
+- No new secrets needed
+
+### 6. Facebook App Configuration
+
+You'll need to:
+- Add **Facebook Login for Business** product to your app in the Facebook Developer portal
+- Set the Valid OAuth Redirect URI to your edge function callback URL
+- No App Review required — the Page admin authorizes directly
+
+## Files Changed
 
 | File | Change |
 |------|--------|
-| `supabase/functions/fb-exchange-token/index.ts` | Add logging, switch callback from HTML/postMessage to 302 redirect back to app |
-| `src/pages/FacebookConnect.tsx` | Replace popup flow with full-page redirect, read query params on mount |
+| `supabase/functions/facebook-oauth/index.ts` | New edge function for OAuth code exchange and page token storage |
+| `src/pages/FacebookPages.tsx` | Add "Connect Facebook Page" button with OAuth popup flow |
+
+## What This Enables
+
+- Any Page admin can authorize your app to access their Page in seconds
+- Page Access Tokens are obtained directly (no System User needed)
+- Webhook receives messages immediately after authorization
+- Profile info (name, picture) works without App Review
+- 24-hour messaging window replies work
+- Token refresh can be automated (long-lived tokens last 60 days)
+
+## Limitations to Note
+
+- Long-lived Page Access Tokens last ~60 days and need periodic re-authorization
+- Only pages where the authorizing user is an admin will appear
+- The System User Token flow can remain as a fallback for advanced users
 
