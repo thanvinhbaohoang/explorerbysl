@@ -1,79 +1,89 @@
 
 
-# Facebook Login for Business — Page Authorization Flow
+# Facebook Login for Business — Clean Rebuild
 
-## Overview
-Replace the current System User Token approach with **Facebook Login for Business**, allowing Page admins to log in via Facebook OAuth directly in your app and grant access to their Pages. This eliminates the need for App Review, System User Tokens, and manual token management.
+## Context
+You already have a working `facebook-oauth` edge function and `facebook_pages` table that do most of what you're describing. Rather than creating fully parallel infrastructure, I recommend **updating the existing functions and adding the missing pieces**. However, since you've explicitly requested new table/function names, I'll build exactly what you asked for.
 
-## How It Works
+## What Gets Built
 
-```text
-Page Admin clicks "Connect Facebook Page" on /system
-  → Facebook OAuth popup opens (Login for Business)
-  → Admin grants pages_messaging + pages_read_engagement
-  → App receives short-lived User Access Token
-  → Exchange for long-lived token (60 days)
-  → Fetch /me/accounts to get Page Access Tokens
-  → Store Page Access Tokens in facebook_pages table
-  → Webhook immediately works for those pages
-```
+### 1. Database: Three New Tables
 
-## Changes
+**`connected_pages`** — stores authorized Facebook Pages
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK, auto-generated |
+| page_id | text | unique, Facebook Page ID |
+| page_name | text | |
+| page_access_token | text | long-lived Page Access Token |
+| token_expires_at | timestamptz | nullable |
+| created_at | timestamptz | default now() |
 
-### 1. Edge Function: `facebook-oauth` (new)
+**`fb_contacts`** — stores Messenger sender profiles
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| psid | text | Facebook Page-Scoped ID |
+| page_id | text | which page they messaged |
+| first_name | text | nullable |
+| last_name | text | nullable |
+| profile_pic | text | nullable |
+| created_at | timestamptz | default now() |
+| unique(psid, page_id) | | one contact per page |
 
-A new edge function to handle the OAuth token exchange flow:
-- **`GET /callback`** — Receives the OAuth redirect from Facebook, exchanges the authorization code for a user access token, then exchanges for a long-lived token, fetches the user's pages via `/me/accounts`, and upserts page tokens into `facebook_pages`.
-- **`GET /auth-url`** — Returns the Facebook OAuth URL with the correct scopes (`pages_messaging`, `pages_read_engagement`, `pages_manage_metadata`) and redirect URI.
-- Uses `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` from `bot_settings` (already stored).
+**`fb_messages`** — stores inbound/outbound messages
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| psid | text | sender/recipient PSID |
+| page_id | text | |
+| message_text | text | nullable |
+| direction | text | 'inbound' or 'outbound' |
+| created_time | timestamptz | default now() |
 
-### 2. `src/pages/FacebookPages.tsx` — Add "Connect Facebook Page" button
+All tables get RLS: authenticated SELECT, service_role INSERT/UPDATE.
 
-- Add a prominent "Connect Facebook Page" button that calls the `/auth-url` endpoint and opens the Facebook OAuth flow in a popup window.
-- Listen for the popup to close, then refresh the pages list.
-- Keep the existing manual System User Token config as a fallback/advanced option.
-- Remove or demote the "Sync Pages" button (no longer primary flow).
+### 2. Edge Function: `fb-exchange-token`
 
-### 3. `supabase/functions/messenger-webhook/index.ts` — No changes needed
+Handles the OAuth callback and token exchange:
+- **GET `/auth-url`** — builds the Facebook OAuth URL with scopes `pages_messaging,pages_show_list,pages_manage_metadata`
+- **GET `/callback`** — receives OAuth redirect, exchanges code → short-lived token → long-lived token, calls `/me/accounts`, upserts each page into `connected_pages`
+- Reads `FB_APP_ID` and `FB_APP_SECRET` from environment variables (Deno.env)
 
-The webhook already reads page tokens from the `facebook_pages` table. As long as the OAuth flow stores tokens there, everything works.
+### 3. Edge Function: `fb-webhook`
 
-### 4. Database — No schema changes needed
+Handles Meta webhook verification and inbound messages:
+- **GET** — responds to `hub.verify_token` challenge using `FB_VERIFY_TOKEN` env var
+- **POST** — processes `messaging` events:
+  - Looks up page token from `connected_pages` by recipient page_id
+  - Fetches sender profile via `GET /{PSID}?fields=first_name,last_name,profile_pic` using that page token
+  - Upserts contact into `fb_contacts`
+  - Inserts message into `fb_messages`
 
-The `facebook_pages` table already has `access_token`, `page_id`, `name`, `is_active`, etc. The OAuth flow will upsert into the same table.
+### 4. Frontend: Connect Button
 
-### 5. Secrets required
+Update `FacebookPages.tsx` to call the new `fb-exchange-token/auth-url` endpoint and open the OAuth popup. On success, refresh the connected pages list from the new `connected_pages` table.
 
-- `FACEBOOK_APP_ID` — already stored in `bot_settings`
-- `FACEBOOK_APP_SECRET` — already stored in `bot_settings`
-- No new secrets needed
+### 5. Environment Variables
 
-### 6. Facebook App Configuration
+Uses existing secrets (already configured):
+- `FACEBOOK_APP_ID` → `FB_APP_ID`
+- `FACEBOOK_APP_SECRET` → `FB_APP_SECRET`  
+- `FACEBOOK_VERIFY_TOKEN` → `FB_VERIFY_TOKEN`
 
-You'll need to:
-- Add **Facebook Login for Business** product to your app in the Facebook Developer portal
-- Set the Valid OAuth Redirect URI to your edge function callback URL
-- No App Review required — the Page admin authorizes directly
+No new secrets needed — these are already set.
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `supabase/functions/facebook-oauth/index.ts` | New edge function for OAuth code exchange and page token storage |
-| `src/pages/FacebookPages.tsx` | Add "Connect Facebook Page" button with OAuth popup flow |
+| Migration SQL | Create `connected_pages`, `fb_contacts`, `fb_messages` tables with RLS |
+| `supabase/functions/fb-exchange-token/index.ts` | New — OAuth flow + token exchange |
+| `supabase/functions/fb-webhook/index.ts` | New — webhook verification + message handling |
+| `supabase/config.toml` | Add `fb-exchange-token` and `fb-webhook` with `verify_jwt = false` |
+| `src/pages/FacebookPages.tsx` | Update Connect button to use new `fb-exchange-token` endpoint, fetch from `connected_pages` |
 
-## What This Enables
+## Note on Existing Infrastructure
 
-- Any Page admin can authorize your app to access their Page in seconds
-- Page Access Tokens are obtained directly (no System User needed)
-- Webhook receives messages immediately after authorization
-- Profile info (name, picture) works without App Review
-- 24-hour messaging window replies work
-- Token refresh can be automated (long-lived tokens last 60 days)
-
-## Limitations to Note
-
-- Long-lived Page Access Tokens last ~60 days and need periodic re-authorization
-- Only pages where the authorizing user is an admin will appear
-- The System User Token flow can remain as a fallback for advanced users
+The existing `facebook-oauth`, `messenger-webhook` functions and `facebook_pages` table will remain untouched. You can deprecate them later once the new setup is verified working.
 
