@@ -132,6 +132,7 @@ interface TrafficData {
 const Traffic = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { permissions } = useUserPermissions();
+  const { isEnabled: messengerEnabled } = useMessengerIntegration();
   const itemsPerPage = 10;
 
   // Filter and search states
