@@ -67,6 +67,7 @@ const App = () => {
                 <Route path="/media-gallery" element={<ProtectedRoute><MediaGallery /></ProtectedRoute>} />
                 <Route path="/monday-import" element={<ProtectedRoute><MondayImport /></ProtectedRoute>} />
                 <Route path="/system" element={<ProtectedRoute><FacebookPages /></ProtectedRoute>} />
+                <Route path="/facebook-connect" element={<ProtectedRoute><FacebookConnect /></ProtectedRoute>} />
                 <Route path="/user-roles" element={<ProtectedRoute><UserRoles /></ProtectedRoute>} />
                 <Route path="/docs" element={<ProtectedRoute><Docs /></ProtectedRoute>} />
                 
