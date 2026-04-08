@@ -148,8 +148,7 @@ const Dashboard = () => {
       // Get total count
       const { count, error: countError } = await supabase
         .from("customer")
-        .select("*", { count: "exact", head: true })
-        .not("messenger_name", "eq", "Unknown");
+        .select("*", { count: "exact", head: true });
 
       if (countError) throw countError;
       setTotalCustomers(count || 0);
@@ -161,7 +160,6 @@ const Dashboard = () => {
       const { data, error } = await supabase
         .from("customer")
         .select("*")
-        .not("messenger_name", "eq", "Unknown")
         .order("created_at", { ascending: false })
         .range(from, to);
 
