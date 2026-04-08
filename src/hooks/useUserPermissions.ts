@@ -10,6 +10,12 @@ export interface RolePermissions {
   canViewMondayImport: boolean;
   canViewUserRoles: boolean;
   canManageRoles: boolean;
+  canViewChat: boolean;
+  canViewCustomers: boolean;
+  canViewTraffic: boolean;
+  canViewAdsInsight: boolean;
+  canViewDocs: boolean;
+  canViewDashboard: boolean;
 }
 
 export interface RoleData {
