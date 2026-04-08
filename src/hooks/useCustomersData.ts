@@ -79,6 +79,11 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10, search
         .select("*")
         .is("linked_customer_id", null);
 
+      // Hide messenger customers when integration is disabled
+      if (!messengerEnabled) {
+        dataQuery = dataQuery.or("messenger_id.is.null,messenger_name.neq.Unknown");
+      }
+
       // Apply same filters to data query
       if (platformFilter === "telegram") {
         dataQuery = dataQuery.not("telegram_id", "is", null).is("messenger_id", null);
