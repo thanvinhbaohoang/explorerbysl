@@ -1,47 +1,79 @@
 
 
-# Fix: Pagination Count Not Reflecting Applied Filters
+# Facebook Login for Business — Page Authorization Flow
 
-## Problem
-When filters are applied on /customers and /traffic, the table still shows 267 pages because:
-- **Customers**: Platform and search filters are applied **client-side** on already-paginated data (10 rows), but pagination uses the **unfiltered** database count (`totalCustomers`).
-- **Traffic**: The `customerStatusFilter` is applied client-side after fetching, so `totalTraffic` doesn't reflect it.
+## Overview
+Replace the current System User Token approach with **Facebook Login for Business**, allowing Page admins to log in via Facebook OAuth directly in your app and grant access to their Pages. This eliminates the need for App Review, System User Tokens, and manual token management.
 
-## Solution
-Move all filters to the **database query level** so the count and pagination are always accurate.
+## How It Works
 
-### 1. `src/hooks/useCustomersData.ts` — Accept filter parameters
+```text
+Page Admin clicks "Connect Facebook Page" on /system
+  → Facebook OAuth popup opens (Login for Business)
+  → Admin grants pages_messaging + pages_read_engagement
+  → App receives short-lived User Access Token
+  → Exchange for long-lived token (60 days)
+  → Fetch /me/accounts to get Page Access Tokens
+  → Store Page Access Tokens in facebook_pages table
+  → Webhook immediately works for those pages
+```
 
-- Add `searchTerm` and `platformFilter` parameters to the hook
-- Apply them in the Supabase query (both the count query and the data query):
-  - **Platform filter**: `telegram` → `.not('telegram_id', 'is', null).is('messenger_id', null)` / `messenger` → `.not('messenger_id', 'is', null)`
-  - **Search filter**: `.or('first_name.ilike.%term%,last_name.ilike.%term%,username.ilike.%term%,messenger_name.ilike.%term%')`
-- Update the `queryKey` to include the new filter params so React Query caches correctly
+## Changes
 
-### 2. `src/pages/Customers.tsx` — Pass filters to hook, remove client-side filtering
+### 1. Edge Function: `facebook-oauth` (new)
 
-- Pass `debouncedSearchTerm` and `customerPlatformFilter` to `useCustomersData()`
-- Remove the `filteredCustomers` useMemo (no longer needed — DB returns pre-filtered data)
-- Use `customers` directly in the table render
-- Reset page to 1 when filters change (already done for search, add for platform filter)
+A new edge function to handle the OAuth token exchange flow:
+- **`GET /callback`** — Receives the OAuth redirect from Facebook, exchanges the authorization code for a user access token, then exchanges for a long-lived token, fetches the user's pages via `/me/accounts`, and upserts page tokens into `facebook_pages`.
+- **`GET /auth-url`** — Returns the Facebook OAuth URL with the correct scopes (`pages_messaging`, `pages_read_engagement`, `pages_manage_metadata`) and redirect URI.
+- Uses `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` from `bot_settings` (already stored).
 
-### 3. `src/hooks/useTrafficData.ts` — Add `customerStatusFilter` to the DB query
+### 2. `src/pages/FacebookPages.tsx` — Add "Connect Facebook Page" button
 
-- The `customerStatusFilter` ("new" vs "existing") depends on comparing `lead.created_at` with `customer.first_message_at`, which is computed after fetching. This cannot easily be moved to the DB query.
-- Instead, when `customerStatusFilter` is active, fetch **all matching rows** (remove `.range()`) and apply the filter, then slice for the current page — OR use the filtered count for pagination.
-- Simpler approach: compute `filteredTotal` from `filteredTrafficData.length` when `customerStatusFilter` is active and use that for pagination.
+- Add a prominent "Connect Facebook Page" button that calls the `/auth-url` endpoint and opens the Facebook OAuth flow in a popup window.
+- Listen for the popup to close, then refresh the pages list.
+- Keep the existing manual System User Token config as a fallback/advanced option.
+- Remove or demote the "Sync Pages" button (no longer primary flow).
 
-### 4. `src/pages/Traffic.tsx` — Fix pagination to use filtered count
+### 3. `supabase/functions/messenger-webhook/index.ts` — No changes needed
 
-- When `customerStatusFilter` is set, use `filteredTrafficData.length` as the basis for showing "no more pages" — but since this is a client-side filter on one page of data, the real fix is to adjust `totalTrafficPages` to reflect filtering.
-- Since customer status can't easily be moved to DB, show a note that pagination may be approximate when status filter is active, OR fetch without pagination when status filter is active (data volume should be manageable).
+The webhook already reads page tokens from the `facebook_pages` table. As long as the OAuth flow stores tokens there, everything works.
+
+### 4. Database — No schema changes needed
+
+The `facebook_pages` table already has `access_token`, `page_id`, `name`, `is_active`, etc. The OAuth flow will upsert into the same table.
+
+### 5. Secrets required
+
+- `FACEBOOK_APP_ID` — already stored in `bot_settings`
+- `FACEBOOK_APP_SECRET` — already stored in `bot_settings`
+- No new secrets needed
+
+### 6. Facebook App Configuration
+
+You'll need to:
+- Add **Facebook Login for Business** product to your app in the Facebook Developer portal
+- Set the Valid OAuth Redirect URI to your edge function callback URL
+- No App Review required — the Page admin authorizes directly
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `src/hooks/useCustomersData.ts` | Add `searchTerm` and `platformFilter` params, apply in DB query |
-| `src/pages/Customers.tsx` | Pass filters to hook, remove client-side `filteredCustomers` memo |
-| `src/hooks/useTrafficData.ts` | No change needed (filters already DB-side except customerStatus) |
-| `src/pages/Traffic.tsx` | Use filtered count for pagination when customerStatusFilter is active |
+| `supabase/functions/facebook-oauth/index.ts` | New edge function for OAuth code exchange and page token storage |
+| `src/pages/FacebookPages.tsx` | Add "Connect Facebook Page" button with OAuth popup flow |
+
+## What This Enables
+
+- Any Page admin can authorize your app to access their Page in seconds
+- Page Access Tokens are obtained directly (no System User needed)
+- Webhook receives messages immediately after authorization
+- Profile info (name, picture) works without App Review
+- 24-hour messaging window replies work
+- Token refresh can be automated (long-lived tokens last 60 days)
+
+## Limitations to Note
+
+- Long-lived Page Access Tokens last ~60 days and need periodic re-authorization
+- Only pages where the authorizing user is an admin will appear
+- The System User Token flow can remain as a fallback for advanced users
 
