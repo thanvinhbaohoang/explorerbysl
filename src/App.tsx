@@ -26,6 +26,7 @@ import MondayImport from "./pages/MondayImport";
 import FacebookPages from "./pages/FacebookPages";
 import UserRoles from "./pages/UserRoles";
 import Docs from "./pages/Docs";
+import FacebookConnect from "./pages/FacebookConnect";
 import NotFound from "./pages/NotFound";
 import PendingApproval from "./pages/PendingApproval";
 
