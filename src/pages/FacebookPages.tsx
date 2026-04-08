@@ -486,65 +486,114 @@ const FacebookPages = () => {
                   </div>
                 </CardContent>
               </Card>
-              {/* Action buttons */}
-              <div className="flex items-center justify-end gap-4">
-                {lastRefreshed && (
-                  <span className="text-sm text-muted-foreground">
-                    Last updated: {lastRefreshed.toLocaleTimeString()}
-                  </span>
-                )}
+              {/* Connect Facebook Page + Action buttons */}
+              <div className="flex items-center justify-between gap-4">
                 <Button
-                  variant="outline"
                   onClick={async () => {
-                    toast.info("Exporting all Facebook pages...");
-                    const { data: dbPages, error } = await supabase
-                      .from('facebook_pages')
-                      .select('*')
-                      .order('name');
-                    
-                    if (error) {
-                      toast.error("Failed to export pages");
-                      return;
+                    try {
+                      const res = await fetch(
+                        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/facebook-oauth/auth-url`
+                      );
+                      const { authUrl, error: urlError } = await res.json();
+                      if (urlError) {
+                        toast.error(urlError);
+                        return;
+                      }
+                      const popup = window.open(authUrl, "fb-oauth", "width=600,height=700,scrollbars=yes");
+                      
+                      const handleMessage = (event: MessageEvent) => {
+                        if (event.data?.type === "fb-oauth-success") {
+                          toast.success(`Connected ${event.data.pages} page(s) successfully!`);
+                          fetchPages();
+                          fetchDbPages();
+                          window.removeEventListener("message", handleMessage);
+                        } else if (event.data?.type === "fb-oauth-error") {
+                          toast.error(event.data.error || "Authorization failed");
+                          window.removeEventListener("message", handleMessage);
+                        }
+                      };
+                      window.addEventListener("message", handleMessage);
+
+                      // Fallback: poll for popup close
+                      const pollTimer = setInterval(() => {
+                        if (popup?.closed) {
+                          clearInterval(pollTimer);
+                          setTimeout(() => {
+                            window.removeEventListener("message", handleMessage);
+                            fetchPages();
+                            fetchDbPages();
+                          }, 1000);
+                        }
+                      }, 1000);
+                    } catch (err: any) {
+                      toast.error(err.message || "Failed to start authorization");
                     }
-                    
-                    exportToCSV(
-                      dbPages || [],
-                      [
-                        { key: 'id', header: 'ID' },
-                        { key: 'page_id', header: 'Page ID' },
-                        { key: 'name', header: 'Page Name' },
-                        { key: 'category', header: 'Category' },
-                        { key: 'picture_url', header: 'Picture URL' },
-                        { key: 'is_active', header: 'Active', getValue: (p) => p.is_active ? 'Yes' : 'No' },
-                        { key: 'access_token', header: 'Access Token' },
-                        { key: 'token_expires_at', header: 'Token Expires At', getValue: (p) => p.token_expires_at ? new Date(p.token_expires_at).toLocaleString() : '' },
-                        { key: 'created_at', header: 'Created At', getValue: (p) => new Date(p.created_at).toLocaleString() },
-                        { key: 'updated_at', header: 'Updated At', getValue: (p) => new Date(p.updated_at).toLocaleString() },
-                      ],
-                      'facebook_pages'
-                    );
-                    toast.success(`Exported ${dbPages?.length || 0} pages`);
                   }}
+                  className="gap-2"
                 >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export CSV
+                  <Facebook className="h-4 w-4" />
+                  Connect Facebook Page
                 </Button>
-                <Button
-                  onClick={syncPages}
-                  disabled={syncing}
-                  variant="outline"
-                >
-                  <Database className={`h-4 w-4 mr-2 ${syncing ? 'animate-pulse' : ''}`} />
-                  {syncing ? 'Syncing...' : 'Sync to DB'}
-                </Button>
-                <Button
-                  onClick={() => { fetchPages(); fetchAppInfo(); }}
-                  disabled={isLoading}
-                  variant="outline"
-                >
-                  <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
+
+                <div className="flex items-center gap-4">
+                  {lastRefreshed && (
+                    <span className="text-sm text-muted-foreground">
+                      Last updated: {lastRefreshed.toLocaleTimeString()}
+                    </span>
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      toast.info("Exporting all Facebook pages...");
+                      const { data: dbPages, error } = await supabase
+                        .from('facebook_pages')
+                        .select('*')
+                        .order('name');
+                      
+                      if (error) {
+                        toast.error("Failed to export pages");
+                        return;
+                      }
+                      
+                      exportToCSV(
+                        dbPages || [],
+                        [
+                          { key: 'id', header: 'ID' },
+                          { key: 'page_id', header: 'Page ID' },
+                          { key: 'name', header: 'Page Name' },
+                          { key: 'category', header: 'Category' },
+                          { key: 'picture_url', header: 'Picture URL' },
+                          { key: 'is_active', header: 'Active', getValue: (p) => p.is_active ? 'Yes' : 'No' },
+                          { key: 'access_token', header: 'Access Token' },
+                          { key: 'token_expires_at', header: 'Token Expires At', getValue: (p) => p.token_expires_at ? new Date(p.token_expires_at).toLocaleString() : '' },
+                          { key: 'created_at', header: 'Created At', getValue: (p) => new Date(p.created_at).toLocaleString() },
+                          { key: 'updated_at', header: 'Updated At', getValue: (p) => new Date(p.updated_at).toLocaleString() },
+                        ],
+                        'facebook_pages'
+                      );
+                      toast.success(`Exported ${dbPages?.length || 0} pages`);
+                    }}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Export CSV
+                  </Button>
+                  <Button
+                    onClick={syncPages}
+                    disabled={syncing}
+                    variant="outline"
+                  >
+                    <Database className={`h-4 w-4 mr-2 ${syncing ? 'animate-pulse' : ''}`} />
+                    {syncing ? 'Syncing...' : 'Sync to DB'}
+                  </Button>
+                  <Button
+                    onClick={() => { fetchPages(); fetchAppInfo(); }}
+                    disabled={isLoading}
+                    variant="outline"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
               </div>
 
               {/* App & Business Info Card */}
