@@ -28,6 +28,7 @@ import UserRoles from "./pages/UserRoles";
 import Docs from "./pages/Docs";
 import NotFound from "./pages/NotFound";
 import PendingApproval from "./pages/PendingApproval";
+import TestLogin from "./pages/TestLogin";
 
 const queryClient = new QueryClient();
 
