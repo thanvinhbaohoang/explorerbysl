@@ -451,11 +451,18 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       const query = searchQuery.trim();
       try {
         // Search across all customer fields using ilike
-        const { data, error } = await supabase
+        let searchQ = supabase
           .from("customer")
           .select("*")
           .is("linked_customer_id", null)
-          .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,username.ilike.%${query}%,messenger_name.ilike.%${query}%`)
+          .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,username.ilike.%${query}%,messenger_name.ilike.%${query}%`);
+
+        // Hide broken messenger customers when integration is disabled
+        if (!messengerEnabled) {
+          searchQ = searchQ.or("messenger_id.is.null,messenger_name.neq.Unknown");
+        }
+
+        const { data, error } = await searchQ
           .order("last_message_at", { ascending: false, nullsFirst: false })
           .limit(8);
 
