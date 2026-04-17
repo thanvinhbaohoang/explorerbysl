@@ -191,22 +191,57 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     return () => observer.disconnect();
   }, [hasMore, isLoading]);
 
-  // Fetch unread counts
-  const fetchUnreadCounts = async () => {
+  // Fetch unread counts for ALL customers (global, not scoped to loaded slice)
+  const fetchUnreadCounts = useCallback(async () => {
     const { data } = await supabase
       .from("messages")
       .select("customer_id")
       .eq("sender_type", "customer")
       .eq("is_read", false);
 
-    if (data) {
-      const counts: Record<string, number> = {};
-      data.forEach(msg => {
-        counts[msg.customer_id] = (counts[msg.customer_id] || 0) + 1;
-      });
-      setUnreadCounts(counts);
+    if (!data) return;
+
+    const counts: Record<string, number> = {};
+    const unreadCustomerIds = new Set<string>();
+    data.forEach(msg => {
+      if (!msg.customer_id) return;
+      counts[msg.customer_id] = (counts[msg.customer_id] || 0) + 1;
+      unreadCustomerIds.add(msg.customer_id);
+    });
+    setUnreadCounts(counts);
+
+    // Auto-inject any customer with unread messages that isn't in the loaded list
+    // so the badge actually has a row to render on.
+    const currentCustomers = allCustomersRef.current;
+    const currentLinkedMap = allLinkedPlatformsMapRef.current;
+    const knownIds = new Set<string>();
+    currentCustomers.forEach(c => knownIds.add(c.id));
+    Object.values(currentLinkedMap).forEach(linked => {
+      linked.linkedIds.forEach(id => knownIds.add(id));
+    });
+
+    const missingIds = Array.from(unreadCustomerIds).filter(id => !knownIds.has(id));
+    if (missingIds.length === 0) return;
+
+    // Fetch the latest message timestamp per missing customer to feed ensureConversationLoaded
+    const { data: latestMsgs } = await supabase
+      .from("messages")
+      .select("customer_id, timestamp")
+      .in("customer_id", missingIds)
+      .order("timestamp", { ascending: false });
+
+    const latestByCustomer = new Map<string, string>();
+    latestMsgs?.forEach(m => {
+      if (m.customer_id && !latestByCustomer.has(m.customer_id)) {
+        latestByCustomer.set(m.customer_id, m.timestamp as string);
+      }
+    });
+
+    for (const id of missingIds) {
+      const ts = latestByCustomer.get(id) || new Date().toISOString();
+      void ensureConversationLoaded(id, ts);
     }
-  };
+  }, [ensureConversationLoaded]);
 
   // Fetch last messages for preview using RPC (avoids 1000-row limit)
   const fetchLastMessages = async () => {
@@ -242,7 +277,13 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
 
   useEffect(() => {
     fetchUnreadCounts();
-  }, []);
+
+    // Refetch when the tab/window regains focus so unread state is fresh
+    // after navigating away (e.g., from /customers back to /chat).
+    const handleFocus = () => { fetchUnreadCounts(); };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [fetchUnreadCounts]);
 
   const customerIdKey = useMemo(() => allCustomers.map(c => c.id).join(','), [allCustomers]);
 
