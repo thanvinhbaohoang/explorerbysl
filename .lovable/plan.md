@@ -1,50 +1,39 @@
 
 
-## Diagnosis (confirmed)
+## Diagnosis
 
-DB has **6,503 unread customer messages across 2,099 customers**. The function `fetchUnreadCounts()` in `src/components/ChatConversationList.tsx` runs:
+The user reports that simply *visiting* `/chat` clears all unread badges — both in the conversation list and on the "Chat" nav button. This means `markMessagesAsRead` (or an equivalent UPDATE) is being triggered on mount/render rather than only when a conversation is explicitly clicked.
 
-```ts
-supabase.from("messages").select("customer_id").eq("sender_type","customer").eq("is_read",false)
-```
+I need to inspect `ChatConversationList.tsx` and `ChatPanel.tsx` / `useChatMessages.ts` to find where `is_read` gets flipped, and confirm it's firing too eagerly.
 
-Supabase caps `.select()` at **1,000 rows by default**. So only the first 1,000 unread message rows are returned, covering a subset of customers. Many conversations the user sees in the list (especially older ones) are missing from `unreadCounts` — so no badge, no highlight.
+## Likely culprits to verify
 
-When the user stays on `/chat`, realtime gradually fills in counts as new messages arrive — that's why it "works after a while" and not on first navigation.
+1. **`useChatMessages.loadMessages`** — the summary shows it calls `markMessagesAsRead` after loading. If `ChatPanel` (or anything else) calls `loadMessages` for a customer that wasn't user-clicked, that's the bug.
+2. **`ChatConversationList`** — possibly auto-selects the first conversation on mount, which would cascade into `loadMessages` → `markMessagesAsRead`.
+3. **`Chat.tsx`** — the URL `?customer=` param auto-selects a customer. Fine when clicked from CRM, but if `selectedCustomer` ever defaults to the first item, every visit silently marks one conversation read.
 
-The Chat nav button doesn't actually have a count (I verified `AppLayout.tsx`); the user is likely seeing toasts/sound notifications and inferring activity. The real bug is just incomplete unread fetching.
+The bigger concern: even marking a *single* conversation read on entry shouldn't blank out the entire badge list. So there's likely a second bug — perhaps `fetchUnreadCounts` runs, then something resets `unreadCounts` to `{}` (e.g., a state reset on selection change, or the RPC failing silently and falling back to empty).
 
-## Fix
+## Plan
 
-In `src/components/ChatConversationList.tsx`, replace the row-by-row fetch with a server-side aggregation so we don't hit the 1,000-row cap:
+1. **Inspect** `ChatConversationList.tsx`, `ChatPanel.tsx`, `useChatMessages.ts`, and `Chat.tsx` to map every place `is_read` is updated and every place `unreadCounts` is set/reset.
 
-**Option A (recommended)** — add a new Postgres RPC `get_unread_counts()` that returns one row per customer with a count, and call it from `fetchUnreadCounts()`. Result set will be ~2,099 rows (one per customer) — well under the limit, and a single fast query.
+2. **Fix the read-marking trigger**: ensure `markMessagesAsRead` runs ONLY inside the explicit `onSelect` handler in `ChatConversationList` (user click), not inside `loadMessages`, not on mount, not on URL auto-select unless that came from a real CRM click.
+   - Decouple "load messages for display" from "mark as read." Loading should be a pure read; marking should be an explicit user action.
 
-```sql
-CREATE OR REPLACE FUNCTION public.get_unread_counts()
-RETURNS TABLE(customer_id uuid, unread_count bigint)
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$
-  SELECT customer_id, COUNT(*)::bigint
-  FROM messages
-  WHERE sender_type='customer' AND is_read=false AND customer_id IS NOT NULL
-  GROUP BY customer_id;
-$$;
-```
+3. **Fix the badge-reset bug**: ensure `unreadCounts` is never wiped to `{}` on customer selection or panel mount. The only mutations allowed:
+   - Initial fill from `get_unread_counts()` RPC on mount
+   - Increment on realtime new message
+   - Set to `0` for a specific `customer_id` only when that conversation is explicitly opened by click
 
-Then in `fetchUnreadCounts`:
-```ts
-const { data } = await supabase.rpc('get_unread_counts');
-const counts: Record<string, number> = {};
-data?.forEach(r => { counts[r.customer_id] = Number(r.unread_count); });
-setUnreadCounts(counts);
-```
+4. **Verify the Chat nav badge source**: confirm where the header's "Chat" unread badge reads its count from, and make sure it stays in sync (likely a separate query or shared hook). If it's recomputing from the same `messages` table, the same fix applies; if it's a separate state, ensure no reset happens on route change.
 
-**Also**: re-run `fetchUnreadCounts()` whenever the customer list grows (new pages loaded via infinite scroll) so newly-loaded rows immediately reflect their counts — though with the RPC returning everything, one call on mount is enough.
+## Files to change (expected)
 
-## Files
+- `src/hooks/useChatMessages.ts` — remove `markMessagesAsRead` from `loadMessages`; export it for explicit use.
+- `src/components/ChatConversationList.tsx` — call `markMessagesAsRead` (or do the UPDATE inline) only inside the `onSelect` click handler; locally zero-out `unreadCounts[customerId]` at the same moment.
+- `src/components/ChatPanel.tsx` — stop calling `markMessagesAsRead` on mount/load if it does.
+- `src/components/AppLayout.tsx` (or wherever the Chat nav badge lives) — ensure its source isn't being reset by route change; if it polls `get_unread_counts`, it'll self-heal.
 
-- `supabase/migrations/<new>.sql` — add `get_unread_counts()` RPC
-- `src/components/ChatConversationList.tsx` — swap the query in `fetchUnreadCounts`
-
-No other changes needed. Realtime increment, `markMessagesAsRead`, and visual styling all stay as-is.
+No DB migration needed — the RPC from the previous fix stays.
 
