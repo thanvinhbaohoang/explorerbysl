@@ -638,6 +638,13 @@ export type Database = {
           customer_id: string
         }[]
       }
+      get_unread_counts: {
+        Args: never
+        Returns: {
+          customer_id: string
+          unread_count: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
