@@ -873,8 +873,8 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className={cn(
-                      "font-medium truncate text-sm",
-                      unreadCount > 0 && "font-semibold"
+                      "truncate text-sm",
+                      unreadCount > 0 ? "font-bold text-foreground" : "font-medium"
                     )}>
                       {displayName}
                     </span>
