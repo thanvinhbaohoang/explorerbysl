@@ -2,38 +2,31 @@
 
 ## Diagnosis
 
-The user reports that simply *visiting* `/chat` clears all unread badges — both in the conversation list and on the "Chat" nav button. This means `markMessagesAsRead` (or an equivalent UPDATE) is being triggered on mount/render rather than only when a conversation is explicitly clicked.
+Telegram unread badges persist across refresh, but Messenger ones reset. That points to something Messenger-specific writing `is_read = true` to the DB without a click.
 
-I need to inspect `ChatConversationList.tsx` and `ChatPanel.tsx` / `useChatMessages.ts` to find where `is_read` gets flipped, and confirm it's firing too eagerly.
+The most likely culprit is the **messenger-webhook edge function**. When Facebook delivers a `message_reads` event (the user read our reply on their end) or when we process echoes / delivery receipts, the webhook may be flipping `is_read` on inbound customer messages. It could also happen inside `handleMessage` if the insert defaults or post-insert logic touches `is_read` for prior messages from the same PSID.
 
-## Likely culprits to verify
+Telegram has no equivalent read-receipt webhook event, which explains why only Messenger is affected.
 
-1. **`useChatMessages.loadMessages`** — the summary shows it calls `markMessagesAsRead` after loading. If `ChatPanel` (or anything else) calls `loadMessages` for a customer that wasn't user-clicked, that's the bug.
-2. **`ChatConversationList`** — possibly auto-selects the first conversation on mount, which would cascade into `loadMessages` → `markMessagesAsRead`.
-3. **`Chat.tsx`** — the URL `?customer=` param auto-selects a customer. Fine when clicked from CRM, but if `selectedCustomer` ever defaults to the first item, every visit silently marks one conversation read.
-
-The bigger concern: even marking a *single* conversation read on entry shouldn't blank out the entire badge list. So there's likely a second bug — perhaps `fetchUnreadCounts` runs, then something resets `unreadCounts` to `{}` (e.g., a state reset on selection change, or the RPC failing silently and falling back to empty).
+A second possibility: the realtime subscription in `ChatConversationList` listens for `UPDATE` events on `messages` and, if a webhook flips `is_read` server-side, the badge silently drops to 0 on the next refresh because the DB itself no longer has unread rows for that customer.
 
 ## Plan
 
-1. **Inspect** `ChatConversationList.tsx`, `ChatPanel.tsx`, `useChatMessages.ts`, and `Chat.tsx` to map every place `is_read` is updated and every place `unreadCounts` is set/reset.
+1. **Inspect** `supabase/functions/messenger-webhook/index.ts` end-to-end, looking for:
+   - Any `update({ is_read: true })` on the `messages` table
+   - Handling of `message_reads`, `delivery`, or `read` webhook event types
+   - Echo/self-message handling that might mark prior inbound messages read
+   - Default values on insert that could overwrite existing rows via upsert
 
-2. **Fix the read-marking trigger**: ensure `markMessagesAsRead` runs ONLY inside the explicit `onSelect` handler in `ChatConversationList` (user click), not inside `loadMessages`, not on mount, not on URL auto-select unless that came from a real CRM click.
-   - Decouple "load messages for display" from "mark as read." Loading should be a pure read; marking should be an explicit user action.
+2. **Verify with DB query**: check if Messenger customer Harold's inbound messages currently have `is_read = true` in the DB (vs Telegram Harold's which stay false). This confirms whether the reset is server-side (webhook) or client-side (frontend bug specific to Messenger rows).
 
-3. **Fix the badge-reset bug**: ensure `unreadCounts` is never wiped to `{}` on customer selection or panel mount. The only mutations allowed:
-   - Initial fill from `get_unread_counts()` RPC on mount
-   - Increment on realtime new message
-   - Set to `0` for a specific `customer_id` only when that conversation is explicitly opened by click
+3. **Fix the webhook**: remove any code path that auto-marks customer messages as read. The webhook should only ever INSERT new inbound messages with `is_read = false` (the column default). Read state must be owned exclusively by the explicit click handler in `ChatConversationList`.
 
-4. **Verify the Chat nav badge source**: confirm where the header's "Chat" unread badge reads its count from, and make sure it stays in sync (likely a separate query or shared hook). If it's recomputing from the same `messages` table, the same fix applies; if it's a separate state, ensure no reset happens on route change.
+4. **Optionally**: ignore Facebook `message_reads` events entirely — those represent the *customer* having read *our* reply, which is unrelated to the staff-side unread badge.
 
 ## Files to change (expected)
 
-- `src/hooks/useChatMessages.ts` — remove `markMessagesAsRead` from `loadMessages`; export it for explicit use.
-- `src/components/ChatConversationList.tsx` — call `markMessagesAsRead` (or do the UPDATE inline) only inside the `onSelect` click handler; locally zero-out `unreadCounts[customerId]` at the same moment.
-- `src/components/ChatPanel.tsx` — stop calling `markMessagesAsRead` on mount/load if it does.
-- `src/components/AppLayout.tsx` (or wherever the Chat nav badge lives) — ensure its source isn't being reset by route change; if it polls `get_unread_counts`, it'll self-heal.
+- `supabase/functions/messenger-webhook/index.ts` — strip out any `is_read` mutations; ignore `read`/`delivery` webhook events for the staff-unread purpose.
 
-No DB migration needed — the RPC from the previous fix stays.
+No frontend or DB schema changes needed. RPC and click-gated logic stay as-is.
 
