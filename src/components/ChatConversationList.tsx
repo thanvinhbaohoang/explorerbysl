@@ -844,10 +844,9 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                 key={customer.id}
                 onClick={() => handleSelect(customer)}
                 className={cn(
-                  "w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors text-left border-l-[3px] border-l-transparent",
+                  "w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors text-left",
                   selectedId === customer.id && "bg-muted",
-                  unreadCount > 0 && selectedId !== customer.id && "bg-primary/10",
-                  unreadCount > 0 && "border-l-primary"
+                  unreadCount > 0 && "bg-primary/5"
                 )}
               >
                 <div className="relative">
@@ -873,8 +872,8 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className={cn(
-                      "truncate text-sm",
-                      unreadCount > 0 ? "font-bold text-foreground" : "font-medium"
+                      "font-medium truncate text-sm",
+                      unreadCount > 0 && "font-semibold"
                     )}>
                       {displayName}
                     </span>
@@ -898,11 +897,8 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                         </>
                       ) : 'No messages yet'}
                     </p>
-                    <span className={cn(
-                      "text-[10px] flex-shrink-0 whitespace-nowrap",
-                      unreadCount > 0 ? "text-primary font-semibold" : "text-muted-foreground"
-                    )}>
-                      {unreadCount > 0 ? '● ' : '· '}{formatRelativeTime(lastMessage?.timestamp || customer.last_message_at) || '—'}
+                    <span className="text-[10px] text-muted-foreground flex-shrink-0 whitespace-nowrap">
+                      · {formatRelativeTime(lastMessage?.timestamp || customer.last_message_at) || '—'}
                     </span>
                     {waitingBadge && (
                       <span className={cn("text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0", waitingBadge.colorClass)}>
