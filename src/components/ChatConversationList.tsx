@@ -191,18 +191,19 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     return () => observer.disconnect();
   }, [hasMore, isLoading]);
 
-  // Fetch unread counts
+  // Fetch unread counts via RPC (avoids 1000-row select limit)
   const fetchUnreadCounts = async () => {
-    const { data } = await supabase
-      .from("messages")
-      .select("customer_id")
-      .eq("sender_type", "customer")
-      .eq("is_read", false);
+    const { data, error } = await supabase.rpc("get_unread_counts");
+
+    if (error) {
+      console.error("Failed to fetch unread counts:", error);
+      return;
+    }
 
     if (data) {
       const counts: Record<string, number> = {};
-      data.forEach(msg => {
-        counts[msg.customer_id] = (counts[msg.customer_id] || 0) + 1;
+      data.forEach((row: { customer_id: string; unread_count: number }) => {
+        counts[row.customer_id] = Number(row.unread_count);
       });
       setUnreadCounts(counts);
     }
