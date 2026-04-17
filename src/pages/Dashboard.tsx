@@ -316,15 +316,9 @@ const Dashboard = () => {
     setIsLoadingMessages(true);
 
     try {
-      // Mark messages as read when dialog opens - this is explicit user action
-      await supabase
-        .from("messages")
-        .update({ is_read: true })
-        .eq("customer_id", customer.id)
-        .eq("sender_type", "customer")
-        .eq("is_read", false);
-
-      // Reset unread count for this customer
+      // NOTE: Messages are NOT marked as read here. Read-marking only happens
+      // when a user explicitly clicks a conversation in the /chat conversation list.
+      // Reset unread count locally for this customer (purely UI state, DB unchanged)
       setUnreadCounts((prev) => ({
         ...prev,
         [customer.id]: 0,
