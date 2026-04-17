@@ -1,79 +1,50 @@
 
 
-# Facebook Login for Business — Page Authorization Flow
+## Diagnosis (confirmed)
 
-## Overview
-Replace the current System User Token approach with **Facebook Login for Business**, allowing Page admins to log in via Facebook OAuth directly in your app and grant access to their Pages. This eliminates the need for App Review, System User Tokens, and manual token management.
+DB has **6,503 unread customer messages across 2,099 customers**. The function `fetchUnreadCounts()` in `src/components/ChatConversationList.tsx` runs:
 
-## How It Works
-
-```text
-Page Admin clicks "Connect Facebook Page" on /system
-  → Facebook OAuth popup opens (Login for Business)
-  → Admin grants pages_messaging + pages_read_engagement
-  → App receives short-lived User Access Token
-  → Exchange for long-lived token (60 days)
-  → Fetch /me/accounts to get Page Access Tokens
-  → Store Page Access Tokens in facebook_pages table
-  → Webhook immediately works for those pages
+```ts
+supabase.from("messages").select("customer_id").eq("sender_type","customer").eq("is_read",false)
 ```
 
-## Changes
+Supabase caps `.select()` at **1,000 rows by default**. So only the first 1,000 unread message rows are returned, covering a subset of customers. Many conversations the user sees in the list (especially older ones) are missing from `unreadCounts` — so no badge, no highlight.
 
-### 1. Edge Function: `facebook-oauth` (new)
+When the user stays on `/chat`, realtime gradually fills in counts as new messages arrive — that's why it "works after a while" and not on first navigation.
 
-A new edge function to handle the OAuth token exchange flow:
-- **`GET /callback`** — Receives the OAuth redirect from Facebook, exchanges the authorization code for a user access token, then exchanges for a long-lived token, fetches the user's pages via `/me/accounts`, and upserts page tokens into `facebook_pages`.
-- **`GET /auth-url`** — Returns the Facebook OAuth URL with the correct scopes (`pages_messaging`, `pages_read_engagement`, `pages_manage_metadata`) and redirect URI.
-- Uses `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` from `bot_settings` (already stored).
+The Chat nav button doesn't actually have a count (I verified `AppLayout.tsx`); the user is likely seeing toasts/sound notifications and inferring activity. The real bug is just incomplete unread fetching.
 
-### 2. `src/pages/FacebookPages.tsx` — Add "Connect Facebook Page" button
+## Fix
 
-- Add a prominent "Connect Facebook Page" button that calls the `/auth-url` endpoint and opens the Facebook OAuth flow in a popup window.
-- Listen for the popup to close, then refresh the pages list.
-- Keep the existing manual System User Token config as a fallback/advanced option.
-- Remove or demote the "Sync Pages" button (no longer primary flow).
+In `src/components/ChatConversationList.tsx`, replace the row-by-row fetch with a server-side aggregation so we don't hit the 1,000-row cap:
 
-### 3. `supabase/functions/messenger-webhook/index.ts` — No changes needed
+**Option A (recommended)** — add a new Postgres RPC `get_unread_counts()` that returns one row per customer with a count, and call it from `fetchUnreadCounts()`. Result set will be ~2,099 rows (one per customer) — well under the limit, and a single fast query.
 
-The webhook already reads page tokens from the `facebook_pages` table. As long as the OAuth flow stores tokens there, everything works.
+```sql
+CREATE OR REPLACE FUNCTION public.get_unread_counts()
+RETURNS TABLE(customer_id uuid, unread_count bigint)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$
+  SELECT customer_id, COUNT(*)::bigint
+  FROM messages
+  WHERE sender_type='customer' AND is_read=false AND customer_id IS NOT NULL
+  GROUP BY customer_id;
+$$;
+```
 
-### 4. Database — No schema changes needed
+Then in `fetchUnreadCounts`:
+```ts
+const { data } = await supabase.rpc('get_unread_counts');
+const counts: Record<string, number> = {};
+data?.forEach(r => { counts[r.customer_id] = Number(r.unread_count); });
+setUnreadCounts(counts);
+```
 
-The `facebook_pages` table already has `access_token`, `page_id`, `name`, `is_active`, etc. The OAuth flow will upsert into the same table.
+**Also**: re-run `fetchUnreadCounts()` whenever the customer list grows (new pages loaded via infinite scroll) so newly-loaded rows immediately reflect their counts — though with the RPC returning everything, one call on mount is enough.
 
-### 5. Secrets required
+## Files
 
-- `FACEBOOK_APP_ID` — already stored in `bot_settings`
-- `FACEBOOK_APP_SECRET` — already stored in `bot_settings`
-- No new secrets needed
+- `supabase/migrations/<new>.sql` — add `get_unread_counts()` RPC
+- `src/components/ChatConversationList.tsx` — swap the query in `fetchUnreadCounts`
 
-### 6. Facebook App Configuration
-
-You'll need to:
-- Add **Facebook Login for Business** product to your app in the Facebook Developer portal
-- Set the Valid OAuth Redirect URI to your edge function callback URL
-- No App Review required — the Page admin authorizes directly
-
-## Files Changed
-
-| File | Change |
-|------|--------|
-| `supabase/functions/facebook-oauth/index.ts` | New edge function for OAuth code exchange and page token storage |
-| `src/pages/FacebookPages.tsx` | Add "Connect Facebook Page" button with OAuth popup flow |
-
-## What This Enables
-
-- Any Page admin can authorize your app to access their Page in seconds
-- Page Access Tokens are obtained directly (no System User needed)
-- Webhook receives messages immediately after authorization
-- Profile info (name, picture) works without App Review
-- 24-hour messaging window replies work
-- Token refresh can be automated (long-lived tokens last 60 days)
-
-## Limitations to Note
-
-- Long-lived Page Access Tokens last ~60 days and need periodic re-authorization
-- Only pages where the authorizing user is an admin will appear
-- The System User Token flow can remain as a fallback for advanced users
+No other changes needed. Realtime increment, `markMessagesAsRead`, and visual styling all stay as-is.
 
