@@ -277,7 +277,13 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
 
   useEffect(() => {
     fetchUnreadCounts();
-  }, []);
+
+    // Refetch when the tab/window regains focus so unread state is fresh
+    // after navigating away (e.g., from /customers back to /chat).
+    const handleFocus = () => { fetchUnreadCounts(); };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [fetchUnreadCounts]);
 
   const customerIdKey = useMemo(() => allCustomers.map(c => c.id).join(','), [allCustomers]);
 
