@@ -844,9 +844,10 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                 key={customer.id}
                 onClick={() => handleSelect(customer)}
                 className={cn(
-                  "w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors text-left",
+                  "w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors text-left border-l-[3px] border-l-transparent",
                   selectedId === customer.id && "bg-muted",
-                  unreadCount > 0 && "bg-primary/5"
+                  unreadCount > 0 && selectedId !== customer.id && "bg-primary/10",
+                  unreadCount > 0 && "border-l-primary"
                 )}
               >
                 <div className="relative">
