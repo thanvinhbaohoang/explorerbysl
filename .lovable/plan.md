@@ -1,60 +1,43 @@
 
 
-## Diagnosis
+## Summary for the user
 
-For all 3 PDFs from AIRSTAY HOTEL (`db9eb533-…`), the DB row has:
-- `message_type = 'document'`
-- `document_name = '1111.pdf'`
-- `document_mime_type = 'application/pdf'`
-- **`document_url = NULL`** ← the cause
+- File was **never uploaded** to our storage. The size check happens in-memory before upload, so nothing is in the bucket.
+- 50 MB is a **hardcoded constant** in `messenger-webhook/index.ts` and `telegram-bot/index.ts`, not an actual storage limit.
+- The bucket has no size cap configured; the real ceiling is the Lovable Cloud (Supabase) plan tier.
 
-The webhook code at `messenger-webhook/index.ts:665-674` does:
-```ts
-const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo');
-attDocumentUrl = storedUrl || attachment.payload.url;
+## Plan: raise the upload ceiling
+
+### 1. Bump `MAX_UPLOAD_SIZE` in both edge functions
+
+- `supabase/functions/messenger-webhook/index.ts` — change `50 * 1024 * 1024` to the new ceiling
+- `supabase/functions/telegram-bot/index.ts` — same
+
+**Important Telegram caveat**: The Telegram **Bot API itself caps file downloads at 20 MB** regardless of our limit. Files larger than 20 MB sent through a bot return an error from `getFile`. This limit is on Telegram's side and cannot be bypassed without using the MTProto API (not possible from an edge function). So Telegram uploads will effectively still cap at ~20 MB no matter what we set.
+
+Messenger has no such bot-side cap — it'll work up to whatever Facebook itself accepts (~25 MB images, ~25 MB files via Send API on their end, but inbound attachments from users can be larger).
+
+### 2. Optionally enforce at the bucket level
+
+Set `file_size_limit` on the `chat-attachments` bucket via migration so direct uploads from the frontend (voice clips, staff-attached files) are also bounded:
+
+```sql
+UPDATE storage.buckets SET file_size_limit = <new_limit_bytes> WHERE id = 'chat-attachments';
 ```
 
-So `document_url` is null only if **both** the Supabase upload AND the original Facebook CDN URL failed/were absent. In practice this means `downloadAndStoreFile` threw or the storage upload returned an error — most likely the **50 MB Supabase free-tier limit** since it's the only common failure mode for PDFs that doesn't surface to the user.
+### 3. Update frontend copy in `ChatPanel.tsx`
 
-There are also two secondary bugs in that block:
-1. `attDocumentMimeType` is **hardcoded to `'application/octet-stream'`**, ignoring `attachment.payload.mime_type` from FB. That's why even when it works, the chip shows generic "File".
-2. The download is logged as `'photo'` folder, so PDFs end up in `messenger-photo/...bin`. Cosmetic but messy.
+The tooltip currently says "50 MB Supabase storage limit" — update to the new number.
 
-## Fix Plan
+### Recommended ceiling
 
-### 1. DB migration — add `document_size` column to `messages`
-```
-ALTER TABLE messages ADD COLUMN document_size bigint;
-```
-(nullable, no default — historical rows stay null)
+- **100 MB**: safe headroom, well within free tier per-file allowance, covers 99% of customer PDFs/videos.
+- **500 MB**: requires Supabase Pro on the Cloud project; good for large video files.
+- **5 GB**: hard ceiling on Supabase Pro.
 
-### 2. `supabase/functions/messenger-webhook/index.ts`
+### Decision needed from you
 
-**a.** Extend `downloadAndStoreFile` to accept a `'document'` type, capture file size, and **detect oversize before uploading** (>50 MB → return a structured `{ error: 'too_large', size }` instead of null). Also preserve the original filename extension for documents.
+What number should I set? And do you want me to also apply it to the bucket itself (option 2)?
 
-**b.** In the `attachment.type === 'file'` branch:
-- Use `attachment.payload.mime_type` if present (fallback `application/octet-stream`).
-- Capture the file size from `Content-Length` header during download.
-- If upload failed because the file is too large, store `document_url = NULL` and set `message_text = '[Document too large to store: 1111.pdf (62.4 MB)]'` and a new column `document_size`.
-- Otherwise store the size alongside the URL.
-
-### 3. `src/integrations/supabase/types.ts` will auto-regenerate to include `document_size`.
-
-### 4. `src/components/ChatPanel.tsx` (document bubble around line 706)
-- Show formatted size next to mime type: `PDF · 2.3 MB`.
-- If `document_url` is null:
-  - Show a disabled bubble with an alert icon
-  - Caption: "File too large to download" (when `document_size > 50 MB`) or "File unavailable" (otherwise)
-  - Tooltip: explains 50 MB Supabase limit and to ask the customer to share via another method.
-
-### 5. Backfill (optional, runtime check)
-Add an admin "Retry document download" action later if needed — out of scope for this fix.
-
-## Files touched
-- `supabase/migrations/<new>.sql` — add `document_size` column
-- `supabase/functions/messenger-webhook/index.ts` — fix mime type, capture size, handle oversize
-- `src/components/ChatPanel.tsx` — render size + unavailable state
-- `src/hooks/useChatMessages.ts` — add `document_size` to `Message` interface
-
-No frontend behavior change for working documents beyond showing the size.
+I'd recommend **100 MB** as a sensible default — it's 2× your test file, doesn't require any plan upgrade, and avoids edge cases with very large videos hitting edge-function memory/timeout limits (edge functions have ~256 MB RAM and 150s wall time).
 
