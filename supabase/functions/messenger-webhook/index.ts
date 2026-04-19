@@ -677,40 +677,56 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
       let attDocumentUrl: string | null = null;
       let attDocumentName: string | null = null;
       let attDocumentMimeType: string | null = null;
+      let attDocumentSize: number | null = null;
       let attMessageType = 'text';
       let attMessageText: string | null = null;
       
       if (attachment.type === 'image') {
         attMessageType = 'photo';
-        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo');
-        attPhotoUrl = storedUrl || attachment.payload.url;
+        const result = await downloadAndStoreFile(attachment.payload.url, 'photo');
+        attPhotoUrl = result.ok ? result.url : attachment.payload.url;
         attPhotoFileId = attachment.payload.sticker_id || 'fb_image';
-        // Only set caption text for the first attachment
         attMessageText = i === 0 ? (message.text || null) : null;
         console.log(`Photo ${i + 1} stored: ${attPhotoUrl}`);
       } else if (attachment.type === 'video') {
         attMessageType = 'video';
-        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'video');
-        attVideoUrl = storedUrl || attachment.payload.url;
+        const result = await downloadAndStoreFile(attachment.payload.url, 'video');
+        attVideoUrl = result.ok ? result.url : attachment.payload.url;
         attVideoFileId = 'fb_video';
         attVideoMimeType = 'video/mp4';
         attMessageText = i === 0 ? (message.text || null) : null;
         console.log(`Video ${i + 1} stored: ${attVideoUrl}`);
       } else if (attachment.type === 'audio') {
         attMessageType = 'voice';
-        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'voice');
-        attVoiceUrl = storedUrl || attachment.payload.url;
+        const result = await downloadAndStoreFile(attachment.payload.url, 'voice');
+        attVoiceUrl = result.ok ? result.url : attachment.payload.url;
         attVoiceFileId = 'fb_audio';
         console.log(`Voice stored: ${attVoiceUrl}`);
       } else if (attachment.type === 'file') {
         attMessageType = 'document';
-        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo'); // reuse download logic
         const fileName = attachment.payload.name || 'document';
-        attDocumentUrl = storedUrl || attachment.payload.url;
+        const declaredMime = attachment.payload.mime_type || null;
+        const result = await downloadAndStoreFile(attachment.payload.url, 'document', fileName);
         attDocumentName = fileName;
-        attDocumentMimeType = 'application/octet-stream';
-        attMessageText = `[Document: ${fileName}]`;
-        console.log(`Document stored: ${attDocumentUrl}`);
+        attDocumentMimeType = declaredMime || (result.ok ? result.contentType : null) || 'application/octet-stream';
+
+        if (result.ok) {
+          attDocumentUrl = result.url;
+          attDocumentSize = result.size;
+          attMessageText = `[Document: ${fileName}]`;
+          console.log(`Document stored: ${attDocumentUrl} (${formatBytes(result.size)})`);
+        } else if (result.error === 'too_large') {
+          attDocumentUrl = null;
+          attDocumentSize = result.size;
+          const sizeStr = result.size ? ` (${formatBytes(result.size)})` : '';
+          attMessageText = `[Document too large to store: ${fileName}${sizeStr}]`;
+          console.error(`Document too large: ${fileName}${sizeStr}`);
+        } else {
+          attDocumentUrl = attachment.payload.url || null;
+          attDocumentSize = result.size;
+          attMessageText = `[Document: ${fileName}]`;
+          console.error(`Document upload failed (${result.error}), using FB CDN URL`);
+        }
       }
       
       // Insert each attachment as a message
@@ -733,6 +749,7 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
           document_url: attDocumentUrl,
           document_name: attDocumentName,
           document_mime_type: attDocumentMimeType,
+          document_size: attDocumentSize,
           media_group_id: mediaGroupId,
           sender_type: 'customer',
           is_read: false,
