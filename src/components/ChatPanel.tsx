@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
 import { MediaGroupBubble } from "@/components/MediaGroupBubble";
 import { MediaThumbnail } from "@/components/MediaViewer";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +33,7 @@ import {
   Download,
   FileText,
   ArrowLeft,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
