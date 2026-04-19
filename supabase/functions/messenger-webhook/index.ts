@@ -331,22 +331,50 @@ async function sendAttachment(psid: string, type: string, url: string, pageId: s
   return await response.json();
 }
 
+// Max file size for Supabase Storage uploads (50 MB)
+const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
+
+type DownloadResult =
+  | { ok: true; url: string; size: number; contentType: string }
+  | { ok: false; error: 'too_large' | 'download_failed' | 'upload_failed' | 'exception'; size: number | null; contentType?: string };
+
 // Download file and store in Supabase Storage
-async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | 'video'): Promise<string | null> {
+async function downloadAndStoreFile(
+  url: string,
+  fileType: 'photo' | 'voice' | 'video' | 'document',
+  originalName?: string,
+): Promise<DownloadResult> {
   try {
     console.log(`Downloading ${fileType} from:`, url);
     
     const response = await fetch(url);
     if (!response.ok) {
       console.error(`Failed to download file: ${response.status}`);
-      return null;
+      return { ok: false, error: 'download_failed', size: null };
     }
     
-    const blob = await response.blob();
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    const contentLengthHeader = response.headers.get('content-length');
+    const declaredSize = contentLengthHeader ? parseInt(contentLengthHeader, 10) : null;
+
+    // Early oversize detection from header
+    if (declaredSize !== null && declaredSize > MAX_UPLOAD_SIZE) {
+      console.error(`File too large (${declaredSize} bytes), skipping upload`);
+      return { ok: false, error: 'too_large', size: declaredSize, contentType };
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const actualSize = arrayBuffer.byteLength;
+
+    if (actualSize > MAX_UPLOAD_SIZE) {
+      console.error(`File too large (${actualSize} bytes), skipping upload`);
+      return { ok: false, error: 'too_large', size: actualSize, contentType };
+    }
     
     let extension = 'bin';
-    if (contentType.includes('jpeg') || contentType.includes('jpg')) extension = 'jpg';
+    if (fileType === 'document' && originalName && originalName.includes('.')) {
+      extension = originalName.split('.').pop()!.toLowerCase();
+    } else if (contentType.includes('jpeg') || contentType.includes('jpg')) extension = 'jpg';
     else if (contentType.includes('png')) extension = 'png';
     else if (contentType.includes('gif')) extension = 'gif';
     else if (contentType.includes('webp')) extension = 'webp';
@@ -356,15 +384,15 @@ async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | '
     else if (contentType.includes('ogg')) extension = 'ogg';
     else if (contentType.includes('wav')) extension = 'wav';
     else if (contentType.includes('aac') || contentType.includes('m4a')) extension = 'm4a';
+    else if (contentType.includes('pdf')) extension = 'pdf';
     
     const timestamp = Date.now();
     const randomId = Math.random().toString(36).substring(7);
     const folder = `messenger-${fileType}`;
     const fileName = `${folder}/${timestamp}_${randomId}.${extension}`;
     
-    console.log(`Uploading to storage: ${fileName}`);
+    console.log(`Uploading to storage: ${fileName} (${actualSize} bytes)`);
     
-    const arrayBuffer = await blob.arrayBuffer();
     const { error: uploadError } = await supabase.storage
       .from('chat-attachments')
       .upload(fileName, arrayBuffer, {
@@ -374,7 +402,12 @@ async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | '
     
     if (uploadError) {
       console.error('Storage upload error:', uploadError);
-      return null;
+      // Storage upload limit returns a specific error message
+      const msg = (uploadError as any)?.message || '';
+      if (msg.toLowerCase().includes('exceeded') || msg.toLowerCase().includes('payload too large')) {
+        return { ok: false, error: 'too_large', size: actualSize, contentType };
+      }
+      return { ok: false, error: 'upload_failed', size: actualSize, contentType };
     }
     
     const { data: publicUrlData } = supabase.storage
@@ -382,12 +415,19 @@ async function downloadAndStoreFile(url: string, fileType: 'photo' | 'voice' | '
       .getPublicUrl(fileName);
     
     console.log(`File stored permanently at: ${publicUrlData.publicUrl}`);
-    return publicUrlData.publicUrl;
+    return { ok: true, url: publicUrlData.publicUrl, size: actualSize, contentType };
     
   } catch (error) {
     console.error(`Error storing ${fileType}:`, error);
-    return null;
+    return { ok: false, error: 'exception', size: null };
   }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 // Download and store profile picture permanently
@@ -637,40 +677,56 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
       let attDocumentUrl: string | null = null;
       let attDocumentName: string | null = null;
       let attDocumentMimeType: string | null = null;
+      let attDocumentSize: number | null = null;
       let attMessageType = 'text';
       let attMessageText: string | null = null;
       
       if (attachment.type === 'image') {
         attMessageType = 'photo';
-        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo');
-        attPhotoUrl = storedUrl || attachment.payload.url;
+        const result = await downloadAndStoreFile(attachment.payload.url, 'photo');
+        attPhotoUrl = result.ok ? result.url : attachment.payload.url;
         attPhotoFileId = attachment.payload.sticker_id || 'fb_image';
-        // Only set caption text for the first attachment
         attMessageText = i === 0 ? (message.text || null) : null;
         console.log(`Photo ${i + 1} stored: ${attPhotoUrl}`);
       } else if (attachment.type === 'video') {
         attMessageType = 'video';
-        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'video');
-        attVideoUrl = storedUrl || attachment.payload.url;
+        const result = await downloadAndStoreFile(attachment.payload.url, 'video');
+        attVideoUrl = result.ok ? result.url : attachment.payload.url;
         attVideoFileId = 'fb_video';
         attVideoMimeType = 'video/mp4';
         attMessageText = i === 0 ? (message.text || null) : null;
         console.log(`Video ${i + 1} stored: ${attVideoUrl}`);
       } else if (attachment.type === 'audio') {
         attMessageType = 'voice';
-        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'voice');
-        attVoiceUrl = storedUrl || attachment.payload.url;
+        const result = await downloadAndStoreFile(attachment.payload.url, 'voice');
+        attVoiceUrl = result.ok ? result.url : attachment.payload.url;
         attVoiceFileId = 'fb_audio';
         console.log(`Voice stored: ${attVoiceUrl}`);
       } else if (attachment.type === 'file') {
         attMessageType = 'document';
-        const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo'); // reuse download logic
         const fileName = attachment.payload.name || 'document';
-        attDocumentUrl = storedUrl || attachment.payload.url;
+        const declaredMime = attachment.payload.mime_type || null;
+        const result = await downloadAndStoreFile(attachment.payload.url, 'document', fileName);
         attDocumentName = fileName;
-        attDocumentMimeType = 'application/octet-stream';
-        attMessageText = `[Document: ${fileName}]`;
-        console.log(`Document stored: ${attDocumentUrl}`);
+        attDocumentMimeType = declaredMime || (result.ok ? result.contentType : null) || 'application/octet-stream';
+
+        if (result.ok) {
+          attDocumentUrl = result.url;
+          attDocumentSize = result.size;
+          attMessageText = `[Document: ${fileName}]`;
+          console.log(`Document stored: ${attDocumentUrl} (${formatBytes(result.size)})`);
+        } else if (result.error === 'too_large') {
+          attDocumentUrl = null;
+          attDocumentSize = result.size;
+          const sizeStr = result.size ? ` (${formatBytes(result.size)})` : '';
+          attMessageText = `[Document too large to store: ${fileName}${sizeStr}]`;
+          console.error(`Document too large: ${fileName}${sizeStr}`);
+        } else {
+          attDocumentUrl = attachment.payload.url || null;
+          attDocumentSize = result.size;
+          attMessageText = `[Document: ${fileName}]`;
+          console.error(`Document upload failed (${result.error}), using FB CDN URL`);
+        }
       }
       
       // Insert each attachment as a message
@@ -693,6 +749,7 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
           document_url: attDocumentUrl,
           document_name: attDocumentName,
           document_mime_type: attDocumentMimeType,
+          document_size: attDocumentSize,
           media_group_id: mediaGroupId,
           sender_type: 'customer',
           is_read: false,

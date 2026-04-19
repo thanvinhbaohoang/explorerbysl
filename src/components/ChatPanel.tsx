@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
 import { MediaGroupBubble } from "@/components/MediaGroupBubble";
 import { MediaThumbnail } from "@/components/MediaViewer";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +33,7 @@ import {
   Download,
   FileText,
   ArrowLeft,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -703,38 +705,84 @@ const MessageBubble = ({
       )}
 
       {/* Document/File */}
-      {message.message_type === 'document' && message.document_url && (
-        <button
-          onClick={async () => {
-            try {
-              const response = await fetch(message.document_url!);
-              const blob = await response.blob();
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = message.document_name || 'file';
-              document.body.appendChild(a);
-              a.click();
-              window.URL.revokeObjectURL(url);
-              document.body.removeChild(a);
-            } catch {
-              window.open(message.document_url!, "_blank");
-            }
-          }}
-          className="flex items-center gap-3 p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors group active:scale-[0.98] w-full text-left"
-        >
-          <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-            <FileText className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium truncate">{message.document_name || 'Document'}</div>
-            <div className="text-xs text-muted-foreground">{message.document_mime_type || 'File'}</div>
-          </div>
-          <div className="flex-shrink-0 p-2 rounded-full bg-primary/10">
-            <Download className="h-5 w-5 text-primary" />
-          </div>
-        </button>
-      )}
+      {message.message_type === 'document' && (() => {
+        const formatBytes = (bytes: number) => {
+          if (bytes < 1024) return `${bytes} B`;
+          if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+          if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+          return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+        };
+        const mimeLabel = (mt: string | null | undefined) => {
+          if (!mt) return 'File';
+          if (mt.includes('pdf')) return 'PDF';
+          if (mt.includes('word') || mt.includes('msword')) return 'DOC';
+          if (mt.includes('excel') || mt.includes('spreadsheet')) return 'XLS';
+          if (mt.includes('presentation')) return 'PPT';
+          if (mt.includes('zip')) return 'ZIP';
+          return mt.split('/').pop()?.toUpperCase() || 'File';
+        };
+        const sizeStr = message.document_size ? formatBytes(message.document_size) : null;
+        const metaText = sizeStr ? `${mimeLabel(message.document_mime_type)} · ${sizeStr}` : mimeLabel(message.document_mime_type);
+        const isTooLarge = !!message.document_size && message.document_size > 50 * 1024 * 1024;
+
+        if (!message.document_url) {
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg w-full text-left opacity-70 cursor-help">
+                  <div className="w-12 h-12 rounded-lg bg-destructive/15 flex items-center justify-center flex-shrink-0">
+                    <AlertCircle className="h-6 w-6 text-destructive" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{message.document_name || 'Document'}</div>
+                    <div className="text-xs text-destructive">
+                      {isTooLarge ? `File too large to download${sizeStr ? ` · ${sizeStr}` : ''}` : 'File unavailable'}
+                    </div>
+                  </div>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                {isTooLarge
+                  ? 'This file exceeds the 50 MB storage limit and was not saved. Ask the customer to share it via Google Drive, Dropbox, or another link.'
+                  : 'This file could not be saved (download or upload failed). Ask the customer to resend it.'}
+              </TooltipContent>
+            </Tooltip>
+          );
+        }
+
+        return (
+          <button
+            onClick={async () => {
+              try {
+                const response = await fetch(message.document_url!);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = message.document_name || 'file';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+              } catch {
+                window.open(message.document_url!, "_blank");
+              }
+            }}
+            className="flex items-center gap-3 p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors group active:scale-[0.98] w-full text-left"
+          >
+            <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+              <FileText className="h-6 w-6 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate">{message.document_name || 'Document'}</div>
+              <div className="text-xs text-muted-foreground">{metaText}</div>
+            </div>
+            <div className="flex-shrink-0 p-2 rounded-full bg-primary/10">
+              <Download className="h-5 w-5 text-primary" />
+            </div>
+          </button>
+        );
+      })()}
 
       {/* Text */}
       {message.message_text && message.message_type !== 'voice' && (

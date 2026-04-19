@@ -27,6 +27,7 @@ export interface Message {
   document_url: string | null;
   document_name: string | null;
   document_mime_type: string | null;
+  document_size?: number | null;
   sender_type: string;
   is_read: boolean;
   platform: string;
