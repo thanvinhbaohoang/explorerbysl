@@ -1,0 +1,1 @@
+ALTER TABLE public.messages ADD COLUMN document_size bigint;

@@ -376,6 +376,7 @@ export type Database = {
           customer_id: string | null
           document_mime_type: string | null
           document_name: string | null
+          document_size: number | null
           document_url: string | null
           id: string
           is_read: boolean | null
@@ -404,6 +405,7 @@ export type Database = {
           customer_id?: string | null
           document_mime_type?: string | null
           document_name?: string | null
+          document_size?: number | null
           document_url?: string | null
           id?: string
           is_read?: boolean | null
@@ -432,6 +434,7 @@ export type Database = {
           customer_id?: string | null
           document_mime_type?: string | null
           document_name?: string | null
+          document_size?: number | null
           document_url?: string | null
           id?: string
           is_read?: boolean | null
