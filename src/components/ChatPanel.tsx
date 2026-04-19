@@ -723,7 +723,7 @@ const MessageBubble = ({
         };
         const sizeStr = message.document_size ? formatBytes(message.document_size) : null;
         const metaText = sizeStr ? `${mimeLabel(message.document_mime_type)} · ${sizeStr}` : mimeLabel(message.document_mime_type);
-        const isTooLarge = !!message.document_size && message.document_size > 50 * 1024 * 1024;
+        const isTooLarge = !!message.document_size && message.document_size > 100 * 1024 * 1024;
 
         if (!message.document_url) {
           return (
@@ -743,7 +743,7 @@ const MessageBubble = ({
               </TooltipTrigger>
               <TooltipContent className="max-w-xs">
                 {isTooLarge
-                  ? 'This file exceeds the 50 MB storage limit and was not saved. Ask the customer to share it via Google Drive, Dropbox, or another link.'
+                  ? 'This file exceeds the 100 MB storage limit and was not saved. Ask the customer to share it via Google Drive, Dropbox, or another link.'
                   : 'This file could not be saved (download or upload failed). Ask the customer to resend it.'}
               </TooltipContent>
             </Tooltip>

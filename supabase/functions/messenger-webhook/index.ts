@@ -331,8 +331,8 @@ async function sendAttachment(psid: string, type: string, url: string, pageId: s
   return await response.json();
 }
 
-// Max file size for Supabase Storage uploads (50 MB)
-const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
+// Max file size for Supabase Storage uploads (100 MB)
+const MAX_UPLOAD_SIZE = 100 * 1024 * 1024;
 
 type DownloadResult =
   | { ok: true; url: string; size: number; contentType: string }
