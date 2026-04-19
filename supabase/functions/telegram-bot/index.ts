@@ -630,12 +630,13 @@ async function saveMessage(message: any) {
         const docFileId = message.document.file_id;
         const docFileName = message.document.file_name || 'document';
         const docMimeType = message.document.mime_type || 'application/octet-stream';
+        const docFileSize = message.document.file_size ?? null;
         
         // Download and store the document
         const docUrl = await downloadAndStoreDocument(docFileId, docFileName);
         messageText = message.caption || `[Document: ${docFileName}]`;
         
-        console.log("Document captured and stored:", { docFileId, docUrl, fileName: docFileName, mimeType: docMimeType });
+        console.log("Document captured and stored:", { docFileId, docUrl, fileName: docFileName, mimeType: docMimeType, size: docFileSize });
         
         // Save with document fields
         const { error } = await supabase
@@ -648,6 +649,7 @@ async function saveMessage(message: any) {
             document_url: docUrl,
             document_name: docFileName,
             document_mime_type: docMimeType,
+            document_size: docFileSize,
             sender_type: 'customer',
             timestamp: new Date(message.date * 1000).toISOString(),
           });
