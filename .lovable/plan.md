@@ -2,31 +2,59 @@
 
 ## Diagnosis
 
-Telegram unread badges persist across refresh, but Messenger ones reset. That points to something Messenger-specific writing `is_read = true` to the DB without a click.
+For all 3 PDFs from AIRSTAY HOTEL (`db9eb533-…`), the DB row has:
+- `message_type = 'document'`
+- `document_name = '1111.pdf'`
+- `document_mime_type = 'application/pdf'`
+- **`document_url = NULL`** ← the cause
 
-The most likely culprit is the **messenger-webhook edge function**. When Facebook delivers a `message_reads` event (the user read our reply on their end) or when we process echoes / delivery receipts, the webhook may be flipping `is_read` on inbound customer messages. It could also happen inside `handleMessage` if the insert defaults or post-insert logic touches `is_read` for prior messages from the same PSID.
+The webhook code at `messenger-webhook/index.ts:665-674` does:
+```ts
+const storedUrl = await downloadAndStoreFile(attachment.payload.url, 'photo');
+attDocumentUrl = storedUrl || attachment.payload.url;
+```
 
-Telegram has no equivalent read-receipt webhook event, which explains why only Messenger is affected.
+So `document_url` is null only if **both** the Supabase upload AND the original Facebook CDN URL failed/were absent. In practice this means `downloadAndStoreFile` threw or the storage upload returned an error — most likely the **50 MB Supabase free-tier limit** since it's the only common failure mode for PDFs that doesn't surface to the user.
 
-A second possibility: the realtime subscription in `ChatConversationList` listens for `UPDATE` events on `messages` and, if a webhook flips `is_read` server-side, the badge silently drops to 0 on the next refresh because the DB itself no longer has unread rows for that customer.
+There are also two secondary bugs in that block:
+1. `attDocumentMimeType` is **hardcoded to `'application/octet-stream'`**, ignoring `attachment.payload.mime_type` from FB. That's why even when it works, the chip shows generic "File".
+2. The download is logged as `'photo'` folder, so PDFs end up in `messenger-photo/...bin`. Cosmetic but messy.
 
-## Plan
+## Fix Plan
 
-1. **Inspect** `supabase/functions/messenger-webhook/index.ts` end-to-end, looking for:
-   - Any `update({ is_read: true })` on the `messages` table
-   - Handling of `message_reads`, `delivery`, or `read` webhook event types
-   - Echo/self-message handling that might mark prior inbound messages read
-   - Default values on insert that could overwrite existing rows via upsert
+### 1. DB migration — add `document_size` column to `messages`
+```
+ALTER TABLE messages ADD COLUMN document_size bigint;
+```
+(nullable, no default — historical rows stay null)
 
-2. **Verify with DB query**: check if Messenger customer Harold's inbound messages currently have `is_read = true` in the DB (vs Telegram Harold's which stay false). This confirms whether the reset is server-side (webhook) or client-side (frontend bug specific to Messenger rows).
+### 2. `supabase/functions/messenger-webhook/index.ts`
 
-3. **Fix the webhook**: remove any code path that auto-marks customer messages as read. The webhook should only ever INSERT new inbound messages with `is_read = false` (the column default). Read state must be owned exclusively by the explicit click handler in `ChatConversationList`.
+**a.** Extend `downloadAndStoreFile` to accept a `'document'` type, capture file size, and **detect oversize before uploading** (>50 MB → return a structured `{ error: 'too_large', size }` instead of null). Also preserve the original filename extension for documents.
 
-4. **Optionally**: ignore Facebook `message_reads` events entirely — those represent the *customer* having read *our* reply, which is unrelated to the staff-side unread badge.
+**b.** In the `attachment.type === 'file'` branch:
+- Use `attachment.payload.mime_type` if present (fallback `application/octet-stream`).
+- Capture the file size from `Content-Length` header during download.
+- If upload failed because the file is too large, store `document_url = NULL` and set `message_text = '[Document too large to store: 1111.pdf (62.4 MB)]'` and a new column `document_size`.
+- Otherwise store the size alongside the URL.
 
-## Files to change (expected)
+### 3. `src/integrations/supabase/types.ts` will auto-regenerate to include `document_size`.
 
-- `supabase/functions/messenger-webhook/index.ts` — strip out any `is_read` mutations; ignore `read`/`delivery` webhook events for the staff-unread purpose.
+### 4. `src/components/ChatPanel.tsx` (document bubble around line 706)
+- Show formatted size next to mime type: `PDF · 2.3 MB`.
+- If `document_url` is null:
+  - Show a disabled bubble with an alert icon
+  - Caption: "File too large to download" (when `document_size > 50 MB`) or "File unavailable" (otherwise)
+  - Tooltip: explains 50 MB Supabase limit and to ask the customer to share via another method.
 
-No frontend or DB schema changes needed. RPC and click-gated logic stay as-is.
+### 5. Backfill (optional, runtime check)
+Add an admin "Retry document download" action later if needed — out of scope for this fix.
+
+## Files touched
+- `supabase/migrations/<new>.sql` — add `document_size` column
+- `supabase/functions/messenger-webhook/index.ts` — fix mime type, capture size, handle oversize
+- `src/components/ChatPanel.tsx` — render size + unavailable state
+- `src/hooks/useChatMessages.ts` — add `document_size` to `Message` interface
+
+No frontend behavior change for working documents beyond showing the size.
 
