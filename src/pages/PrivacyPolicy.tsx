@@ -6,19 +6,27 @@ const PrivacyPolicy = () => {
         <p className="text-sm text-muted-foreground mb-8">Last updated: April 28, 2026</p>
 
         <p className="text-foreground mb-6">
-          ExplorerBySL ("we," "us," or "our") operates the ExplorerBySL platform at{" "}
+          Explorer by SL ("we," "us," or "our") operates the ExplorerBySL platform at{" "}
           <a href="https://app.explorerbysl.com" className="text-primary underline">
             app.explorerbysl.com
           </a>
-          , a business management tool used internally by SL Travel to manage customer
-          communications.
+          , a business management tool used internally by Explorer by SL to manage customer
+          communications via Facebook Messenger.
         </p>
 
         <section className="mb-6">
           <h2 className="text-xl font-semibold mb-2 text-foreground">1. Information We Collect</h2>
           <p className="text-foreground mb-2">
-            When customers message the SL Travel Facebook Page via Messenger, we receive the
-            following data through the Facebook Messenger API:
+            When customers message the Explorer by SL Facebook Page (
+            <a
+              href="https://facebook.com/explorerbysl"
+              className="text-primary underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              facebook.com/explorerbysl
+            </a>
+            ) via Messenger, we receive the following data through the Facebook Messenger API:
           </p>
           <ul className="list-disc pl-6 text-foreground space-y-1">
             <li><strong>Name</strong> – the customer's Facebook display name</li>
@@ -31,8 +39,8 @@ const PrivacyPolicy = () => {
           <h2 className="text-xl font-semibold mb-2 text-foreground">2. How We Use This Data</h2>
           <p className="text-foreground mb-2">This data is used solely to:</p>
           <ul className="list-disc pl-6 text-foreground space-y-1">
-            <li>Display and manage incoming customer inquiries within the ExplorerBySL CRM</li>
-            <li>Allow SL Travel staff to respond to customer messages</li>
+            <li>Display and manage incoming customer inquiries within the ExplorerBySL platform</li>
+            <li>Allow Explorer by SL staff to respond to customer messages</li>
             <li>Organize and track travel-related conversations</li>
           </ul>
         </section>
@@ -41,7 +49,7 @@ const PrivacyPolicy = () => {
           <h2 className="text-xl font-semibold mb-2 text-foreground">3. Data Sharing</h2>
           <p className="text-foreground">
             We do not sell or share customer data with third parties. Data is accessible only to
-            authorized SL Travel staff using the ExplorerBySL platform.
+            authorized Explorer by SL staff using the platform.
           </p>
         </section>
 
@@ -87,6 +95,16 @@ const PrivacyPolicy = () => {
             Website:{" "}
             <a href="https://app.explorerbysl.com" className="text-primary underline">
               app.explorerbysl.com
+            </a>
+            <br />
+            Facebook:{" "}
+            <a
+              href="https://facebook.com/explorerbysl"
+              className="text-primary underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              facebook.com/explorerbysl
             </a>
           </p>
         </section>
