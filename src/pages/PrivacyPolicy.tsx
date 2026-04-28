@@ -17,7 +17,16 @@ const PrivacyPolicy = () => {
         <section className="mb-6">
           <h2 className="text-xl font-semibold mb-2 text-foreground">1. Information We Collect</h2>
           <p className="text-foreground mb-2">
-            When customers message the Explorer by SL Facebook Page via Messenger, we receive the following data through the Facebook Messenger API:
+            When customers message the{" "}
+            <a
+              href="https://www.facebook.com/explorerbysl"
+              className="text-primary underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Explorer by SL Facebook Page
+            </a>{" "}
+            via Messenger, we receive the following data through the Facebook Messenger API:
           </p>
           <ul className="list-disc pl-6 text-foreground space-y-1">
             <li><strong>Name</strong> – the customer's Facebook display name</li>
