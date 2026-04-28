@@ -170,6 +170,13 @@ const Auth = () => {
               </Button>
             </form>
           )}
+
+          <p className="text-xs text-center text-muted-foreground pt-2">
+            By continuing, you agree to our{" "}
+            <a href="/terms" className="underline hover:text-foreground">Terms of Service</a>
+            {" "}and{" "}
+            <a href="/privacy-policy" className="underline hover:text-foreground">Privacy Policy</a>.
+          </p>
         </CardContent>
       </Card>
     </div>

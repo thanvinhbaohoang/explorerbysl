@@ -30,6 +30,7 @@ import NotFound from "./pages/NotFound";
 import PendingApproval from "./pages/PendingApproval";
 import TestLogin from "./pages/TestLogin";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
+import Terms from "./pages/Terms";
 
 const queryClient = new QueryClient();
 
@@ -54,6 +55,7 @@ const App = () => {
                 <Route path="/test-login" element={<TestLogin />} />
                 <Route path="/pending-approval" element={<PendingApproval />} />
                 <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                <Route path="/terms" element={<Terms />} />
                 
                 {/* Protected routes */}
                 <Route path="/redirect" element={<ProtectedRoute><Redirect /></ProtectedRoute>} />
