@@ -30,7 +30,6 @@ import NotFound from "./pages/NotFound";
 import PendingApproval from "./pages/PendingApproval";
 import TestLogin from "./pages/TestLogin";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
-import Home from "./pages/Home";
 
 const queryClient = new QueryClient();
 
@@ -49,8 +48,8 @@ const App = () => {
           <AuthProvider>
             <AppLayout>
               <Routes>
-                {/* Public landing page */}
-                <Route path="/" element={<Home />} />
+                {/* Redirect root to customers */}
+                <Route path="/" element={<Navigate to="/customers" replace />} />
                 <Route path="/auth" element={<Auth />} />
                 <Route path="/test-login" element={<TestLogin />} />
                 <Route path="/pending-approval" element={<PendingApproval />} />
