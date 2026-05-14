@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Facebook, Send, Bell, Loader2, Search, X, Wifi, WifiOff, Clock } from "lucide-react";
+import { Facebook, Send, Bell, Loader2, Search, X, Wifi, WifiOff } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverAnchor } from "@/components/ui/popover";
 import { Command, CommandList, CommandItem, CommandEmpty } from "@/components/ui/command";
