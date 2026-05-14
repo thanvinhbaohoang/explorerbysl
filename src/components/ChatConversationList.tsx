@@ -475,15 +475,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   // Main list always shows all customers (no search filtering)
   const filteredBySearch = allCustomers;
 
-  // Apply awaiting reply filter
-  const filteredByMode = useMemo(() => {
-    if (filterMode === 'all') return filteredBySearch;
-    return filteredBySearch.filter(customer => {
-      const linkedIds = allLinkedPlatformsMap[customer.id]?.linkedIds || [];
-      const allIds = [customer.id, ...linkedIds];
-      return allIds.some(id => unansweredIds.has(id));
-    });
-  }, [filteredBySearch, filterMode, unansweredIds, allLinkedPlatformsMap]);
+  const filteredByMode = filteredBySearch;
 
   // Sort customers by last message time (newest first) — Instagram/Messenger style
   const sortedCustomers = useMemo(() => {
