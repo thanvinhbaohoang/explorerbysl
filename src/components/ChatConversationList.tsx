@@ -686,9 +686,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           </TooltipProvider>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {filterMode === 'awaiting' 
-            ? `${sortedCustomers.length} awaiting reply`
-            : `${allCustomers.length} customers${hasMore ? '+' : ''}`}
+          {`${allCustomers.length} customers${hasMore ? '+' : ''}`}
         </p>
       </div>
       
