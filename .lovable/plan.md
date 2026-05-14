@@ -1,13 +1,13 @@
-## Fix Facebook Sharing Debugger warnings
+## Remove "Awaiting Reply" filter from chat
 
-The debugger flagged two missing required Open Graph properties. I'll add them to `index.html` inside `<head>`:
+In `src/components/ChatConversationList.tsx`:
 
-- `<meta property="og:url" content="https://app.explorerbysl.com/" />`
-- `<meta property="fb:app_id" content="772723352574900" />`
+1. Remove the filter tabs block (lines ~804–828) entirely — both the "All" and "Awaiting Reply" buttons, since "All" is the only remaining mode.
+2. Simplify header count (line ~708–712) to always show `${allCustomers.length} customers${hasMore ? '+' : ''}`.
+3. Remove now-unused state and logic:
+   - `filterMode` state (line 82)
+   - `unansweredIds` state (line 83) and any code that populates it
+   - `filteredByMode` useMemo (lines 491–498); replace downstream references with `filteredBySearch`
+4. Drop unused imports (`Clock`, `Badge` if no other usage) after cleanup.
 
-The Facebook App ID was retrieved from `bot_settings.facebook_app_id` in the database (matches the existing OAuth integration).
-
-### Files touched
-- `index.html` — add the two meta tags alongside existing `og:type` tag
-
-After deploy, re-scrape the URL in the Facebook Sharing Debugger to clear the cache.
+No backend or other UI changes.
