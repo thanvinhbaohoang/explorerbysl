@@ -219,6 +219,7 @@ Deno.serve(async (req) => {
       }
 
       let upsertedCount = 0;
+      let subscribedCount = 0;
       const tokenExpiresAt = expiresIn
         ? new Date(Date.now() + expiresIn * 1000).toISOString()
         : null;
@@ -244,18 +245,80 @@ Deno.serve(async (req) => {
 
         if (upsertError) {
           console.error(`Failed to upsert page ${page.id}:`, upsertError);
-        } else {
-          upsertedCount++;
+          continue;
+        }
+        upsertedCount++;
+
+        // Auto-subscribe to webhook so messages start flowing immediately
+        if (page.access_token) {
+          const sub = await subscribePageToWebhook(page.id, page.access_token);
+          if (sub.ok) subscribedCount++;
         }
       }
 
       console.log(
-        `Facebook OAuth (${isFlb ? "FLB" : "classic"}): Upserted ${upsertedCount}/${pages.length} pages`
+        `Facebook OAuth (${isFlb ? "FLB" : "classic"}): Upserted ${upsertedCount}/${pages.length} pages, subscribed ${subscribedCount}`
       );
 
       return new Response(
-        `<html><body><script>window.opener?.postMessage({type:'fb-oauth-success',pages:${upsertedCount}},'*');window.close();</script><p>Successfully connected ${upsertedCount} page(s). This window will close automatically.</p></body></html>`,
+        `<html><body><script>window.opener?.postMessage({type:'fb-oauth-success',pages:${upsertedCount},subscribed:${subscribedCount}},'*');window.close();</script><p>Successfully connected ${upsertedCount} page(s) (${subscribedCount} subscribed to webhook). This window will close automatically.</p></body></html>`,
         { headers: { "Content-Type": "text/html" } }
+      );
+    }
+
+    // POST /subscribe-page  body: { page_id }
+    if ((path === "/subscribe-page" || path === "/subscribe-page/") && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const pageId = body?.page_id;
+      if (!pageId) {
+        return new Response(JSON.stringify({ error: "page_id required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: row, error } = await supabaseAdmin
+        .from("facebook_pages")
+        .select("access_token")
+        .eq("page_id", pageId)
+        .maybeSingle();
+      if (error || !row?.access_token) {
+        return new Response(
+          JSON.stringify({ error: "Page not found or has no access token" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const result = await subscribePageToWebhook(pageId, row.access_token);
+      return new Response(JSON.stringify(result), {
+        status: result.ok ? 200 : 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // GET /subscription-status?page_id=...
+    if (path === "/subscription-status" || path === "/subscription-status/") {
+      const pageId = url.searchParams.get("page_id");
+      if (!pageId) {
+        return new Response(JSON.stringify({ error: "page_id required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: row, error } = await supabaseAdmin
+        .from("facebook_pages")
+        .select("access_token")
+        .eq("page_id", pageId)
+        .maybeSingle();
+      if (error || !row?.access_token) {
+        return new Response(
+          JSON.stringify({ error: "Page not found or has no access token" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const status = await getPageSubscriptionStatus(pageId, row.access_token);
+      const subscribed = status.ok && status.apps.length > 0;
+      return new Response(
+        JSON.stringify({ subscribed, ...status }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
