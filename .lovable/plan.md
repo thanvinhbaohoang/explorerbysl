@@ -1,31 +1,55 @@
-# Per-page enable/disable toggle on /system
+# Clean Up Unknown Messenger Customers
 
-The `facebook_pages` table already has an `is_active` column, and the messenger webhook already filters incoming events with `.eq('is_active', true)`. So this is purely a UI + small backend tweak.
+Verified counts (live):
 
-## Changes
+| Table | Rows to delete |
+|---|---|
+| `customer` (messenger_id set + name "Unknown") | **3,685** |
+| `messages` (FK customer_id) | **14,224** |
+| `telegram_leads` (FK user_id) | **7,903** |
+| `customer_summaries` | **2** |
+| `customer_notes` / `customer_action_items` / `linked_customer_id` refs | **0** |
 
-**1. UI toggle (`src/pages/FacebookPages.tsx`)**
-- Add a `Switch` in each connected-page row (admin-only, next to the existing token controls) bound to `page.is_active`.
-- On change: `update facebook_pages set is_active = <value> where id = page.id`, then refetch + toast (`"Vessels Of Soul enabled"` / `"<page> paused — incoming messages ignored"`).
-- Show a muted "Paused" badge on disabled pages so it's obvious at a glance.
-- Add a short helper line at the top: *"Disabled pages stop receiving new chats and messages immediately. Existing conversations stay visible."*
+Safety checks confirmed: zero of these customers have a `telegram_id`, manual identity fields, notes, actions, or anything linking back to them. Real Messenger customers (with a real `messenger_name`) and Telegram-only customers are untouched.
 
-**2. Stop OAuth/system-user sync from re-enabling paused pages (`supabase/functions/messenger-webhook/index.ts`, lines ~157-173)**
-- Currently every Page sync upsert hard-codes `is_active: true`, which would silently re-enable a page the admin paused.
-- Fix: on upsert, omit `is_active` from the update path so it only defaults to `true` on **first insert**. Use a two-step: try `select` by `page_id`; if exists, update without `is_active`; if not, insert with `is_active: true`. (Or use `upsert` with `ignoreDuplicates`-style handling for that one column.)
+## Selection criterion (single source of truth)
 
-**3. RLS**
-- `facebook_pages` UPDATE policy is currently `{public}` true/true — already permissive enough for the toggle. No migration needed.
+```sql
+messenger_id IS NOT NULL
+AND (messenger_name IS NULL OR messenger_name = '' OR messenger_name ILIKE 'unknown%')
+AND telegram_id IS NULL          -- belt-and-suspenders: never touch dual-platform users
+AND legal_first_name IS NULL
+AND national_id IS NULL
+AND passport_number IS NULL
+```
+
+The extra null guards are redundant against today's data but make the cleanup self-documenting and safe if it's ever re-run.
+
+## Implementation
+
+### 1. New edge function `cleanup-unknown-customers`
+- Admin-auth gated (verify caller has `admin` role via `has_role()`).
+- `GET /preview` → returns counts for each table matching the criterion (used to populate the confirm dialog with live numbers).
+- `POST /execute` → runs the deletion in FK-safe order using the service role:
+  1. `customer_summaries` where customer_id in (...)
+  2. `telegram_leads` where user_id in (...)
+  3. `messages` where customer_id in (...)
+  4. `customer` where id in (...)
+- Returns `{ deleted: { customers, messages, leads, summaries } }`.
+
+Doing this server-side (not from the browser) avoids RLS round-trips, keeps it atomic-ish, and handles the 14k+ row delete without client timeouts.
+
+### 2. UI in `src/pages/FacebookPages.tsx` (System Settings → Messenger section)
+- Add an admin-only **"Clean Unknown Customers"** card with a destructive-styled button.
+- Click → fetch `/preview`, open an `AlertDialog` showing the live counts ("This will permanently delete 3,685 customers, 14,224 messages, 7,903 traffic leads, and 2 AI summaries from the failed Messenger integration. This cannot be undone.").
+- Confirm → call `/execute`, toast the deleted counts, refetch chat list / customer queries.
+- Hidden entirely for non-admins (use `useUserPermissions`).
+
+### 3. No schema migration
+- Existing admin DELETE policies on `customer`, `messages`, `customer_summaries`, `telegram_leads` are sufficient (function uses service role anyway).
 
 ## Out of scope
-
-- No deletion of past messages from disabled pages (they remain in chat history).
-- No bulk "disable all except X" button (one-click toggles are enough for ~handful of pages; can add later if needed).
-- No change to webhook subscription on Meta's side — Meta keeps delivering events, we just drop them server-side. This is intentional so re-enabling is instant.
-
-## Validation
-
-1. Toggle every client page off, leave Vessels Of Soul on.
-2. Send a test message to a disabled page → no new customer/message row appears.
-3. Send a test message to Vessels Of Soul → appears in chat.
-4. Re-run "Sync Pages" from the UI → previously disabled pages stay disabled.
+- No automated/scheduled job — runs only when an admin clicks.
+- No restoration / soft-delete — this is a hard purge.
+- No changes to webhook profile-fetch logic (already fixed).
+- Real Messenger customers with valid names are not touched, even if their conversation is empty.
