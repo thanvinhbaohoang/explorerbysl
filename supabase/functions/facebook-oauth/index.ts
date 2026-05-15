@@ -322,6 +322,57 @@ Deno.serve(async (req) => {
       );
     }
 
+    // GET /token-debug?page_id=...
+    if (path === "/token-debug" || path === "/token-debug/") {
+      const pageId = url.searchParams.get("page_id");
+      if (!pageId) {
+        return new Response(JSON.stringify({ error: "page_id required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: row, error } = await supabaseAdmin
+        .from("facebook_pages")
+        .select("access_token, name")
+        .eq("page_id", pageId)
+        .maybeSingle();
+      if (error || !row?.access_token) {
+        return new Response(
+          JSON.stringify({ error: "Page not found or has no access token" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const token = row.access_token;
+      const dbgRes = await fetch(
+        `https://graph.facebook.com/v21.0/debug_token?input_token=${token}&access_token=${token}`
+      );
+      const dbgJson = await dbgRes.json();
+      if (!dbgRes.ok || dbgJson.error) {
+        return new Response(
+          JSON.stringify({ error: dbgJson?.error?.message || `HTTP ${dbgRes.status}` }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const d = dbgJson.data || {};
+      const scopes: string[] = d.scopes || [];
+      return new Response(
+        JSON.stringify({
+          page_name: row.name,
+          is_valid: d.is_valid,
+          scopes,
+          granular_scopes: d.granular_scopes || [],
+          has_pages_messaging: scopes.includes("pages_messaging"),
+          app_id: d.app_id,
+          application: d.application,
+          profile_id: d.profile_id,
+          type: d.type,
+          expires_at: d.expires_at,
+          data_access_expires_at: d.data_access_expires_at,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ error: "Not found" }),
       { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
