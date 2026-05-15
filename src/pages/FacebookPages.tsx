@@ -1010,8 +1010,12 @@ const FacebookPages = () => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Disabled pages stop receiving new chats and messages immediately. Existing conversations stay visible.
+                    </p>
                     <div className="space-y-2">
                       {dbPages.map((dbPage) => {
+                        const isActive = dbPage.is_active !== false;
                         const isRevealed = revealedTokens.has(dbPage.id);
                         const token = dbPage.access_token || '';
                         const maskedToken = token ? `${token.slice(0, 6)}${'•'.repeat(20)}${token.slice(-4)}` : '—';
