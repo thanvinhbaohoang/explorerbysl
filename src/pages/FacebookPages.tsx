@@ -232,6 +232,10 @@ const FacebookPages = () => {
       
       if (error) throw error;
       setDbPages(data || []);
+      // Kick off subscription status checks (non-blocking)
+      (data || []).forEach((p: DbPage) => {
+        if (p.access_token) checkPageSubscription(p.page_id);
+      });
     } catch (err: any) {
       console.error("Error fetching db pages:", err);
     }
