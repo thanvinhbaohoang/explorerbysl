@@ -156,6 +156,21 @@ const FacebookPages = () => {
     setTokenDialogOpen(true);
   };
 
+  const handleTogglePageActive = async (page: DbPage, next: boolean) => {
+    // Optimistic update
+    setDbPages(prev => prev.map(p => p.id === page.id ? { ...p, is_active: next } : p));
+    const { error } = await supabase
+      .from("facebook_pages")
+      .update({ is_active: next })
+      .eq("id", page.id);
+    if (error) {
+      setDbPages(prev => prev.map(p => p.id === page.id ? { ...p, is_active: !next } : p));
+      toast.error(`Failed to ${next ? "enable" : "pause"} ${page.name}`, { description: error.message });
+      return;
+    }
+    toast.success(next ? `${page.name} enabled` : `${page.name} paused — incoming messages will be ignored`);
+  };
+
   const fetchPages = async () => {
     setIsLoading(true);
     setError(null);
