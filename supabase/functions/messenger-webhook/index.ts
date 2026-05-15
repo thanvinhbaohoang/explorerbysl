@@ -1501,10 +1501,38 @@ serve(async (req) => {
     // Process webhook events from Facebook
     if (data.object === 'page') {
       console.log(`Processing ${data.entry.length} page entries`);
+
+      // Build active-page lookup so paused pages are ignored entirely
+      const entryPageIds = Array.from(new Set((data.entry || []).map((e: any) => e.id).filter(Boolean)));
+      const activePageMap = new Map<string, boolean>();
+      if (entryPageIds.length > 0) {
+        const { data: pageRows, error: pageLookupError } = await supabase
+          .from('facebook_pages')
+          .select('page_id, is_active')
+          .in('page_id', entryPageIds);
+        if (pageLookupError) {
+          console.error('Failed to look up facebook_pages for active check:', pageLookupError);
+        }
+        for (const row of pageRows || []) {
+          activePageMap.set(row.page_id, row.is_active === true);
+        }
+      }
+
       for (const entry of data.entry) {
         const currentPageId = entry.id;
-        console.log(`Processing page ${currentPageId} with ${entry.messaging?.length || 0} messaging events`);
-        
+        const eventCount = entry.messaging?.length || 0;
+
+        if (!activePageMap.has(currentPageId)) {
+          console.log(`Page ${currentPageId} not found in facebook_pages, skipping ${eventCount} events`);
+          continue;
+        }
+        if (activePageMap.get(currentPageId) === false) {
+          console.log(`Page ${currentPageId} is paused (is_active=false), skipping ${eventCount} events`);
+          continue;
+        }
+
+        console.log(`Processing page ${currentPageId} with ${eventCount} messaging events`);
+
         for (const event of entry.messaging || []) {
           const senderId = event.sender.id;
           const recipientId = event.recipient.id;

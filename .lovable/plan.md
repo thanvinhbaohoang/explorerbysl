@@ -1,109 +1,28 @@
-# Fix: cleanup edge function fails on large IN(...) URL
+## Problem
 
-The edge function builds a comma-separated list of 3,685 UUIDs and stuffs them into PostgREST URLs like `?user_id=in.(uuid,uuid,...)`. The URL is ~140KB and the gateway drops the request → `TypeError: error sending request`. That's why the preview fails.
+Pausing a page in System settings flips `facebook_pages.is_active = false`, but the Messenger webhook in `supabase/functions/messenger-webhook/index.ts` never checks that flag when handling incoming events. So messages from paused pages still create customers and messages.
 
 ## Fix
 
-Move both **counting** and **deletion** into Postgres via two SECURITY DEFINER SQL functions called over RPC. No big URLs, no chunking, atomic.
+In the page-event loop (around line 1502, `if (data.object === 'page')`), before processing any `entry.messaging` events, look up `facebook_pages.is_active` for `currentPageId` and skip the entry when the page is paused or unknown.
 
-### Migration: two functions
+### Implementation details
 
-```sql
--- Single source of truth for the selection criterion lives here
-CREATE OR REPLACE FUNCTION public.preview_unknown_messenger_cleanup()
-RETURNS jsonb
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  WITH targets AS (
-    SELECT id FROM public.customer
-    WHERE messenger_id IS NOT NULL
-      AND (messenger_name IS NULL OR messenger_name = '' OR messenger_name ILIKE 'unknown%')
-      AND telegram_id IS NULL
-      AND legal_first_name IS NULL
-      AND legal_last_name IS NULL
-      AND legal_middle_name IS NULL
-      AND national_id IS NULL
-      AND passport_number IS NULL
-  )
-  SELECT jsonb_build_object(
-    'customers', (SELECT count(*) FROM targets),
-    'messages',  (SELECT count(*) FROM public.messages          WHERE customer_id IN (SELECT id FROM targets)),
-    'leads',     (SELECT count(*) FROM public.telegram_leads    WHERE user_id     IN (SELECT id FROM targets)),
-    'summaries', (SELECT count(*) FROM public.customer_summaries WHERE customer_id IN (SELECT id FROM targets)),
-    'notes',     (SELECT count(*) FROM public.customer_notes    WHERE customer_id IN (SELECT id FROM targets)),
-    'actions',   (SELECT count(*) FROM public.customer_action_items WHERE customer_id IN (SELECT id FROM targets))
-  );
-$$;
+- Build a small lookup once per webhook POST: query `facebook_pages` for all `page_id`s present in `data.entry`, select `page_id, is_active`, and put them in a `Map`.
+- For each `entry`:
+  - If the page is missing from `facebook_pages` → log and skip (don't auto-create here; pages are only added through the connect/refresh flow).
+  - If `is_active === false` → log `Page <id> is paused, skipping N events` and `continue` to the next entry.
+  - Otherwise process as today.
+- Keep echo handling consistent: if a page is paused, skip echoes too (no DB writes for paused pages at all).
+- Outbound send endpoints (`send`, `send_media`, `send_media_batch`, `tokens`, `pages`) already filter `is_active = true`, so no change needed there.
 
-CREATE OR REPLACE FUNCTION public.execute_unknown_messenger_cleanup()
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_customers int := 0;
-  v_messages  int := 0;
-  v_leads     int := 0;
-  v_summaries int := 0;
-BEGIN
-  CREATE TEMP TABLE _cleanup_ids ON COMMIT DROP AS
-    SELECT id FROM public.customer
-    WHERE messenger_id IS NOT NULL
-      AND (messenger_name IS NULL OR messenger_name = '' OR messenger_name ILIKE 'unknown%')
-      AND telegram_id IS NULL
-      AND legal_first_name IS NULL
-      AND legal_last_name IS NULL
-      AND legal_middle_name IS NULL
-      AND national_id IS NULL
-      AND passport_number IS NULL;
+### Files touched
 
-  -- Hard sanity guard
-  IF (SELECT count(*) FROM _cleanup_ids) > 10000 THEN
-    RAISE EXCEPTION 'Refusing to delete more than 10,000 customers in one batch';
-  END IF;
+- `supabase/functions/messenger-webhook/index.ts` — add the active-page guard inside the `data.object === 'page'` branch.
 
-  WITH d AS (DELETE FROM public.customer_summaries WHERE customer_id IN (SELECT id FROM _cleanup_ids) RETURNING 1)
-    SELECT count(*) INTO v_summaries FROM d;
-  WITH d AS (DELETE FROM public.telegram_leads    WHERE user_id     IN (SELECT id FROM _cleanup_ids) RETURNING 1)
-    SELECT count(*) INTO v_leads FROM d;
-  WITH d AS (DELETE FROM public.messages          WHERE customer_id IN (SELECT id FROM _cleanup_ids) RETURNING 1)
-    SELECT count(*) INTO v_messages FROM d;
-  WITH d AS (DELETE FROM public.customer          WHERE id          IN (SELECT id FROM _cleanup_ids) RETURNING 1)
-    SELECT count(*) INTO v_customers FROM d;
+### Out of scope
 
-  RETURN jsonb_build_object(
-    'customers', v_customers,
-    'messages',  v_messages,
-    'leads',     v_leads,
-    'summaries', v_summaries
-  );
-END;
-$$;
-
-REVOKE ALL ON FUNCTION public.preview_unknown_messenger_cleanup() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.execute_unknown_messenger_cleanup() FROM PUBLIC, anon, authenticated;
--- Edge function calls these via service role, which bypasses GRANTs.
-```
-
-### Edge function rewrite
-
-Drop the chunked ID-fetch + chunked count + chunked delete logic. Replace with:
-
-- `GET /preview` → `admin.rpc('preview_unknown_messenger_cleanup')` → return jsonb as-is.
-- `POST /execute` → `admin.rpc('execute_unknown_messenger_cleanup')` → return `{ deleted: <jsonb> }`.
-
-Keep the existing admin-only auth gate (verify JWT, check `has_role(user, 'admin')`).
-
-### Why this is safer
-
-- No URL length issues — everything stays in Postgres.
-- Single transaction per call → either fully deletes or doesn't.
-- Selection criterion lives in one SQL spot (was already aligned in the edge function, but now it's authoritative in DB).
-- Functions are revoked from `anon`/`authenticated`; only callable by service role (i.e. the edge function we control).
-
-## Out of scope
-
-- No UI changes; the dialog already handles the new response shape (`customers/messages/leads/summaries`).
+- No UI changes (System page already shows the pause toggle).
+- No DB schema changes.
+- No changes to outbound send paths.
+- Existing customers/messages from already-received traffic are not deleted (separate cleanup tool exists).
