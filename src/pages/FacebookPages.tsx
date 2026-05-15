@@ -1022,7 +1022,10 @@ const FacebookPages = () => {
                         return (
                         <div
                           key={dbPage.id}
-                          className="flex flex-col gap-2 p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors"
+                          className={cn(
+                            "flex flex-col gap-2 p-3 rounded-lg border transition-colors",
+                            isActive ? "bg-muted/30 hover:bg-muted/50" : "bg-muted/10 hover:bg-muted/20 opacity-70"
+                          )}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
