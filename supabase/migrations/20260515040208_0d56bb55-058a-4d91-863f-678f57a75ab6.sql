@@ -1,15 +1,3 @@
-# Fix: cleanup edge function fails on large IN(...) URL
-
-The edge function builds a comma-separated list of 3,685 UUIDs and stuffs them into PostgREST URLs like `?user_id=in.(uuid,uuid,...)`. The URL is ~140KB and the gateway drops the request → `TypeError: error sending request`. That's why the preview fails.
-
-## Fix
-
-Move both **counting** and **deletion** into Postgres via two SECURITY DEFINER SQL functions called over RPC. No big URLs, no chunking, atomic.
-
-### Migration: two functions
-
-```sql
--- Single source of truth for the selection criterion lives here
 CREATE OR REPLACE FUNCTION public.preview_unknown_messenger_cleanup()
 RETURNS jsonb
 LANGUAGE sql
@@ -60,7 +48,6 @@ BEGIN
       AND national_id IS NULL
       AND passport_number IS NULL;
 
-  -- Hard sanity guard
   IF (SELECT count(*) FROM _cleanup_ids) > 10000 THEN
     RAISE EXCEPTION 'Refusing to delete more than 10,000 customers in one batch';
   END IF;
@@ -83,27 +70,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.preview_unknown_messenger_cleanup() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.execute_unknown_messenger_cleanup() FROM PUBLIC, anon, authenticated;
--- Edge function calls these via service role, which bypasses GRANTs.
-```
-
-### Edge function rewrite
-
-Drop the chunked ID-fetch + chunked count + chunked delete logic. Replace with:
-
-- `GET /preview` → `admin.rpc('preview_unknown_messenger_cleanup')` → return jsonb as-is.
-- `POST /execute` → `admin.rpc('execute_unknown_messenger_cleanup')` → return `{ deleted: <jsonb> }`.
-
-Keep the existing admin-only auth gate (verify JWT, check `has_role(user, 'admin')`).
-
-### Why this is safer
-
-- No URL length issues — everything stays in Postgres.
-- Single transaction per call → either fully deletes or doesn't.
-- Selection criterion lives in one SQL spot (was already aligned in the edge function, but now it's authoritative in DB).
-- Functions are revoked from `anon`/`authenticated`; only callable by service role (i.e. the edge function we control).
-
-## Out of scope
-
-- No UI changes; the dialog already handles the new response shape (`customers/messages/leads/summaries`).
+REVOKE ALL ON FUNCTION public.preview_unknown_messenger_cleanup() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.execute_unknown_messenger_cleanup() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.preview_unknown_messenger_cleanup() FROM anon;
+REVOKE ALL ON FUNCTION public.execute_unknown_messenger_cleanup() FROM anon;
+REVOKE ALL ON FUNCTION public.preview_unknown_messenger_cleanup() FROM authenticated;
+REVOKE ALL ON FUNCTION public.execute_unknown_messenger_cleanup() FROM authenticated;
