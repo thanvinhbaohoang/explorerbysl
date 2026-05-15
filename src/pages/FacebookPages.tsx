@@ -1167,6 +1167,28 @@ const FacebookPages = () => {
                               className="placeholder:text-muted-foreground/40"
                             />
                           </div>
+
+                          {/* Facebook Login for Business Config ID */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="fb-login-config-id" className="font-medium text-sm">Login Config ID (FLB)</Label>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-[280px] text-xs">
+                                  Found in <strong>App Dashboard → Facebook Login for Business → Configurations</strong>. Enables the "Connect via Business Login" button.
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                            <Input
+                              id="fb-login-config-id"
+                              value={fbConfig.facebook_login_config_id}
+                              onChange={(e) => setFbConfig(prev => ({ ...prev, facebook_login_config_id: e.target.value }))}
+                              placeholder="1234567890123456"
+                              className="placeholder:text-muted-foreground/40"
+                            />
+                          </div>
                         </>
                       ) : (
                         <>
