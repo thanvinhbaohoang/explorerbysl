@@ -343,8 +343,9 @@ Deno.serve(async (req) => {
         );
       }
       const token = row.access_token;
+      const appAccessToken = `${config.appId}|${config.appSecret}`;
       const dbgRes = await fetch(
-        `https://graph.facebook.com/v21.0/debug_token?input_token=${token}&access_token=${token}`
+        `https://graph.facebook.com/v21.0/debug_token?input_token=${token}&access_token=${appAccessToken}`
       );
       const dbgJson = await dbgRes.json();
       if (!dbgRes.ok || dbgJson.error) {
