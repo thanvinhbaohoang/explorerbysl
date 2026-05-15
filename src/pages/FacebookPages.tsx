@@ -136,6 +136,51 @@ const FacebookPages = () => {
   const [fbConfigDialogOpen, setFbConfigDialogOpen] = useState(false);
   const [configDialogMode, setConfigDialogMode] = useState<'app' | 'system'>('app');
   const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
+
+  // Cleanup state
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupRunning, setCleanupRunning] = useState(false);
+  const [cleanupPreview, setCleanupPreview] = useState<{
+    customers: number; messages: number; leads: number; summaries: number;
+  } | null>(null);
+
+  const openCleanupDialog = async () => {
+    setCleanupOpen(true);
+    setCleanupPreview(null);
+    setCleanupLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('cleanup-unknown-customers/preview', {
+        method: 'GET',
+      });
+      if (error) throw error;
+      setCleanupPreview(data);
+    } catch (err: any) {
+      toast.error('Failed to load preview', { description: err.message });
+      setCleanupOpen(false);
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
+  const runCleanup = async () => {
+    setCleanupRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('cleanup-unknown-customers/execute', {
+        method: 'POST',
+      });
+      if (error) throw error;
+      const d = data?.deleted ?? {};
+      toast.success('Cleanup complete', {
+        description: `Removed ${d.customers ?? 0} customers, ${d.messages ?? 0} messages, ${d.leads ?? 0} leads, ${d.summaries ?? 0} summaries.`,
+      });
+      setCleanupOpen(false);
+    } catch (err: any) {
+      toast.error('Cleanup failed', { description: err.message });
+    } finally {
+      setCleanupRunning(false);
+    }
+  };
   
   // Fetch database pages for token management
   const fetchDbPages = async () => {
