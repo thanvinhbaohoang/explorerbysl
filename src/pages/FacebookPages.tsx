@@ -139,6 +139,36 @@ const FacebookPages = () => {
   // page_id -> 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'
   const [subStatus, setSubStatus] = useState<Record<string, 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'>>({});
   const [subscribing, setSubscribing] = useState<Set<string>>(new Set());
+  const [diagnosing, setDiagnosing] = useState<Set<string>>(new Set());
+  const [diagnoseResult, setDiagnoseResult] = useState<any | null>(null);
+  const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+
+  const handleDiagnosePage = async (page: DbPage) => {
+    setDiagnosing(prev => new Set(prev).add(page.page_id));
+    setDiagnoseError(null);
+    setDiagnoseResult(null);
+    setDiagnoseOpen(true);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        `facebook-oauth/token-debug?page_id=${page.page_id}`,
+        { method: 'GET' }
+      );
+      if (error || (data as any)?.error) {
+        setDiagnoseError((data as any)?.error || error?.message || 'Diagnose failed');
+      } else {
+        setDiagnoseResult({ page_name: page.name, ...(data as any) });
+      }
+    } catch (e: any) {
+      setDiagnoseError(e?.message || 'Diagnose failed');
+    } finally {
+      setDiagnosing(prev => {
+        const next = new Set(prev);
+        next.delete(page.page_id);
+        return next;
+      });
+    }
+  };
 
   const checkPageSubscription = async (pageId: string) => {
     setSubStatus(prev => ({ ...prev, [pageId]: 'checking' }));
@@ -1204,6 +1234,20 @@ const FacebookPages = () => {
                                   Subscribe
                                 </Button>
                               )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDiagnosePage(dbPage)}
+                                disabled={diagnosing.has(dbPage.page_id) || !dbPage.access_token}
+                                className="gap-1"
+                              >
+                                {diagnosing.has(dbPage.page_id) ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Shield className="h-3 w-3" />
+                                )}
+                                Diagnose
+                              </Button>
                             </div>
                           </div>
                           {token && (
@@ -1608,6 +1652,71 @@ const FacebookPages = () => {
           fetchPages();
         }}
       />
+
+      {/* Diagnose Token Dialog */}
+      <Dialog open={diagnoseOpen} onOpenChange={setDiagnoseOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-4 w-4" />
+              Page Token Diagnostics
+            </DialogTitle>
+            <DialogDescription>
+              Live debug_token result for the access token currently stored in the database.
+            </DialogDescription>
+          </DialogHeader>
+          {diagnoseError && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              {diagnoseError}
+            </div>
+          )}
+          {diagnoseResult && (
+            <div className="space-y-3 text-sm">
+              <div><span className="text-muted-foreground">Page:</span> <strong>{diagnoseResult.page_name}</strong></div>
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">Token valid:</span>
+                {diagnoseResult.is_valid
+                  ? <Badge className="bg-green-500/15 text-green-600 border-green-500/30">Yes</Badge>
+                  : <Badge variant="destructive">No</Badge>}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">pages_messaging:</span>
+                {diagnoseResult.has_pages_messaging
+                  ? <Badge className="bg-green-500/15 text-green-600 border-green-500/30">Present ✓</Badge>
+                  : <Badge variant="destructive">Missing ✕ — Reconnect this page</Badge>}
+              </div>
+              {diagnoseResult.application && (
+                <div><span className="text-muted-foreground">App:</span> {diagnoseResult.application} ({diagnoseResult.app_id})</div>
+              )}
+              {diagnoseResult.expires_at !== undefined && (
+                <div>
+                  <span className="text-muted-foreground">Expires:</span>{' '}
+                  {diagnoseResult.expires_at === 0 ? 'Never' : new Date(diagnoseResult.expires_at * 1000).toLocaleString()}
+                </div>
+              )}
+              <div>
+                <div className="text-muted-foreground mb-1">Scopes:</div>
+                <div className="flex flex-wrap gap-1">
+                  {(diagnoseResult.scopes || []).map((s: string) => (
+                    <Badge key={s} variant="outline" className="text-[10px] font-mono">{s}</Badge>
+                  ))}
+                </div>
+              </div>
+              {!diagnoseResult.has_pages_messaging && (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+                  This page's stored token does not have <code>pages_messaging</code>. Customers will save as "Unknown".
+                  Click <strong>Reconnect</strong> on this page (or run the Business Login flow again) to mint a new token.
+                </div>
+              )}
+            </div>
+          )}
+          {!diagnoseResult && !diagnoseError && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Calling Facebook debug_token…
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
