@@ -125,6 +125,7 @@ const FacebookPages = () => {
     facebook_app_secret: '',
     facebook_system_user_token: '',
     facebook_verify_token: '',
+    facebook_login_config_id: '',
   });
   const [fbConfigLoading, setFbConfigLoading] = useState(false);
   const [fbConfigSaving, setFbConfigSaving] = useState(false);
@@ -355,7 +356,7 @@ const FacebookPages = () => {
   const fetchFbConfig = async () => {
     setFbConfigLoading(true);
     try {
-      const keys = ['facebook_app_id', 'facebook_app_secret', 'facebook_system_user_token', 'facebook_verify_token'];
+      const keys = ['facebook_app_id', 'facebook_app_secret', 'facebook_system_user_token', 'facebook_verify_token', 'facebook_login_config_id'];
       const { data, error } = await supabase
         .from('bot_settings')
         .select('key, value')
