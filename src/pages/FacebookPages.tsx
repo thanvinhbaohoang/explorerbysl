@@ -141,7 +141,7 @@ const FacebookPages = () => {
     try {
       const { data, error } = await supabase
         .from("facebook_pages")
-        .select("id, page_id, name, picture_url, access_token")
+        .select("id, page_id, name, picture_url, access_token, is_active")
         .order("name");
       
       if (error) throw error;
