@@ -1133,11 +1133,19 @@ const FacebookPages = () => {
                                 </div>
                               )}
                               <div>
-                                <div className="font-medium text-sm flex items-center gap-2">
+                                <div className="font-medium text-sm flex items-center gap-2 flex-wrap">
                                   {dbPage.name}
                                   {!isActive && (
                                     <Badge variant="outline" className="text-[10px] uppercase tracking-wide">Paused</Badge>
                                   )}
+                                  {(() => {
+                                    const s = subStatus[dbPage.page_id];
+                                    if (s === 'subscribed') return <Badge className="text-[10px] uppercase tracking-wide bg-green-500/15 text-green-600 hover:bg-green-500/15 border-green-500/30">Webhook ✓</Badge>;
+                                    if (s === 'not_subscribed') return <Badge variant="destructive" className="text-[10px] uppercase tracking-wide">Webhook ✕</Badge>;
+                                    if (s === 'checking') return <Badge variant="outline" className="text-[10px] uppercase tracking-wide">Checking…</Badge>;
+                                    if (s === 'error') return <Badge variant="outline" className="text-[10px] uppercase tracking-wide text-destructive">Webhook ?</Badge>;
+                                    return null;
+                                  })()}
                                 </div>
                                 <div className="text-xs text-muted-foreground font-mono">
                                   {dbPage.page_id}
