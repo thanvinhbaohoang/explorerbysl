@@ -245,29 +245,47 @@ async function verifySignature(payload: string, signature: string): Promise<bool
 // Fetch user profile from Facebook using page token from DB
 async function getUserProfile(psid: string, pageId: string) {
   const token = await getPageToken(pageId);
-  
+
   if (!token) {
-    console.error(`Cannot fetch user profile - no token for page ${pageId}`);
+    console.error(`[profile-fetch] No page token for page=${pageId} psid=${psid}`);
     return null;
   }
-  
+
   const url = `https://graph.facebook.com/v18.0/${psid}?fields=first_name,last_name,profile_pic,locale,timezone&access_token=${token}`;
-  
+
   try {
     const response = await fetch(url);
-    
+    const bodyText = await response.text();
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Failed to fetch user profile:", errorText);
-      if (errorText.includes('pages_messaging') || errorText.includes('permission')) {
-        console.warn("Note: Your Facebook App needs 'pages_messaging' permission to fetch user profiles.");
-      }
+      console.error(
+        `[profile-fetch] FAILED page=${pageId} psid=${psid} status=${response.status} body=${bodyText}`
+      );
       return null;
     }
-    
-    return await response.json();
+
+    let parsed: any;
+    try { parsed = JSON.parse(bodyText); } catch {
+      console.error(`[profile-fetch] Non-JSON success body page=${pageId} psid=${psid}: ${bodyText}`);
+      return null;
+    }
+
+    if (parsed?.error) {
+      console.error(
+        `[profile-fetch] Graph error page=${pageId} psid=${psid} body=${bodyText}`
+      );
+      return null;
+    }
+
+    if (!parsed?.first_name && !parsed?.last_name) {
+      console.warn(
+        `[profile-fetch] Empty name fields page=${pageId} psid=${psid} body=${bodyText}`
+      );
+    }
+
+    return parsed;
   } catch (error) {
-    console.error("Error fetching user profile:", error);
+    console.error(`[profile-fetch] Exception page=${pageId} psid=${psid}:`, error);
     return null;
   }
 }
