@@ -175,6 +175,10 @@ const FacebookPages = () => {
     setDiagnosing(prev => new Set(prev).add(page.page_id));
     setDiagnoseError(null);
     setDiagnoseResult(null);
+    setDiagnosePageId(page.page_id);
+    setPsidInput('');
+    setPsidResult(null);
+    setPsidError(null);
     setDiagnoseOpen(true);
     try {
       const { data, error } = await supabase.functions.invoke(
