@@ -1746,6 +1746,52 @@ const FacebookPages = () => {
               <Loader2 className="h-4 w-4 animate-spin" /> Calling Facebook debug_token…
             </div>
           )}
+
+          {diagnoseResult?.has_pages_messaging && (
+            <div className="space-y-2 border-t pt-4">
+              <div className="text-sm font-medium">Test Messenger profile lookup</div>
+              <div className="text-xs text-muted-foreground">
+                Paste a customer's Messenger PSID to run the same Graph call the webhook uses when a message arrives.
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={psidInput}
+                  onChange={(e) => setPsidInput(e.target.value)}
+                  placeholder="e.g. 9450524611632671"
+                  className="font-mono text-xs"
+                />
+                <Button
+                  onClick={handleTestPsidProfile}
+                  disabled={psidTesting || !psidInput.trim()}
+                  size="sm"
+                >
+                  {psidTesting ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Test'}
+                </Button>
+              </div>
+              {psidError && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                  {psidError}
+                </div>
+              )}
+              {psidResult && (
+                <div className="rounded-md border bg-muted/40 p-2 text-xs space-y-1">
+                  <div>HTTP: <strong>{psidResult.http_status}</strong> · Success: <strong>{psidResult.success ? 'Yes' : 'No'}</strong></div>
+                  {psidResult.profile && (
+                    <div>Name: <strong>{psidResult.profile.first_name} {psidResult.profile.last_name}</strong></div>
+                  )}
+                  {psidResult.graph_error && (
+                    <div className="text-destructive">
+                      Graph error {psidResult.graph_error.code}/{psidResult.graph_error.error_subcode || '—'}: {psidResult.graph_error.message}
+                    </div>
+                  )}
+                  <details className="opacity-70">
+                    <summary className="cursor-pointer">Raw response</summary>
+                    <pre className="whitespace-pre-wrap break-all text-[10px] mt-1">{psidResult.raw_body}</pre>
+                  </details>
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
