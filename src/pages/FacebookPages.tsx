@@ -36,6 +36,7 @@ interface DbPage {
   name: string;
   picture_url?: string;
   access_token?: string;
+  is_active?: boolean;
 }
 
 interface AppInfo {
