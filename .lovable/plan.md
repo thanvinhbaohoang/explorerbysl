@@ -1,35 +1,42 @@
-## Why this happens
+## Goal
+Make Messenger contacts stop landing as `Unknown` when the page is already connected and messaging permissions are valid.
 
-The error is **not** about your Facebook Login for Business connection — that part worked fine and the Vessels Of Soul page token is stored correctly. The failure is a bug in our own `/token-debug` endpoint.
+## What I found
+- The page-token diagnosis is now working correctly for **Vessels Of Soul**.
+- That diagnosis only verifies the token itself.
+- Customer names are fetched separately inside `messenger-webhook` via Facebook Graph `/{PSID}?fields=first_name,last_name,profile_pic,locale,timezone`.
+- If that lookup fails, the code stores `messenger_name = 'Unknown'`.
+- I confirmed recent `Unknown` customer records exist for the Vessels Of Soul page, so the webhook is receiving messages but the profile fetch is failing or returning no usable data.
+- Current logs are not detailed enough to show the exact Graph API failure reason for those cases.
 
-In `supabase/functions/facebook-oauth/index.ts` (line 347), we call Facebook's `debug_token` like this:
+## Plan
+1. Improve backend diagnostics in `messenger-webhook`
+   - Log the exact Graph response for failed PSID profile lookups.
+   - Include page id, PSID, HTTP status, and Facebook error payload so we can distinguish permission issues from PSID/account restrictions.
+   - Keep secrets masked and avoid logging full tokens.
 
-```
-debug_token?input_token=PAGE_TOKEN&access_token=PAGE_TOKEN
-```
+2. Add a PSID-level diagnostic path
+   - Extend the existing Facebook backend tooling with a diagnostic endpoint that tests the exact same profile lookup used by the webhook.
+   - Input: page id + Messenger PSID.
+   - Output: whether the profile fetch succeeds, the Graph error body if it fails, and which stored page token was used.
 
-Facebook requires the **`access_token` parameter (the caller)** to be one of:
-- an **app access token** (`APP_ID|APP_SECRET`), or
-- a user token belonging to an **owner/developer/admin of the app**.
+3. Expose that diagnostic in the System UI
+   - Add a simple action in the Facebook Pages/System area to run the new profile diagnostic for an `Unknown` user.
+   - Show the raw result clearly so you can confirm whether Meta is refusing the profile lookup for that specific conversation.
 
-A page token is neither, so Facebook rejects it with error 100. Explorer by SL only worked by coincidence — its underlying user happens to be a developer on our app, so Facebook accepted it. Vessels Of Soul was connected through a different user/business relationship, so the same call is rejected. This has nothing to do with whether the page itself is properly connected or has the right scopes.
+4. Add a retry path for recovery
+   - Reuse the same profile fetch logic to manually retry updating an `Unknown` customer once diagnostics succeed.
+   - Only update the customer when Facebook actually returns a name/profile.
 
-## Fix
+## Expected outcome
+- We’ll be able to see the real reason Vessels Of Soul profile lookups fail.
+- If the issue is only transient or token-context related, you’ll be able to retry and populate the real name.
+- If Meta is blocking profile access for that sender/account type, the app will surface that explicitly instead of silently falling back to `Unknown`.
 
-One-line change in the `/token-debug` handler: use the app access token as the caller credential, keep the page token as the subject being inspected.
-
-```ts
-const appAccessToken = `${FB_APP_ID}|${FB_APP_SECRET}`;
-const dbgRes = await fetch(
-  `https://graph.facebook.com/v21.0/debug_token?input_token=${token}&access_token=${appAccessToken}`
-);
-```
-
-`FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` are already loaded at the top of this file (used by OAuth exchange and webhook signature verification). No new secrets, no DB changes, no frontend changes.
-
-After this fix, Diagnose will work for every connected page regardless of which user or business connected it.
-
-## Scope
-
-- Edit: `supabase/functions/facebook-oauth/index.ts` — `/token-debug` handler only.
-- No other files touched.
+## Technical notes
+- Files likely involved:
+  - `supabase/functions/messenger-webhook/index.ts`
+  - `supabase/functions/facebook-oauth/index.ts` or a nearby backend endpoint for diagnostics
+  - `src/pages/FacebookPages.tsx`
+- No database schema changes are expected for this fix.
+- This stays scoped to diagnosis and recovery for Messenger profile fetching only.
