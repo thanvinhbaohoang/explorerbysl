@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
     // GET /auth-url — return the Facebook OAuth URL
     if (path === "/auth-url" || path === "/auth-url/") {
       const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/facebook-oauth/callback`;
-      const scopes = "pages_messaging,pages_read_engagement,pages_manage_metadata";
+      const scopes = "pages_show_list,pages_messaging,pages_read_engagement,pages_manage_metadata,business_management";
       const state = crypto.randomUUID();
 
       const authUrl =
@@ -133,6 +133,18 @@ Deno.serve(async (req) => {
       }
 
       const pages = pagesData.data || [];
+      console.log(`Facebook OAuth: /me/accounts returned ${pages.length} pages`);
+
+      // If Facebook returned no pages, surface a clear error instead of a misleading success
+      if (pages.length === 0) {
+        const errMsg =
+          "Facebook returned 0 pages for this account. Make sure you selected at least one Page in the consent dialog and that your account has an admin/editor role on a Page.";
+        return new Response(
+          `<html><body><script>window.opener?.postMessage({type:'fb-oauth-error',error:'${errMsg.replace(/'/g, "\\'")}'},'*');window.close();</script><p>${errMsg}</p></body></html>`,
+          { headers: { "Content-Type": "text/html" } }
+        );
+      }
+
       let upsertedCount = 0;
 
       // Calculate token expiry
@@ -170,7 +182,7 @@ Deno.serve(async (req) => {
       console.log(`Facebook OAuth: Upserted ${upsertedCount}/${pages.length} pages`);
 
       return new Response(
-        `<html><body><script>window.opener?.postMessage({type:'fb-oauth-success',pages:${pages.length}},'*');window.close();</script><p>Successfully connected ${pages.length} page(s). This window will close automatically.</p></body></html>`,
+        `<html><body><script>window.opener?.postMessage({type:'fb-oauth-success',pages:${upsertedCount}},'*');window.close();</script><p>Successfully connected ${upsertedCount} page(s). This window will close automatically.</p></body></html>`,
         { headers: { "Content-Type": "text/html" } }
       );
     }
