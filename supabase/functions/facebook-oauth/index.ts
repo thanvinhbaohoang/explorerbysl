@@ -25,6 +25,44 @@ async function getConfigFromDb(supabaseAdmin: any) {
 
 const FLB_STATE_PREFIX = "flb:";
 
+const SUBSCRIBED_FIELDS =
+  "messages,messaging_postbacks,messaging_referrals,message_reads,messaging_handovers";
+
+async function subscribePageToWebhook(pageId: string, pageAccessToken: string) {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${pageId}/subscribed_apps?subscribed_fields=${SUBSCRIBED_FIELDS}&access_token=${pageAccessToken}`,
+      { method: "POST" }
+    );
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      const msg = data?.error?.message || `HTTP ${res.status}`;
+      console.error(`subscribed_apps failed for page ${pageId}:`, msg);
+      return { ok: false, error: msg };
+    }
+    console.log(`subscribed_apps OK for page ${pageId}:`, JSON.stringify(data));
+    return { ok: true, data };
+  } catch (e) {
+    console.error(`subscribed_apps threw for page ${pageId}:`, e);
+    return { ok: false, error: String(e) };
+  }
+}
+
+async function getPageSubscriptionStatus(pageId: string, pageAccessToken: string) {
+  const res = await fetch(
+    `https://graph.facebook.com/v21.0/${pageId}/subscribed_apps?access_token=${pageAccessToken}`
+  );
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    return {
+      ok: false,
+      error: data?.error?.message || `HTTP ${res.status}`,
+      apps: [] as any[],
+    };
+  }
+  return { ok: true, apps: (data.data || []) as any[] };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
