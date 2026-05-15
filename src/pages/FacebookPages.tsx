@@ -136,6 +136,46 @@ const FacebookPages = () => {
   const [fbConfigDialogOpen, setFbConfigDialogOpen] = useState(false);
   const [configDialogMode, setConfigDialogMode] = useState<'app' | 'system'>('app');
   const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
+  // page_id -> 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'
+  const [subStatus, setSubStatus] = useState<Record<string, 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'>>({});
+  const [subscribing, setSubscribing] = useState<Set<string>>(new Set());
+
+  const checkPageSubscription = async (pageId: string) => {
+    setSubStatus(prev => ({ ...prev, [pageId]: 'checking' }));
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        `facebook-oauth/subscription-status?page_id=${pageId}`,
+        { method: 'GET' }
+      );
+      if (error) throw error;
+      setSubStatus(prev => ({ ...prev, [pageId]: data?.subscribed ? 'subscribed' : 'not_subscribed' }));
+    } catch (e) {
+      setSubStatus(prev => ({ ...prev, [pageId]: 'error' }));
+    }
+  };
+
+  const handleSubscribePage = async (page: DbPage) => {
+    setSubscribing(prev => new Set(prev).add(page.page_id));
+    try {
+      const { data, error } = await supabase.functions.invoke('facebook-oauth/subscribe-page', {
+        method: 'POST',
+        body: { page_id: page.page_id },
+      });
+      if (error || !data?.ok) {
+        const msg = (data as any)?.error || error?.message || 'Subscribe failed';
+        toast.error(`Could not subscribe ${page.name}`, { description: msg });
+      } else {
+        toast.success(`${page.name} subscribed to webhook`);
+      }
+      await checkPageSubscription(page.page_id);
+    } finally {
+      setSubscribing(prev => {
+        const next = new Set(prev);
+        next.delete(page.page_id);
+        return next;
+      });
+    }
+  };
 
   // Cleanup state
   const [cleanupOpen, setCleanupOpen] = useState(false);
