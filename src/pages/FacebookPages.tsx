@@ -36,6 +36,7 @@ interface DbPage {
   name: string;
   picture_url?: string;
   access_token?: string;
+  is_active?: boolean;
 }
 
 interface AppInfo {
@@ -140,7 +141,7 @@ const FacebookPages = () => {
     try {
       const { data, error } = await supabase
         .from("facebook_pages")
-        .select("id, page_id, name, picture_url, access_token")
+        .select("id, page_id, name, picture_url, access_token, is_active")
         .order("name");
       
       if (error) throw error;
@@ -153,6 +154,21 @@ const FacebookPages = () => {
   const handleUpdateToken = (page: DbPage) => {
     setSelectedPage(page);
     setTokenDialogOpen(true);
+  };
+
+  const handleTogglePageActive = async (page: DbPage, next: boolean) => {
+    // Optimistic update
+    setDbPages(prev => prev.map(p => p.id === page.id ? { ...p, is_active: next } : p));
+    const { error } = await supabase
+      .from("facebook_pages")
+      .update({ is_active: next })
+      .eq("id", page.id);
+    if (error) {
+      setDbPages(prev => prev.map(p => p.id === page.id ? { ...p, is_active: !next } : p));
+      toast.error(`Failed to ${next ? "enable" : "pause"} ${page.name}`, { description: error.message });
+      return;
+    }
+    toast.success(next ? `${page.name} enabled` : `${page.name} paused — incoming messages will be ignored`);
   };
 
   const fetchPages = async () => {
@@ -994,15 +1010,22 @@ const FacebookPages = () => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Disabled pages stop receiving new chats and messages immediately. Existing conversations stay visible.
+                    </p>
                     <div className="space-y-2">
                       {dbPages.map((dbPage) => {
+                        const isActive = dbPage.is_active !== false;
                         const isRevealed = revealedTokens.has(dbPage.id);
                         const token = dbPage.access_token || '';
                         const maskedToken = token ? `${token.slice(0, 6)}${'•'.repeat(20)}${token.slice(-4)}` : '—';
                         return (
                         <div
                           key={dbPage.id}
-                          className="flex flex-col gap-2 p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors"
+                          className={cn(
+                            "flex flex-col gap-2 p-3 rounded-lg border transition-colors",
+                            isActive ? "bg-muted/30 hover:bg-muted/50" : "bg-muted/10 hover:bg-muted/20 opacity-70"
+                          )}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -1020,13 +1043,28 @@ const FacebookPages = () => {
                                 </div>
                               )}
                               <div>
-                                <div className="font-medium text-sm">{dbPage.name}</div>
+                                <div className="font-medium text-sm flex items-center gap-2">
+                                  {dbPage.name}
+                                  {!isActive && (
+                                    <Badge variant="outline" className="text-[10px] uppercase tracking-wide">Paused</Badge>
+                                  )}
+                                </div>
                                 <div className="text-xs text-muted-foreground font-mono">
                                   {dbPage.page_id}
                                 </div>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 pr-2 border-r mr-1">
+                                <Switch
+                                  checked={isActive}
+                                  onCheckedChange={(v) => handleTogglePageActive(dbPage, v)}
+                                  aria-label={`${isActive ? "Disable" : "Enable"} ${dbPage.name}`}
+                                />
+                                <span className="text-xs text-muted-foreground w-14">
+                                  {isActive ? "Active" : "Paused"}
+                                </span>
+                              </div>
                               <Button
                                 variant="ghost"
                                 size="sm"
