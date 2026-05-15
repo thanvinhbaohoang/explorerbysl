@@ -624,6 +624,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      execute_unknown_messenger_cleanup: { Args: never; Returns: Json }
       get_latest_messages: {
         Args: { p_customer_ids: string[] }
         Returns: {
@@ -655,6 +656,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      preview_unknown_messenger_cleanup: { Args: never; Returns: Json }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
