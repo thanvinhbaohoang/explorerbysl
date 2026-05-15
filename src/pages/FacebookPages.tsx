@@ -143,6 +143,33 @@ const FacebookPages = () => {
   const [diagnoseResult, setDiagnoseResult] = useState<any | null>(null);
   const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
   const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+  const [diagnosePageId, setDiagnosePageId] = useState<string | null>(null);
+  const [psidInput, setPsidInput] = useState('');
+  const [psidTesting, setPsidTesting] = useState(false);
+  const [psidResult, setPsidResult] = useState<any | null>(null);
+  const [psidError, setPsidError] = useState<string | null>(null);
+
+  const handleTestPsidProfile = async () => {
+    if (!diagnosePageId || !psidInput.trim()) return;
+    setPsidTesting(true);
+    setPsidResult(null);
+    setPsidError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        `facebook-oauth/profile-debug?page_id=${diagnosePageId}&psid=${encodeURIComponent(psidInput.trim())}`,
+        { method: 'GET' }
+      );
+      if (error) {
+        setPsidError(error.message || 'Profile lookup failed');
+      } else {
+        setPsidResult(data);
+      }
+    } catch (e: any) {
+      setPsidError(e?.message || 'Profile lookup failed');
+    } finally {
+      setPsidTesting(false);
+    }
+  };
 
   const handleDiagnosePage = async (page: DbPage) => {
     setDiagnosing(prev => new Set(prev).add(page.page_id));
