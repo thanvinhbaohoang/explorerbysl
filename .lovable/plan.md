@@ -1,44 +1,31 @@
-## Goal
-Add Facebook Login for Business (FLB) as a second connect option alongside the existing classic OAuth flow, so any business owner with admin access on a Page can connect their Pages without requiring a System User token.
+# Per-page enable/disable toggle on /system
 
-## Why FLB
-- FLB uses a pre-configured Configuration ID set up in the Meta dashboard, so the permission set and asset-selection UX are locked in by us.
-- Page tokens come back as **business-scoped Page tokens** that work for `pages_messaging` even when the Page belongs to a Business Portfolio (current client situation).
-- No System User setup required from the client.
+The `facebook_pages` table already has an `is_active` column, and the messenger webhook already filters incoming events with `.eq('is_active', true)`. So this is purely a UI + small backend tweak.
 
-## Coexistence
-- Keep the existing **Connect Facebook Page** button (classic OAuth) untouched.
-- Add a new **Connect via Business Login** button next to it.
-- Keep the System User Token flow as a fallback for `messenger-webhook` page-token cache misses (no changes to that fallback).
+## Changes
 
-## Backend changes
-Edit `supabase/functions/facebook-oauth/index.ts`:
-1. Add a new endpoint `GET /business-auth-url` that builds the FLB authorization URL using `config_id` instead of `scope`:
-   - `https://www.facebook.com/v21.0/dialog/oauth?client_id=...&redirect_uri=...&config_id=<FB_LOGIN_CONFIG_ID>&response_type=code&state=...`
-   - Use a shared callback URL but include a marker in `state` (e.g. prefix `flb:`) so the callback can branch.
-2. Update the existing `/callback` to:
-   - Parse the `state` value and detect the FLB marker.
-   - Use the same code-for-token exchange (FLB returns the same shape).
-   - Call `/me/accounts` (FLB-issued user token still supports this) to enumerate Pages and upsert into `facebook_pages`.
-   - On the FLB branch, allow 0 pages without showing the "0 pages" hard error if the user only granted business assets but no Pages, but still show a clear toast.
-3. Read the config ID from `bot_settings.facebook_login_config_id` (with env fallback `FACEBOOK_LOGIN_CONFIG_ID`) using the same DB-first cache pattern already in use.
+**1. UI toggle (`src/pages/FacebookPages.tsx`)**
+- Add a `Switch` in each connected-page row (admin-only, next to the existing token controls) bound to `page.is_active`.
+- On change: `update facebook_pages set is_active = <value> where id = page.id`, then refetch + toast (`"Vessels Of Soul enabled"` / `"<page> paused — incoming messages ignored"`).
+- Show a muted "Paused" badge on disabled pages so it's obvious at a glance.
+- Add a short helper line at the top: *"Disabled pages stop receiving new chats and messages immediately. Existing conversations stay visible."*
 
-## Database changes
-Insert a new `bot_settings` row with `key='facebook_login_config_id'` and an empty default value, so the admin can manage it from the UI.
+**2. Stop OAuth/system-user sync from re-enabling paused pages (`supabase/functions/messenger-webhook/index.ts`, lines ~157-173)**
+- Currently every Page sync upsert hard-codes `is_active: true`, which would silently re-enable a page the admin paused.
+- Fix: on upsert, omit `is_active` from the update path so it only defaults to `true` on **first insert**. Use a two-step: try `select` by `page_id`; if exists, update without `is_active`; if not, insert with `is_active: true`. (Or use `upsert` with `ignoreDuplicates`-style handling for that one column.)
 
-## Frontend changes
-Edit `src/pages/FacebookPages.tsx`:
-1. Add a second button **Connect via Business Login** next to the existing **Connect Facebook Page** button. Same popup pattern, but it hits `/facebook-oauth/business-auth-url` instead of `/auth-url`.
-2. Reuse the same `postMessage` success/error handler — no changes needed there.
-3. In the **Facebook App Configuration** dialog (admin-only), add a new field `Facebook Login Config ID` that writes to `bot_settings.facebook_login_config_id`.
-4. Add a small contextual help blurb next to the new button explaining when to use it (Business Manager pages).
-
-## Validation
-- From `/system`, click **Connect via Business Login** → popup completes → toast shows N pages connected → `facebook_pages` table populated.
-- Webhook subscription via existing per-page `subscribed_apps` call works with the FLB-issued Page token.
-- Original **Connect Facebook Page** button still works unchanged.
+**3. RLS**
+- `facebook_pages` UPDATE policy is currently `{public}` true/true — already permissive enough for the toggle. No migration needed.
 
 ## Out of scope
-- No changes to `messenger-webhook` page-token logic.
-- No removal of the System User token flow.
-- No FLB-specific scope inspection UI (the configuration's permission set is managed in Meta's dashboard).
+
+- No deletion of past messages from disabled pages (they remain in chat history).
+- No bulk "disable all except X" button (one-click toggles are enough for ~handful of pages; can add later if needed).
+- No change to webhook subscription on Meta's side — Meta keeps delivering events, we just drop them server-side. This is intentional so re-enabling is instant.
+
+## Validation
+
+1. Toggle every client page off, leave Vessels Of Soul on.
+2. Send a test message to a disabled page → no new customer/message row appears.
+3. Send a test message to Vessels Of Soul → appears in chat.
+4. Re-run "Sync Pages" from the UI → previously disabled pages stay disabled.
