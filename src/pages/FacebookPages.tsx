@@ -1234,6 +1234,20 @@ const FacebookPages = () => {
                                   Subscribe
                                 </Button>
                               )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDiagnosePage(dbPage)}
+                                disabled={diagnosing.has(dbPage.page_id) || !dbPage.access_token}
+                                className="gap-1"
+                              >
+                                {diagnosing.has(dbPage.page_id) ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Shield className="h-3 w-3" />
+                                )}
+                                Diagnose
+                              </Button>
                             </div>
                           </div>
                           {token && (
