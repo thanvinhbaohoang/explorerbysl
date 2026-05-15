@@ -143,11 +143,42 @@ const FacebookPages = () => {
   const [diagnoseResult, setDiagnoseResult] = useState<any | null>(null);
   const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
   const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+  const [diagnosePageId, setDiagnosePageId] = useState<string | null>(null);
+  const [psidInput, setPsidInput] = useState('');
+  const [psidTesting, setPsidTesting] = useState(false);
+  const [psidResult, setPsidResult] = useState<any | null>(null);
+  const [psidError, setPsidError] = useState<string | null>(null);
+
+  const handleTestPsidProfile = async () => {
+    if (!diagnosePageId || !psidInput.trim()) return;
+    setPsidTesting(true);
+    setPsidResult(null);
+    setPsidError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        `facebook-oauth/profile-debug?page_id=${diagnosePageId}&psid=${encodeURIComponent(psidInput.trim())}`,
+        { method: 'GET' }
+      );
+      if (error) {
+        setPsidError(error.message || 'Profile lookup failed');
+      } else {
+        setPsidResult(data);
+      }
+    } catch (e: any) {
+      setPsidError(e?.message || 'Profile lookup failed');
+    } finally {
+      setPsidTesting(false);
+    }
+  };
 
   const handleDiagnosePage = async (page: DbPage) => {
     setDiagnosing(prev => new Set(prev).add(page.page_id));
     setDiagnoseError(null);
     setDiagnoseResult(null);
+    setDiagnosePageId(page.page_id);
+    setPsidInput('');
+    setPsidResult(null);
+    setPsidError(null);
     setDiagnoseOpen(true);
     try {
       const { data, error } = await supabase.functions.invoke(
@@ -1713,6 +1744,52 @@ const FacebookPages = () => {
           {!diagnoseResult && !diagnoseError && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Calling Facebook debug_token…
+            </div>
+          )}
+
+          {diagnoseResult?.has_pages_messaging && (
+            <div className="space-y-2 border-t pt-4">
+              <div className="text-sm font-medium">Test Messenger profile lookup</div>
+              <div className="text-xs text-muted-foreground">
+                Paste a customer's Messenger PSID to run the same Graph call the webhook uses when a message arrives.
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={psidInput}
+                  onChange={(e) => setPsidInput(e.target.value)}
+                  placeholder="e.g. 9450524611632671"
+                  className="font-mono text-xs"
+                />
+                <Button
+                  onClick={handleTestPsidProfile}
+                  disabled={psidTesting || !psidInput.trim()}
+                  size="sm"
+                >
+                  {psidTesting ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Test'}
+                </Button>
+              </div>
+              {psidError && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                  {psidError}
+                </div>
+              )}
+              {psidResult && (
+                <div className="rounded-md border bg-muted/40 p-2 text-xs space-y-1">
+                  <div>HTTP: <strong>{psidResult.http_status}</strong> · Success: <strong>{psidResult.success ? 'Yes' : 'No'}</strong></div>
+                  {psidResult.profile && (
+                    <div>Name: <strong>{psidResult.profile.first_name} {psidResult.profile.last_name}</strong></div>
+                  )}
+                  {psidResult.graph_error && (
+                    <div className="text-destructive">
+                      Graph error {psidResult.graph_error.code}/{psidResult.graph_error.error_subcode || '—'}: {psidResult.graph_error.message}
+                    </div>
+                  )}
+                  <details className="opacity-70">
+                    <summary className="cursor-pointer">Raw response</summary>
+                    <pre className="whitespace-pre-wrap break-all text-[10px] mt-1">{psidResult.raw_body}</pre>
+                  </details>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

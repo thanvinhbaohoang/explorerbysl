@@ -374,6 +374,132 @@ Deno.serve(async (req) => {
       );
     }
 
+    // GET /profile-debug?page_id=...&psid=...
+    if (path === "/profile-debug" || path === "/profile-debug/") {
+      const pageId = url.searchParams.get("page_id");
+      const psid = url.searchParams.get("psid");
+      if (!pageId || !psid) {
+        return new Response(JSON.stringify({ error: "page_id and psid required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: row, error } = await supabaseAdmin
+        .from("facebook_pages")
+        .select("access_token, name")
+        .eq("page_id", pageId)
+        .maybeSingle();
+      if (error || !row?.access_token) {
+        return new Response(
+          JSON.stringify({ error: "Page not found or has no access token" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const profileUrl = `https://graph.facebook.com/v21.0/${psid}?fields=first_name,last_name,profile_pic,locale,timezone&access_token=${row.access_token}`;
+      const res = await fetch(profileUrl);
+      const bodyText = await res.text();
+      let parsed: any = null;
+      try { parsed = JSON.parse(bodyText); } catch { /* */ }
+      const success = !!(res.ok && parsed && !parsed.error && (parsed.first_name || parsed.last_name));
+      return new Response(
+        JSON.stringify({
+          success,
+          page_name: row.name,
+          page_id: pageId,
+          psid,
+          http_status: res.status,
+          profile: success ? {
+            first_name: parsed.first_name,
+            last_name: parsed.last_name,
+            locale: parsed.locale,
+            timezone: parsed.timezone,
+            has_profile_pic: !!parsed.profile_pic,
+          } : null,
+          graph_error: parsed?.error || null,
+          raw_body: bodyText.slice(0, 1000),
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // POST /refresh-customer-profile  body: { customer_id }
+    if ((path === "/refresh-customer-profile" || path === "/refresh-customer-profile/") && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const customerId = body?.customer_id;
+      if (!customerId) {
+        return new Response(JSON.stringify({ error: "customer_id required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: customer, error: cErr } = await supabaseAdmin
+        .from("customer")
+        .select("id, messenger_id, page_id, messenger_name")
+        .eq("id", customerId)
+        .maybeSingle();
+      if (cErr || !customer) {
+        return new Response(JSON.stringify({ error: "Customer not found" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!customer.messenger_id) {
+        return new Response(JSON.stringify({ error: "Customer has no messenger_id" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: pages } = await supabaseAdmin
+        .from("facebook_pages")
+        .select("page_id, access_token")
+        .eq("is_active", true);
+      const ordered = (pages || []).slice().sort((a: any, b: any) => {
+        if (a.page_id === customer.page_id) return -1;
+        if (b.page_id === customer.page_id) return 1;
+        return 0;
+      });
+
+      const attempts: any[] = [];
+      let updated: any = null;
+
+      for (const p of ordered) {
+        if (!p.access_token) continue;
+        const profileUrl = `https://graph.facebook.com/v21.0/${customer.messenger_id}?fields=first_name,last_name,profile_pic,locale,timezone&access_token=${p.access_token}`;
+        const res = await fetch(profileUrl);
+        const bodyText = await res.text();
+        let parsed: any = null;
+        try { parsed = JSON.parse(bodyText); } catch { /* */ }
+        const ok = !!(res.ok && parsed && !parsed.error && (parsed.first_name || parsed.last_name));
+        attempts.push({
+          page_id: p.page_id,
+          http_status: res.status,
+          ok,
+          graph_error: parsed?.error || null,
+        });
+        if (ok) {
+          const updateData: any = {
+            messenger_name: `${parsed.first_name || ''} ${parsed.last_name || ''}`.trim(),
+            updated_at: new Date().toISOString(),
+          };
+          if (parsed.locale) updateData.locale = parsed.locale;
+          if (parsed.timezone) updateData.timezone_offset = parsed.timezone;
+          if (!customer.page_id) updateData.page_id = p.page_id;
+          await supabaseAdmin.from("customer").update(updateData).eq("id", customer.id);
+          updated = { ...updateData, page_id_used: p.page_id };
+          break;
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: !!updated,
+          customer_id: customerId,
+          updated,
+          attempts,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ error: "Not found" }),
       { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
