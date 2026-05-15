@@ -136,6 +136,46 @@ const FacebookPages = () => {
   const [fbConfigDialogOpen, setFbConfigDialogOpen] = useState(false);
   const [configDialogMode, setConfigDialogMode] = useState<'app' | 'system'>('app');
   const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
+  // page_id -> 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'
+  const [subStatus, setSubStatus] = useState<Record<string, 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'>>({});
+  const [subscribing, setSubscribing] = useState<Set<string>>(new Set());
+
+  const checkPageSubscription = async (pageId: string) => {
+    setSubStatus(prev => ({ ...prev, [pageId]: 'checking' }));
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        `facebook-oauth/subscription-status?page_id=${pageId}`,
+        { method: 'GET' }
+      );
+      if (error) throw error;
+      setSubStatus(prev => ({ ...prev, [pageId]: data?.subscribed ? 'subscribed' : 'not_subscribed' }));
+    } catch (e) {
+      setSubStatus(prev => ({ ...prev, [pageId]: 'error' }));
+    }
+  };
+
+  const handleSubscribePage = async (page: DbPage) => {
+    setSubscribing(prev => new Set(prev).add(page.page_id));
+    try {
+      const { data, error } = await supabase.functions.invoke('facebook-oauth/subscribe-page', {
+        method: 'POST',
+        body: { page_id: page.page_id },
+      });
+      if (error || !data?.ok) {
+        const msg = (data as any)?.error || error?.message || 'Subscribe failed';
+        toast.error(`Could not subscribe ${page.name}`, { description: msg });
+      } else {
+        toast.success(`${page.name} subscribed to webhook`);
+      }
+      await checkPageSubscription(page.page_id);
+    } finally {
+      setSubscribing(prev => {
+        const next = new Set(prev);
+        next.delete(page.page_id);
+        return next;
+      });
+    }
+  };
 
   // Cleanup state
   const [cleanupOpen, setCleanupOpen] = useState(false);
@@ -192,6 +232,10 @@ const FacebookPages = () => {
       
       if (error) throw error;
       setDbPages(data || []);
+      // Kick off subscription status checks (non-blocking)
+      (data || []).forEach((p: DbPage) => {
+        if (p.access_token) checkPageSubscription(p.page_id);
+      });
     } catch (err: any) {
       console.error("Error fetching db pages:", err);
     }
@@ -1089,11 +1133,19 @@ const FacebookPages = () => {
                                 </div>
                               )}
                               <div>
-                                <div className="font-medium text-sm flex items-center gap-2">
+                                <div className="font-medium text-sm flex items-center gap-2 flex-wrap">
                                   {dbPage.name}
                                   {!isActive && (
                                     <Badge variant="outline" className="text-[10px] uppercase tracking-wide">Paused</Badge>
                                   )}
+                                  {(() => {
+                                    const s = subStatus[dbPage.page_id];
+                                    if (s === 'subscribed') return <Badge className="text-[10px] uppercase tracking-wide bg-green-500/15 text-green-600 hover:bg-green-500/15 border-green-500/30">Webhook ✓</Badge>;
+                                    if (s === 'not_subscribed') return <Badge variant="destructive" className="text-[10px] uppercase tracking-wide">Webhook ✕</Badge>;
+                                    if (s === 'checking') return <Badge variant="outline" className="text-[10px] uppercase tracking-wide">Checking…</Badge>;
+                                    if (s === 'error') return <Badge variant="outline" className="text-[10px] uppercase tracking-wide text-destructive">Webhook ?</Badge>;
+                                    return null;
+                                  })()}
                                 </div>
                                 <div className="text-xs text-muted-foreground font-mono">
                                   {dbPage.page_id}
@@ -1136,6 +1188,22 @@ const FacebookPages = () => {
                                 <Key className="h-3 w-3" />
                                 Update Token
                               </Button>
+                              {subStatus[dbPage.page_id] !== 'subscribed' && (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => handleSubscribePage(dbPage)}
+                                  disabled={subscribing.has(dbPage.page_id) || !dbPage.access_token}
+                                  className="gap-1"
+                                >
+                                  {subscribing.has(dbPage.page_id) ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Webhook className="h-3 w-3" />
+                                  )}
+                                  Subscribe
+                                </Button>
+                              )}
                             </div>
                           </div>
                           {token && (
