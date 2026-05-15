@@ -1043,13 +1043,28 @@ const FacebookPages = () => {
                                 </div>
                               )}
                               <div>
-                                <div className="font-medium text-sm">{dbPage.name}</div>
+                                <div className="font-medium text-sm flex items-center gap-2">
+                                  {dbPage.name}
+                                  {!isActive && (
+                                    <Badge variant="outline" className="text-[10px] uppercase tracking-wide">Paused</Badge>
+                                  )}
+                                </div>
                                 <div className="text-xs text-muted-foreground font-mono">
                                   {dbPage.page_id}
                                 </div>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 pr-2 border-r mr-1">
+                                <Switch
+                                  checked={isActive}
+                                  onCheckedChange={(v) => handleTogglePageActive(dbPage, v)}
+                                  aria-label={`${isActive ? "Disable" : "Enable"} ${dbPage.name}`}
+                                />
+                                <span className="text-xs text-muted-foreground w-14">
+                                  {isActive ? "Active" : "Paused"}
+                                </span>
+                              </div>
                               <Button
                                 variant="ghost"
                                 size="sm"
