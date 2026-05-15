@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings, Download, Bot, Webhook, Save, Loader2, Eye, EyeOff, Info, AlertTriangle, Power } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings, Download, Bot, Webhook, Save, Loader2, Eye, EyeOff, Info, AlertTriangle, Power, Trash2 } from "lucide-react";
 import { exportToCSV } from "@/lib/csv-export";
 import { Switch } from "@/components/ui/switch";
 import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
