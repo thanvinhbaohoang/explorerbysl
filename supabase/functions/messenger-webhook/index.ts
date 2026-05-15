@@ -155,23 +155,30 @@ async function syncPagesToDatabase(): Promise<{ success: boolean; pages: any[]; 
     const syncedPages = [];
     
     for (const page of pages) {
-      const pageData = {
+      // Check if page already exists so we don't overwrite an admin's "paused" toggle
+      const { data: existing } = await supabase
+        .from('facebook_pages')
+        .select('id')
+        .eq('page_id', page.id)
+        .maybeSingle();
+
+      const baseData = {
         page_id: page.id,
         name: page.name,
         category: page.category,
         picture_url: page.picture?.data?.url || null,
         access_token: page.access_token,
-        is_active: true,
         updated_at: new Date().toISOString()
       };
-      
-      // Upsert page data
-      const { data: upsertedPage, error } = await supabase
+
+      const pageData = existing
+        ? baseData                       // update: preserve is_active
+        : { ...baseData, is_active: true }; // insert: default to active
+
+      const { error } = await supabase
         .from('facebook_pages')
-        .upsert(pageData, { onConflict: 'page_id' })
-        .select()
-        .single();
-      
+        .upsert(pageData, { onConflict: 'page_id' });
+
       if (error) {
         console.error(`Error upserting page ${page.id}:`, error);
       } else {
