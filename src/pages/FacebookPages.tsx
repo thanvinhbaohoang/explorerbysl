@@ -1153,6 +1153,75 @@ const FacebookPages = () => {
                 </Card>
               )}
 
+              {/* Cleanup Unknown Messenger Customers - Admin Only */}
+              {isAdmin && (
+                <Card className="border-destructive/30">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Trash2 className="h-5 w-5 text-destructive" />
+                      Clean Unknown Messenger Customers
+                      <Badge variant="destructive" className="ml-2">Destructive</Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      Permanently remove "Unknown" customers (and their messages, traffic leads, and AI summaries) created by the previous broken Messenger integration.
+                      Customers with real names, identity fields, or any Telegram link are never touched.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button variant="destructive" onClick={openCleanupDialog} className="gap-2">
+                      <Trash2 className="h-4 w-4" />
+                      Preview &amp; Clean
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              <AlertDialog open={cleanupOpen} onOpenChange={(o) => !cleanupRunning && setCleanupOpen(o)}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 text-destructive" />
+                      Permanently delete Unknown customers?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription asChild>
+                      <div className="space-y-3">
+                        {cleanupLoading || !cleanupPreview ? (
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Counting affected rows...
+                          </div>
+                        ) : (
+                          <>
+                            <div>This will permanently delete from your database:</div>
+                            <ul className="list-disc pl-5 text-sm space-y-1">
+                              <li><strong>{cleanupPreview.customers.toLocaleString()}</strong> customers (Messenger, named "Unknown", no identity data)</li>
+                              <li><strong>{cleanupPreview.messages.toLocaleString()}</strong> messages</li>
+                              <li><strong>{cleanupPreview.leads.toLocaleString()}</strong> traffic / ad attribution leads</li>
+                              <li><strong>{cleanupPreview.summaries.toLocaleString()}</strong> AI summaries</li>
+                            </ul>
+                            <div className="text-destructive text-sm font-medium">This cannot be undone.</div>
+                          </>
+                        )}
+                      </div>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={cleanupRunning}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={(e) => { e.preventDefault(); runCleanup(); }}
+                      disabled={cleanupLoading || cleanupRunning || !cleanupPreview || cleanupPreview.customers === 0}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {cleanupRunning ? (
+                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Deleting...</>
+                      ) : (
+                        <>Delete permanently</>
+                      )}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
               {/* Facebook Configuration Dialog - Admin Only */}
               <Dialog open={fbConfigDialogOpen} onOpenChange={setFbConfigDialogOpen}>
                 <DialogContent className="sm:max-w-md">
