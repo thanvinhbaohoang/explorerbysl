@@ -1188,6 +1188,22 @@ const FacebookPages = () => {
                                 <Key className="h-3 w-3" />
                                 Update Token
                               </Button>
+                              {subStatus[dbPage.page_id] !== 'subscribed' && (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => handleSubscribePage(dbPage)}
+                                  disabled={subscribing.has(dbPage.page_id) || !dbPage.access_token}
+                                  className="gap-1"
+                                >
+                                  {subscribing.has(dbPage.page_id) ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Webhook className="h-3 w-3" />
+                                  )}
+                                  Subscribe
+                                </Button>
+                              )}
                             </div>
                           </div>
                           {token && (
