@@ -490,53 +490,68 @@ const FacebookPages = () => {
                 </CardContent>
               </Card>
               {/* Connect Facebook Page + Action buttons */}
-              <div className="flex items-center justify-between gap-4">
-                <Button
-                  onClick={async () => {
-                    try {
-                      const res = await fetch(
-                        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/facebook-oauth/auth-url`
-                      );
-                      const { authUrl, error: urlError } = await res.json();
-                      if (urlError) {
-                        toast.error(urlError);
-                        return;
-                      }
-                      const popup = window.open(authUrl, "fb-oauth", "width=600,height=700,scrollbars=yes");
-                      
-                      const handleMessage = (event: MessageEvent) => {
-                        if (event.data?.type === "fb-oauth-success") {
-                          toast.success(`Connected ${event.data.pages} page(s) successfully!`);
-                          fetchPages();
-                          fetchDbPages();
-                          window.removeEventListener("message", handleMessage);
-                        } else if (event.data?.type === "fb-oauth-error") {
-                          toast.error(event.data.error || "Authorization failed");
-                          window.removeEventListener("message", handleMessage);
-                        }
-                      };
-                      window.addEventListener("message", handleMessage);
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(['classic', 'flb'] as const).map((mode) => (
+                    <Button
+                      key={mode}
+                      variant={mode === 'flb' ? 'default' : 'outline'}
+                      onClick={async () => {
+                        try {
+                          const endpoint = mode === 'flb' ? 'business-auth-url' : 'auth-url';
+                          const res = await fetch(
+                            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/facebook-oauth/${endpoint}`
+                          );
+                          const { authUrl, error: urlError } = await res.json();
+                          if (urlError) {
+                            toast.error(urlError);
+                            return;
+                          }
+                          const popup = window.open(authUrl, "fb-oauth", "width=600,height=700,scrollbars=yes");
 
-                      // Fallback: poll for popup close
-                      const pollTimer = setInterval(() => {
-                        if (popup?.closed) {
-                          clearInterval(pollTimer);
-                          setTimeout(() => {
-                            window.removeEventListener("message", handleMessage);
-                            fetchPages();
-                            fetchDbPages();
+                          const handleMessage = (event: MessageEvent) => {
+                            if (event.data?.type === "fb-oauth-success") {
+                              toast.success(`Connected ${event.data.pages} page(s) successfully!`);
+                              fetchPages();
+                              fetchDbPages();
+                              window.removeEventListener("message", handleMessage);
+                            } else if (event.data?.type === "fb-oauth-error") {
+                              toast.error(event.data.error || "Authorization failed");
+                              window.removeEventListener("message", handleMessage);
+                            }
+                          };
+                          window.addEventListener("message", handleMessage);
+
+                          // Fallback: poll for popup close
+                          const pollTimer = setInterval(() => {
+                            if (popup?.closed) {
+                              clearInterval(pollTimer);
+                              setTimeout(() => {
+                                window.removeEventListener("message", handleMessage);
+                                fetchPages();
+                                fetchDbPages();
+                              }, 1000);
+                            }
                           }, 1000);
+                        } catch (err: any) {
+                          toast.error(err.message || "Failed to start authorization");
                         }
-                      }, 1000);
-                    } catch (err: any) {
-                      toast.error(err.message || "Failed to start authorization");
-                    }
-                  }}
-                  className="gap-2"
-                >
-                  <Facebook className="h-4 w-4" />
-                  Connect Facebook Page
-                </Button>
+                      }}
+                      className="gap-2"
+                    >
+                      <Facebook className="h-4 w-4" />
+                      {mode === 'flb' ? 'Connect via Business Login' : 'Connect Facebook Page'}
+                    </Button>
+                  ))}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-4 w-4 text-muted-foreground/70 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-[300px] text-xs">
+                      <strong>Business Login</strong> uses a pre-configured permission set from Meta and works for Pages owned by a Business Portfolio. Use it when the classic flow returns 0 pages. Requires a Configuration ID set in App Configuration.
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
 
                 <div className="flex items-center gap-4">
                   {lastRefreshed && (
