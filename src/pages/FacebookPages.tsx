@@ -139,6 +139,36 @@ const FacebookPages = () => {
   // page_id -> 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'
   const [subStatus, setSubStatus] = useState<Record<string, 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'>>({});
   const [subscribing, setSubscribing] = useState<Set<string>>(new Set());
+  const [diagnosing, setDiagnosing] = useState<Set<string>>(new Set());
+  const [diagnoseResult, setDiagnoseResult] = useState<any | null>(null);
+  const [diagnoseError, setDiagnoseError] = useState<string | null>(null);
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+
+  const handleDiagnosePage = async (page: DbPage) => {
+    setDiagnosing(prev => new Set(prev).add(page.page_id));
+    setDiagnoseError(null);
+    setDiagnoseResult(null);
+    setDiagnoseOpen(true);
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        `facebook-oauth/token-debug?page_id=${page.page_id}`,
+        { method: 'GET' }
+      );
+      if (error || (data as any)?.error) {
+        setDiagnoseError((data as any)?.error || error?.message || 'Diagnose failed');
+      } else {
+        setDiagnoseResult({ page_name: page.name, ...(data as any) });
+      }
+    } catch (e: any) {
+      setDiagnoseError(e?.message || 'Diagnose failed');
+    } finally {
+      setDiagnosing(prev => {
+        const next = new Set(prev);
+        next.delete(page.page_id);
+        return next;
+      });
+    }
+  };
 
   const checkPageSubscription = async (pageId: string) => {
     setSubStatus(prev => ({ ...prev, [pageId]: 'checking' }));
