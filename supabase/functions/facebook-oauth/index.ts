@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
     // GET /auth-url — return the Facebook OAuth URL
     if (path === "/auth-url" || path === "/auth-url/") {
       const redirectUri = `${Deno.env.get("SUPABASE_URL")}/functions/v1/facebook-oauth/callback`;
-      const scopes = "pages_messaging,pages_read_engagement,pages_manage_metadata";
+      const scopes = "pages_show_list,pages_messaging,pages_read_engagement,pages_manage_metadata,business_management";
       const state = crypto.randomUUID();
 
       const authUrl =
