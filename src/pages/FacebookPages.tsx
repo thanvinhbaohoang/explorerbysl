@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings, Download, Bot, Webhook, Save, Loader2, Eye, EyeOff, Info, AlertTriangle, Power } from "lucide-react";
+import { ArrowLeft, RefreshCw, Facebook, CheckCircle2, AlertCircle, Database, MessageSquare, Building2, User, AppWindow, Shield, ExternalLink, Lock, Key, ChevronDown, ChevronUp, FileText, Settings, Download, Bot, Webhook, Save, Loader2, Eye, EyeOff, Info, AlertTriangle, Power, Trash2 } from "lucide-react";
 import { exportToCSV } from "@/lib/csv-export";
 import { Switch } from "@/components/ui/switch";
 import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -135,6 +136,51 @@ const FacebookPages = () => {
   const [fbConfigDialogOpen, setFbConfigDialogOpen] = useState(false);
   const [configDialogMode, setConfigDialogMode] = useState<'app' | 'system'>('app');
   const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
+
+  // Cleanup state
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupRunning, setCleanupRunning] = useState(false);
+  const [cleanupPreview, setCleanupPreview] = useState<{
+    customers: number; messages: number; leads: number; summaries: number;
+  } | null>(null);
+
+  const openCleanupDialog = async () => {
+    setCleanupOpen(true);
+    setCleanupPreview(null);
+    setCleanupLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('cleanup-unknown-customers/preview', {
+        method: 'GET',
+      });
+      if (error) throw error;
+      setCleanupPreview(data);
+    } catch (err: any) {
+      toast.error('Failed to load preview', { description: err.message });
+      setCleanupOpen(false);
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
+  const runCleanup = async () => {
+    setCleanupRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('cleanup-unknown-customers/execute', {
+        method: 'POST',
+      });
+      if (error) throw error;
+      const d = data?.deleted ?? {};
+      toast.success('Cleanup complete', {
+        description: `Removed ${d.customers ?? 0} customers, ${d.messages ?? 0} messages, ${d.leads ?? 0} leads, ${d.summaries ?? 0} summaries.`,
+      });
+      setCleanupOpen(false);
+    } catch (err: any) {
+      toast.error('Cleanup failed', { description: err.message });
+    } finally {
+      setCleanupRunning(false);
+    }
+  };
   
   // Fetch database pages for token management
   const fetchDbPages = async () => {
@@ -1106,6 +1152,75 @@ const FacebookPages = () => {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Cleanup Unknown Messenger Customers - Admin Only */}
+              {isAdmin && (
+                <Card className="border-destructive/30">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Trash2 className="h-5 w-5 text-destructive" />
+                      Clean Unknown Messenger Customers
+                      <Badge variant="destructive" className="ml-2">Destructive</Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      Permanently remove "Unknown" customers (and their messages, traffic leads, and AI summaries) created by the previous broken Messenger integration.
+                      Customers with real names, identity fields, or any Telegram link are never touched.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button variant="destructive" onClick={openCleanupDialog} className="gap-2">
+                      <Trash2 className="h-4 w-4" />
+                      Preview &amp; Clean
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              <AlertDialog open={cleanupOpen} onOpenChange={(o) => !cleanupRunning && setCleanupOpen(o)}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 text-destructive" />
+                      Permanently delete Unknown customers?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription asChild>
+                      <div className="space-y-3">
+                        {cleanupLoading || !cleanupPreview ? (
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Counting affected rows...
+                          </div>
+                        ) : (
+                          <>
+                            <div>This will permanently delete from your database:</div>
+                            <ul className="list-disc pl-5 text-sm space-y-1">
+                              <li><strong>{cleanupPreview.customers.toLocaleString()}</strong> customers (Messenger, named "Unknown", no identity data)</li>
+                              <li><strong>{cleanupPreview.messages.toLocaleString()}</strong> messages</li>
+                              <li><strong>{cleanupPreview.leads.toLocaleString()}</strong> traffic / ad attribution leads</li>
+                              <li><strong>{cleanupPreview.summaries.toLocaleString()}</strong> AI summaries</li>
+                            </ul>
+                            <div className="text-destructive text-sm font-medium">This cannot be undone.</div>
+                          </>
+                        )}
+                      </div>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={cleanupRunning}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={(e) => { e.preventDefault(); runCleanup(); }}
+                      disabled={cleanupLoading || cleanupRunning || !cleanupPreview || cleanupPreview.customers === 0}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {cleanupRunning ? (
+                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Deleting...</>
+                      ) : (
+                        <>Delete permanently</>
+                      )}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
 
               {/* Facebook Configuration Dialog - Admin Only */}
               <Dialog open={fbConfigDialogOpen} onOpenChange={setFbConfigDialogOpen}>
