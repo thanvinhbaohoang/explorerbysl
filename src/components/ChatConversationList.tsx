@@ -673,7 +673,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
           </TooltipProvider>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {`${allCustomers.length} customers${hasMore ? '+' : ''}`}
+          {`${totalCustomers} customer${totalCustomers === 1 ? '' : 's'}`}
         </p>
       </div>
       
