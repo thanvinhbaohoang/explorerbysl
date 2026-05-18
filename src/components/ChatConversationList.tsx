@@ -860,16 +860,38 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
               </button>
             );
           })}
-          {/* Infinite scroll trigger */}
-          <div ref={loadMoreRef} className="py-2">
-            {isLoading && page > 1 && (
-              <div className="flex justify-center">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            )}
-          </div>
         </div>
       </ScrollArea>
+
+      {/* Pagination controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between gap-2 px-3 py-2 border-t flex-shrink-0 bg-background">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1 || isPlaceholderData}
+            className="h-8 px-2"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Prev
+          </Button>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {isPlaceholderData && <Loader2 className="h-3 w-3 animate-spin" />}
+            <span>Page {page} / {totalPages}</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages || isPlaceholderData}
+            className="h-8 px-2"
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
