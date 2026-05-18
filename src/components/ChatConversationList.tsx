@@ -766,7 +766,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         </Popover>
       </div>
       
-      <ScrollArea className="flex-1">
+      <ScrollArea key={page} className="flex-1">
         <div className="p-1">
           {sortedCustomers.map(customer => {
             const displayName = customer.messenger_name || 
