@@ -62,18 +62,19 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   
   const [page, setPage] = useState(1);
   const itemsPerPage = 50;
-  const { data: customersData, isLoading, refetch } = useCustomersData(page, itemsPerPage, "", "all", messengerEnabled);
+  const { data: customersData, isLoading, isPlaceholderData, refetch } = useCustomersData(page, itemsPerPage, "", "all", messengerEnabled);
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   
-  // Infinite scroll state
+  // Customers for current page (with realtime overlays applied)
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [allLinkedPlatformsMap, setAllLinkedPlatformsMap] = useState<Record<string, { telegram: boolean; messenger: boolean; linkedIds: string[] }>>({});
-  const [hasMore, setHasMore] = useState(true);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
+  
+  const totalCustomers = customersData?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCustomers / itemsPerPage));
   
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [lastMessages, setLastMessages] = useState<Record<string, { text: string; timestamp: string; senderType?: string; sentByName?: string }>>({});
@@ -96,7 +97,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     allLinkedPlatformsMapRef.current = allLinkedPlatformsMap;
   }, [allLinkedPlatformsMap]);
 
-  // Ensure a conversation is loaded even when the message comes from a customer not in current pages
+  // Ensure a conversation is loaded even when the message comes from a customer not on the current page
   const ensureConversationLoaded = useCallback(async (messageCustomerId: string, messageTimestamp: string) => {
     const currentCustomers = allCustomersRef.current;
     const currentLinkedMap = allLinkedPlatformsMapRef.current;
@@ -104,6 +105,9 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     const existsDirectly = currentCustomers.some(c => c.id === messageCustomerId);
     const existsAsLinked = Object.values(currentLinkedMap).some(linked => linked.linkedIds.includes(messageCustomerId));
     if (existsDirectly || existsAsLinked) return;
+
+    // Only inject new conversations onto page 1 (the "recent" page)
+    if (page !== 1) return;
 
     const { data: sourceCustomer, error: sourceError } = await supabase
       .from("customer")
@@ -155,39 +159,22 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
 
       return [merged, ...prev.filter(c => c.id !== parentCustomerId)];
     });
-  }, []);
+  }, [page]);
 
-  // Accumulate customers across pages
+  // Sync current page data into local state (replace, don't accumulate)
   useEffect(() => {
     if (customersData?.customers) {
-      if (page === 1) {
-        setAllCustomers(customersData.customers as Customer[]);
-        setAllLinkedPlatformsMap(customersData.linkedPlatformsMap || {});
-      } else {
-        setAllCustomers(prev => {
-          const existingIds = new Set(prev.map(c => c.id));
-          const newCustomers = (customersData.customers as Customer[]).filter(c => !existingIds.has(c.id));
-          return [...prev, ...newCustomers];
-        });
-        setAllLinkedPlatformsMap(prev => ({ ...prev, ...(customersData.linkedPlatformsMap || {}) }));
-      }
-      setHasMore(customersData.customers.length === itemsPerPage);
+      setAllCustomers(customersData.customers as Customer[]);
+      setAllLinkedPlatformsMap(customersData.linkedPlatformsMap || {});
     }
-  }, [customersData, page]);
+  }, [customersData]);
 
-  // Intersection Observer for infinite scroll
+  // Clamp page when total shrinks
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoading) {
-          setPage(prev => prev + 1);
-        }
-      },
-      { threshold: 0.1 }
-    );
-    if (loadMoreRef.current) observer.observe(loadMoreRef.current);
-    return () => observer.disconnect();
-  }, [hasMore, isLoading]);
+    if (totalCustomers > 0 && page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [totalCustomers, totalPages, page]);
 
   // Fetch unread counts via RPC (avoids 1000-row select limit)
   const fetchUnreadCounts = async () => {
