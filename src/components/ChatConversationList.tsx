@@ -61,7 +61,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   const { isEnabled: messengerEnabled } = useMessengerIntegration();
   
   const [page, setPage] = useState(1);
-  const itemsPerPage = 50;
+  const itemsPerPage = 20;
   const { data: customersData, isLoading, isPlaceholderData, refetch } = useCustomersData(page, itemsPerPage, "", "all", messengerEnabled);
   
   // Search state
