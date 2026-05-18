@@ -177,6 +177,20 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     }
   }, [totalCustomers, totalPages, page]);
 
+  // Prefetch the next 4 pages so paginating forward feels instant
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (totalPages <= 1) return;
+    const maxPrefetch = Math.min(totalPages, page + 4);
+    for (let p = page + 1; p <= maxPrefetch; p++) {
+      queryClient.prefetchQuery({
+        queryKey: customersQueryKey(p, itemsPerPage, "", "all", messengerEnabled),
+        queryFn: () => fetchCustomersPage(p, itemsPerPage, "", "all", messengerEnabled),
+        staleTime: 5 * 60 * 1000,
+      });
+    }
+  }, [page, totalPages, itemsPerPage, messengerEnabled, queryClient]);
+
   // Fetch unread counts via RPC (avoids 1000-row select limit)
   const fetchUnreadCounts = async () => {
     const { data, error } = await supabase.rpc("get_unread_counts");
