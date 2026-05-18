@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 interface Customer {
@@ -149,5 +149,6 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10, search
     },
     staleTime: 5 * 60 * 1000, // 5 minutes - data won't refetch for 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache for 10 minutes
+    placeholderData: keepPreviousData,
   });
 };
