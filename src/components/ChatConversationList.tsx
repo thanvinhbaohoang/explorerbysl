@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useCustomersData } from "@/hooks/useCustomersData";
+import { useCustomersData, fetchCustomersPage, customersQueryKey } from "@/hooks/useCustomersData";
+import { useQueryClient } from "@tanstack/react-query";
 import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -61,7 +62,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   const { isEnabled: messengerEnabled } = useMessengerIntegration();
   
   const [page, setPage] = useState(1);
-  const itemsPerPage = 50;
+  const itemsPerPage = 20;
   const { data: customersData, isLoading, isPlaceholderData, refetch } = useCustomersData(page, itemsPerPage, "", "all", messengerEnabled);
   
   // Search state
@@ -175,6 +176,20 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       setPage(totalPages);
     }
   }, [totalCustomers, totalPages, page]);
+
+  // Prefetch the next 4 pages so paginating forward feels instant
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (totalPages <= 1) return;
+    const maxPrefetch = Math.min(totalPages, page + 4);
+    for (let p = page + 1; p <= maxPrefetch; p++) {
+      queryClient.prefetchQuery({
+        queryKey: customersQueryKey(p, itemsPerPage, "", "all", messengerEnabled),
+        queryFn: () => fetchCustomersPage(p, itemsPerPage, "", "all", messengerEnabled),
+        staleTime: 5 * 60 * 1000,
+      });
+    }
+  }, [page, totalPages, itemsPerPage, messengerEnabled, queryClient]);
 
   // Fetch unread counts via RPC (avoids 1000-row select limit)
   const fetchUnreadCounts = async () => {
