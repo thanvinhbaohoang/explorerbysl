@@ -857,6 +857,8 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
                           )}
                           {lastMessage.text.length > 25 ? lastMessage.text.substring(0, 25) + '…' : lastMessage.text}
                         </>
+                      ) : isLoadingLastMessages ? (
+                        <Skeleton className="inline-block h-3 w-32 align-middle" />
                       ) : 'No messages yet'}
                     </p>
                     <span className="text-[10px] text-muted-foreground flex-shrink-0 whitespace-nowrap">
