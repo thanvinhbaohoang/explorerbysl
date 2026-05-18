@@ -579,40 +579,37 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   };
 
   // Mark messages as read when selecting a conversation
-  const handleSelect = async (customer: Customer) => {
+  const handleSelect = (customer: Customer) => {
     const linkedIds = allLinkedPlatformsMap[customer.id]?.linkedIds || [];
     const allIds = [customer.id, ...linkedIds];
-    
-    // Update local state immediately for responsive UI
+
+    // 1) Immediate UI feedback: select + clear unread BEFORE any async work
+    onSelect(customer);
     setUnreadCounts(prev => {
       const updated = { ...prev };
       allIds.forEach(id => { updated[id] = 0; });
       return updated;
     });
-    
-    // Mark messages as read in database - this is the ONLY place messages get marked as read
-    await supabase
+
+    // 2) Fire-and-forget: mark as read in DB
+    void supabase
       .from("messages")
       .update({ is_read: true })
       .in("customer_id", allIds)
       .eq("sender_type", "customer")
-      .eq("is_read", false);
-    
-    // Send typing indicator for Telegram customers to show staff is viewing
+      .eq("is_read", false)
+      .then(({ error }) => {
+        if (error) console.error('Failed to mark messages read:', error);
+      });
+
+    // 3) Fire-and-forget: send typing indicator for Telegram customers
     if (customer.telegram_id) {
-      try {
-        await supabase.functions.invoke('telegram-bot', {
-          body: {
-            action: 'mark_seen',
-            telegram_id: customer.telegram_id
-          }
-        });
-      } catch (error) {
+      void supabase.functions.invoke('telegram-bot', {
+        body: { action: 'mark_seen', telegram_id: customer.telegram_id },
+      }).catch((error) => {
         console.error('Failed to send typing indicator:', error);
-      }
+      });
     }
-    
-    onSelect(customer);
   };
 
   if (isLoading) {
