@@ -79,6 +79,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [lastMessages, setLastMessages] = useState<Record<string, { text: string; timestamp: string; senderType?: string; sentByName?: string }>>({});
+  const [isLoadingLastMessages, setIsLoadingLastMessages] = useState(false);
   
   
   
