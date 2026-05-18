@@ -1,6 +1,7 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useCustomersData } from "@/hooks/useCustomersData";
+import { useCustomersData, fetchCustomersPage, customersQueryKey } from "@/hooks/useCustomersData";
+import { useQueryClient } from "@tanstack/react-query";
 import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
