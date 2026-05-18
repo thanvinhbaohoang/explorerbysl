@@ -213,32 +213,41 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   // Fetch last messages for preview using RPC (avoids 1000-row limit)
   const fetchLastMessages = async () => {
     if (allCustomers.length === 0) return;
-    
+
     const customerIds = allCustomers.map(c => c.id);
     const linkedIds = allCustomers.flatMap(c => allLinkedPlatformsMap[c.id]?.linkedIds || []);
     const allIds = [...new Set([...customerIds, ...linkedIds])];
-    
-    const { data, error } = await supabase.rpc('get_latest_messages', {
-      p_customer_ids: allIds,
-    });
-    
-    if (error) {
-      console.error('Failed to fetch latest messages:', error);
-      return;
-    }
-    
-    if (data) {
-      const msgMap: Record<string, { text: string; timestamp: string; senderType?: string; sentByName?: string }> = {};
-      (data as any[]).forEach((msg: any) => {
-        let text = msg.message_text || '';
-        if (msg.message_type === 'photo') text = '📷 Photo';
-        else if (msg.message_type === 'video') text = '🎥 Video';
-        else if (msg.message_type === 'voice') text = '🎤 Voice message';
-        else if (msg.message_type === 'document') text = '📎 Document';
-        
-        msgMap[msg.customer_id] = { text, timestamp: msg.timestamp, senderType: msg.sender_type, sentByName: msg.sent_by_name };
+
+    // Only show the loading state for entries we don't have cached yet
+    const hasAnyUncached = allIds.some(id => !lastMessages[id]);
+    if (hasAnyUncached) setIsLoadingLastMessages(true);
+
+    try {
+      const { data, error } = await supabase.rpc('get_latest_messages', {
+        p_customer_ids: allIds,
       });
-      setLastMessages(msgMap);
+
+      if (error) {
+        console.error('Failed to fetch latest messages:', error);
+        return;
+      }
+
+      if (data) {
+        const msgMap: Record<string, { text: string; timestamp: string; senderType?: string; sentByName?: string }> = {};
+        (data as any[]).forEach((msg: any) => {
+          let text = msg.message_text || '';
+          if (msg.message_type === 'photo') text = '📷 Photo';
+          else if (msg.message_type === 'video') text = '🎥 Video';
+          else if (msg.message_type === 'voice') text = '🎤 Voice message';
+          else if (msg.message_type === 'document') text = '📎 Document';
+
+          msgMap[msg.customer_id] = { text, timestamp: msg.timestamp, senderType: msg.sender_type, sentByName: msg.sent_by_name };
+        });
+        // Merge with existing cache so revisiting a page doesn't flash
+        setLastMessages(prev => ({ ...prev, ...msgMap }));
+      }
+    } finally {
+      setIsLoadingLastMessages(false);
     }
   };
 
