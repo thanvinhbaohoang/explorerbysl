@@ -134,6 +134,33 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
     return finalResult;
   }, [filteredMessages]);
 
+  // Build ordered media album from all photos/videos in conversation
+  const mediaItems = useMemo<ChatMediaItem[]>(() => {
+    const items: ChatMediaItem[] = [];
+    for (const m of filteredMessages) {
+      if (m.message_type === 'photo' && m.photo_url) {
+        items.push({
+          id: m.id,
+          src: m.photo_url,
+          type: 'photo',
+          alt: 'Message photo',
+          timestamp: m.timestamp,
+        });
+      } else if (m.message_type === 'video' && m.video_url) {
+        items.push({
+          id: m.id,
+          src: m.video_url,
+          type: 'video',
+          mimeType: m.video_mime_type || 'video/mp4',
+          alt: 'Message video',
+          timestamp: m.timestamp,
+        });
+      }
+    }
+    return items;
+  }, [filteredMessages]);
+
+
   // Load messages when customer changes
   useEffect(() => {
     if (customer) {
