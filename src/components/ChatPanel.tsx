@@ -635,6 +635,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
         )}
       </div>
     </div>
+    </ChatMediaProvider>
   );
 };
 
