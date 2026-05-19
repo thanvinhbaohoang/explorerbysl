@@ -428,6 +428,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
               )}
             </Badge>
           )}
+          </div>
         </div>
       </div>
 
