@@ -61,6 +61,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [mediaViewerOpen, setMediaViewerOpen] = useState(false);
 
   const {
     filteredMessages,
