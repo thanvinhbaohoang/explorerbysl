@@ -386,7 +386,20 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
             </div>
           </div>
           
-          {/* Platform switcher */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={mediaItems.length === 0}
+              onClick={() => setMediaViewerOpen(true)}
+              title="Browse all photos & videos"
+            >
+              <Images className="h-3 w-3 mr-1" />
+              Media{mediaItems.length > 0 ? ` · ${mediaItems.length}` : ''}
+            </Button>
+
+            {/* Platform switcher */}
           {linkedCustomerIds.length > 1 ? (
             <div className="flex items-center gap-1">
               {Object.entries(linkedCustomersMap).map(([customerId, info]) => (
