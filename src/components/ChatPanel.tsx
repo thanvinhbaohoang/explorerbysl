@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
 import { MediaGroupBubble } from "@/components/MediaGroupBubble";
-import { MediaThumbnail } from "@/components/MediaViewer";
+import { MediaThumbnail, MediaViewer } from "@/components/MediaViewer";
 import { ChatMediaProvider, ChatMediaItem } from "@/contexts/ChatMediaContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -35,6 +35,7 @@ import {
   FileText,
   ArrowLeft,
   AlertCircle,
+  Images,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -60,6 +61,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [mediaViewerOpen, setMediaViewerOpen] = useState(false);
 
   const {
     filteredMessages,
@@ -384,7 +386,20 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
             </div>
           </div>
           
-          {/* Platform switcher */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={mediaItems.length === 0}
+              onClick={() => setMediaViewerOpen(true)}
+              title="Browse all photos & videos"
+            >
+              <Images className="h-3 w-3 mr-1" />
+              Media{mediaItems.length > 0 ? ` · ${mediaItems.length}` : ''}
+            </Button>
+
+            {/* Platform switcher */}
           {linkedCustomerIds.length > 1 ? (
             <div className="flex items-center gap-1">
               {Object.entries(linkedCustomersMap).map(([customerId, info]) => (
@@ -413,6 +428,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
               )}
             </Badge>
           )}
+          </div>
         </div>
       </div>
 
@@ -635,6 +651,13 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
         )}
       </div>
     </div>
+    {mediaViewerOpen && mediaItems.length > 0 && (
+      <MediaViewer
+        items={mediaItems}
+        initialIndex={Math.max(0, mediaItems.length - 1)}
+        onClose={() => setMediaViewerOpen(false)}
+      />
+    )}
     </ChatMediaProvider>
   );
 };
