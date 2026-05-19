@@ -73,6 +73,7 @@ export const MediaGroupBubble = ({
                 src={message.photo_url}
                 alt="Photo"
                 type="photo"
+                mediaId={message.id}
                 className="w-full h-full aspect-square"
               />
             )}
@@ -82,6 +83,7 @@ export const MediaGroupBubble = ({
                 alt="Video"
                 type="video"
                 mimeType={message.video_mime_type || 'video/mp4'}
+                mediaId={message.id}
                 className="w-full h-full aspect-square"
               />
             )}
