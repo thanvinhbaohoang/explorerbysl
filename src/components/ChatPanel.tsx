@@ -687,6 +687,7 @@ const MessageBubble = ({
             src={message.photo_url}
             alt="Message photo"
             type="photo"
+            mediaId={message.id}
             className="w-full max-h-64 sm:max-h-96"
           />
         </div>
