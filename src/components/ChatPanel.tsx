@@ -730,6 +730,7 @@ const MessageBubble = ({
             alt="Message video"
             type="video"
             mimeType={message.video_mime_type || 'video/mp4'}
+            mediaId={message.id}
             className="w-full max-h-48 sm:max-h-64"
           />
         </div>
