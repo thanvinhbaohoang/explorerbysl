@@ -334,6 +334,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
     `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Customer';
 
   return (
+    <ChatMediaProvider items={mediaItems}>
     <div 
       className="h-full flex flex-col bg-background relative"
       onDragEnter={handleDragEnter}
