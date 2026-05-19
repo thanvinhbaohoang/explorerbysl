@@ -651,6 +651,13 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
         )}
       </div>
     </div>
+    {mediaViewerOpen && mediaItems.length > 0 && (
+      <MediaViewer
+        items={mediaItems}
+        initialIndex={Math.max(0, mediaItems.length - 1)}
+        onClose={() => setMediaViewerOpen(false)}
+      />
+    )}
     </ChatMediaProvider>
   );
 };
