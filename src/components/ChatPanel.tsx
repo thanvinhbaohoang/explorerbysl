@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
 import { MediaGroupBubble } from "@/components/MediaGroupBubble";
 import { MediaThumbnail } from "@/components/MediaViewer";
+import { ChatMediaProvider, ChatMediaItem } from "@/contexts/ChatMediaContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -132,6 +133,33 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
     
     return finalResult;
   }, [filteredMessages]);
+
+  // Build ordered media album from all photos/videos in conversation
+  const mediaItems = useMemo<ChatMediaItem[]>(() => {
+    const items: ChatMediaItem[] = [];
+    for (const m of filteredMessages) {
+      if (m.message_type === 'photo' && m.photo_url) {
+        items.push({
+          id: m.id,
+          src: m.photo_url,
+          type: 'photo',
+          alt: 'Message photo',
+          timestamp: m.timestamp,
+        });
+      } else if (m.message_type === 'video' && m.video_url) {
+        items.push({
+          id: m.id,
+          src: m.video_url,
+          type: 'video',
+          mimeType: m.video_mime_type || 'video/mp4',
+          alt: 'Message video',
+          timestamp: m.timestamp,
+        });
+      }
+    }
+    return items;
+  }, [filteredMessages]);
+
 
   // Load messages when customer changes
   useEffect(() => {
@@ -306,6 +334,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
     `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Customer';
 
   return (
+    <ChatMediaProvider items={mediaItems}>
     <div 
       className="h-full flex flex-col bg-background relative"
       onDragEnter={handleDragEnter}
@@ -606,6 +635,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
         )}
       </div>
     </div>
+    </ChatMediaProvider>
   );
 };
 
@@ -657,6 +687,7 @@ const MessageBubble = ({
             src={message.photo_url}
             alt="Message photo"
             type="photo"
+            mediaId={message.id}
             className="w-full max-h-64 sm:max-h-96"
           />
         </div>
@@ -699,6 +730,7 @@ const MessageBubble = ({
             alt="Message video"
             type="video"
             mimeType={message.video_mime_type || 'video/mp4'}
+            mediaId={message.id}
             className="w-full max-h-48 sm:max-h-64"
           />
         </div>
