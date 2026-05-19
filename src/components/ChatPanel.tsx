@@ -35,6 +35,7 @@ import {
   FileText,
   ArrowLeft,
   AlertCircle,
+  Images,
 } from "lucide-react";
 import { toast } from "sonner";
 
