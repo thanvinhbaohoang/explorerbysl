@@ -185,6 +185,8 @@ const Traffic = () => {
     campaignFilter,
     platformFilter,
     postTagFilter,
+    adTitleFilter,
+    postIdFilter,
     startDate: startDateStr,
     endDate: endDateStr,
     itemsPerPage,
