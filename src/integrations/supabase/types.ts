@@ -500,13 +500,7 @@ export type Database = {
       }
       telegram_leads: {
         Row: {
-          ad_id: string | null
-          ad_name: string | null
           ad_title: string | null
-          adset_id: string | null
-          adset_name: string | null
-          campaign_id: string | null
-          campaign_name: string | null
           created_at: string | null
           facebook_click_id: string | null
           id: string
@@ -517,23 +511,14 @@ export type Database = {
           referrer: string | null
           updated_at: string | null
           user_id: string | null
-          utm_ad_id: string | null
-          utm_adset_id: string | null
           utm_campaign: string | null
-          utm_campaign_id: string | null
           utm_content: string | null
           utm_medium: string | null
           utm_source: string | null
           utm_term: string | null
         }
         Insert: {
-          ad_id?: string | null
-          ad_name?: string | null
           ad_title?: string | null
-          adset_id?: string | null
-          adset_name?: string | null
-          campaign_id?: string | null
-          campaign_name?: string | null
           created_at?: string | null
           facebook_click_id?: string | null
           id?: string
@@ -544,23 +529,14 @@ export type Database = {
           referrer?: string | null
           updated_at?: string | null
           user_id?: string | null
-          utm_ad_id?: string | null
-          utm_adset_id?: string | null
           utm_campaign?: string | null
-          utm_campaign_id?: string | null
           utm_content?: string | null
           utm_medium?: string | null
           utm_source?: string | null
           utm_term?: string | null
         }
         Update: {
-          ad_id?: string | null
-          ad_name?: string | null
           ad_title?: string | null
-          adset_id?: string | null
-          adset_name?: string | null
-          campaign_id?: string | null
-          campaign_name?: string | null
           created_at?: string | null
           facebook_click_id?: string | null
           id?: string
@@ -571,10 +547,7 @@ export type Database = {
           referrer?: string | null
           updated_at?: string | null
           user_id?: string | null
-          utm_ad_id?: string | null
-          utm_adset_id?: string | null
           utm_campaign?: string | null
-          utm_campaign_id?: string | null
           utm_content?: string | null
           utm_medium?: string | null
           utm_source?: string | null

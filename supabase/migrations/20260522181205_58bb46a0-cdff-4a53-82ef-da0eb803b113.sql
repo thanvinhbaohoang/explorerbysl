@@ -1,0 +1,10 @@
+ALTER TABLE public.telegram_leads
+  DROP COLUMN campaign_id,
+  DROP COLUMN campaign_name,
+  DROP COLUMN adset_id,
+  DROP COLUMN adset_name,
+  DROP COLUMN ad_id,
+  DROP COLUMN ad_name,
+  DROP COLUMN utm_campaign_id,
+  DROP COLUMN utm_adset_id,
+  DROP COLUMN utm_ad_id;
