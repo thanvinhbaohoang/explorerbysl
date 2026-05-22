@@ -501,6 +501,37 @@ const Traffic = () => {
                     </SelectContent>
                   </Select>
 
+                  <Select value={adTitleFilter} onValueChange={setAdTitleFilter} disabled={isLoadingTraffic}>
+                    <SelectTrigger className="w-full sm:w-[200px]">
+                      <SelectValue placeholder="FB Ad Title" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Ad Titles</SelectItem>
+                      {uniqueAdTitles.map((title) => (
+                        <SelectItem key={title} value={title}>
+                          <div className="flex items-center gap-2">
+                            <Megaphone className="h-3 w-3" />
+                            <span className="truncate max-w-[220px]">{title}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={postIdFilter} onValueChange={setPostIdFilter} disabled={isLoadingTraffic}>
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                      <SelectValue placeholder="FB Post ID" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Post IDs</SelectItem>
+                      {uniquePostIds.map((pid) => (
+                        <SelectItem key={pid} value={pid}>
+                          <span className="font-mono text-xs">{pid}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
                   <Select value={sourceFilter} onValueChange={setSourceFilter} disabled={isLoadingTraffic}>
                     <SelectTrigger className="w-full sm:w-[150px]">
                       <SelectValue placeholder="UTM Source" />
