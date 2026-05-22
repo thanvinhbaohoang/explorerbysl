@@ -134,6 +134,14 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
         countQuery = countQuery.eq("messenger_ref", postTagFilter);
         dataQuery = dataQuery.eq("messenger_ref", postTagFilter);
       }
+      if (adTitleFilter && adTitleFilter !== "all") {
+        countQuery = countQuery.eq("ad_title", adTitleFilter);
+        dataQuery = dataQuery.eq("ad_title", adTitleFilter);
+      }
+      if (postIdFilter && postIdFilter !== "all") {
+        countQuery = countQuery.eq("post_id", postIdFilter);
+        dataQuery = dataQuery.eq("post_id", postIdFilter);
+      }
       if (startDate) {
         countQuery = countQuery.gte("created_at", startDate);
         dataQuery = dataQuery.gte("created_at", startDate);
