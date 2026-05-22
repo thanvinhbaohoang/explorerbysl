@@ -144,6 +144,8 @@ const Traffic = () => {
   const [campaignFilter, setCampaignFilter] = useState<string>("");
   const [platformFilter, setPlatformFilter] = useState<string>("");
   const [postTagFilter, setPostTagFilter] = useState<string>("");
+  const [adTitleFilter, setAdTitleFilter] = useState<string>("");
+  const [postIdFilter, setPostIdFilter] = useState<string>("");
 
   // Date range filter
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
