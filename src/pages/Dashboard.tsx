@@ -82,9 +82,6 @@ interface TrafficData {
   utm_campaign: string | null;
   utm_content: string | null;
   utm_term: string | null;
-  utm_adset_id: string | null;
-  utm_ad_id: string | null;
-  utm_campaign_id: string | null;
   referrer: string | null;
   created_at: string;
   customer: {
@@ -206,7 +203,7 @@ const Dashboard = () => {
 
       const { data: leads, error } = await supabase
         .from("telegram_leads")
-        .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, created_at, user_id")
+        .select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, referrer, created_at, user_id")
         .order("created_at", { ascending: false })
         .range(from, to);
 
@@ -230,9 +227,6 @@ const Dashboard = () => {
               utm_campaign: lead.utm_campaign,
               utm_content: lead.utm_content,
               utm_term: lead.utm_term,
-              utm_adset_id: lead.utm_adset_id,
-              utm_ad_id: lead.utm_ad_id,
-              utm_campaign_id: lead.utm_campaign_id,
               referrer: lead.referrer,
               created_at: lead.created_at,
               customer,
@@ -246,9 +240,6 @@ const Dashboard = () => {
             utm_campaign: lead.utm_campaign,
             utm_content: lead.utm_content,
             utm_term: lead.utm_term,
-            utm_adset_id: lead.utm_adset_id,
-            utm_ad_id: lead.utm_ad_id,
-            utm_campaign_id: lead.utm_campaign_id,
             referrer: lead.referrer,
             created_at: lead.created_at,
             customer: null,
@@ -735,24 +726,6 @@ const Dashboard = () => {
                                         <div>
                                           <span className="font-semibold">UTM Campaign:</span>
                                           <span className="ml-2 text-muted-foreground">{traffic.utm_campaign}</span>
-                                        </div>
-                                      )}
-                                      {traffic.utm_campaign_id && (
-                                        <div>
-                                          <span className="font-semibold">Campaign ID:</span>
-                                          <span className="ml-2 text-muted-foreground font-mono">{traffic.utm_campaign_id}</span>
-                                        </div>
-                                      )}
-                                      {traffic.utm_adset_id && (
-                                        <div>
-                                          <span className="font-semibold">Ad Set ID:</span>
-                                          <span className="ml-2 text-muted-foreground font-mono">{traffic.utm_adset_id}</span>
-                                        </div>
-                                      )}
-                                      {traffic.utm_ad_id && (
-                                        <div>
-                                          <span className="font-semibold">Ad ID:</span>
-                                          <span className="ml-2 text-muted-foreground font-mono">{traffic.utm_ad_id}</span>
                                         </div>
                                       )}
                                       {traffic.utm_content && (

@@ -108,9 +108,6 @@ interface TrafficData {
   utm_campaign: string | null;
   utm_content: string | null;
   utm_term: string | null;
-  utm_adset_id: string | null;
-  utm_ad_id: string | null;
-  utm_campaign_id: string | null;
   referrer: string | null;
   messenger_ref: string | null;
   messenger_ad_context: MessengerAdContext | null;
@@ -387,17 +384,8 @@ const Traffic = () => {
                       { key: 'utm_campaign', header: 'UTM Campaign' },
                       { key: 'utm_content', header: 'UTM Content' },
                       { key: 'utm_term', header: 'UTM Term' },
-                      { key: 'utm_campaign_id', header: 'UTM Campaign ID' },
-                      { key: 'utm_adset_id', header: 'UTM Adset ID' },
-                      { key: 'utm_ad_id', header: 'UTM Ad ID' },
                       // Facebook/Meta tracking
                       { key: 'facebook_click_id', header: 'FB Click ID' },
-                      { key: 'campaign_id', header: 'Campaign ID' },
-                      { key: 'campaign_name', header: 'Campaign Name' },
-                      { key: 'adset_id', header: 'Adset ID' },
-                      { key: 'adset_name', header: 'Adset Name' },
-                      { key: 'ad_id', header: 'Ad ID' },
-                      { key: 'ad_name', header: 'Ad Name' },
                       // Messenger specific
                       { key: 'messenger_ref', header: 'Post Tag' },
                       { key: 'post_id', header: 'FB Post ID' },
@@ -759,24 +747,6 @@ const Traffic = () => {
                                     <div>
                                       <span className="font-semibold">UTM Campaign:</span>
                                       <span className="ml-2 text-muted-foreground">{traffic.utm_campaign}</span>
-                                    </div>
-                                  )}
-                                  {traffic.utm_campaign_id && (
-                                    <div>
-                                      <span className="font-semibold">Campaign ID:</span>
-                                      <span className="ml-2 text-muted-foreground font-mono">{traffic.utm_campaign_id}</span>
-                                    </div>
-                                  )}
-                                  {traffic.utm_adset_id && (
-                                    <div>
-                                      <span className="font-semibold">Ad Set ID:</span>
-                                      <span className="ml-2 text-muted-foreground font-mono">{traffic.utm_adset_id}</span>
-                                    </div>
-                                  )}
-                                  {traffic.utm_ad_id && (
-                                    <div>
-                                      <span className="font-semibold">Ad ID:</span>
-                                      <span className="ml-2 text-muted-foreground font-mono">{traffic.utm_ad_id}</span>
                                     </div>
                                   )}
                                   {traffic.utm_content && (

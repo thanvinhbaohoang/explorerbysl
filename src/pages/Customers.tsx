@@ -90,9 +90,6 @@ interface Customer {
   page_id: string | null;
   lead_source?: {
     messenger_ref?: string;
-    campaign_name?: string;
-    ad_name?: string;
-    adset_name?: string;
     referrer?: string;
   };
 }
@@ -1956,16 +1953,6 @@ const Customers = () => {
                           <TableCell>
                             {customer.lead_source ? (
                               <div className="space-y-1">
-                                {customer.lead_source.campaign_name && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {customer.lead_source.campaign_name}
-                                  </Badge>
-                                )}
-                                {customer.lead_source.ad_name && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {customer.lead_source.ad_name}
-                                  </div>
-                                )}
                                 {customer.lead_source.messenger_ref && (
                                   <div className="text-xs text-muted-foreground">
                                     Post: {customer.lead_source.messenger_ref}
