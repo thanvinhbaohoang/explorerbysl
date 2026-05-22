@@ -202,6 +202,8 @@ const Traffic = () => {
     setCampaignFilter("");
     setPlatformFilter("");
     setPostTagFilter("");
+    setAdTitleFilter("");
+    setPostIdFilter("");
     setStartDate(undefined);
     setEndDate(undefined);
     setCustomerStatusFilter("");
@@ -212,7 +214,7 @@ const Traffic = () => {
     setSearchParams({ page: page.toString() });
   };
 
-  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
+  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
 
   const formatDisplayDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
