@@ -170,6 +170,8 @@ const Traffic = () => {
   const uniqueSources = filterOptions?.sources || [];
   const uniqueCampaigns = filterOptions?.campaigns || [];
   const uniquePostTags = filterOptions?.postTags || [];
+  const uniqueAdTitles = filterOptions?.adTitles || [];
+  const uniquePostIds = filterOptions?.postIds || [];
 
   // Build date strings for query
   const startDateStr = startDate ? format(startDate, 'yyyy-MM-dd') : undefined;
