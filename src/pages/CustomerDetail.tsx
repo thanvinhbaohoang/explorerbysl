@@ -55,12 +55,8 @@ interface LeadSource {
   id: string;
   platform: string;
   messenger_ref: string | null;
-  campaign_id: string | null;
-  campaign_name: string | null;
-  ad_id: string | null;
-  ad_name: string | null;
-  adset_id: string | null;
-  adset_name: string | null;
+  ad_title: string | null;
+  post_id: string | null;
   utm_source: string | null;
   utm_medium: string | null;
   utm_campaign: string | null;
@@ -490,12 +486,8 @@ const CustomerDetail = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <InfoItem label="Platform" value={leadSource.platform} />
                       {leadSource.messenger_ref && <InfoItem label="Post Tag" value={leadSource.messenger_ref} />}
-                      {leadSource.campaign_name && <InfoItem label="Campaign" value={leadSource.campaign_name} />}
-                      {leadSource.campaign_id && <InfoItem label="Campaign ID" value={leadSource.campaign_id} />}
-                      {leadSource.adset_name && <InfoItem label="Ad Set" value={leadSource.adset_name} />}
-                      {leadSource.adset_id && <InfoItem label="Ad Set ID" value={leadSource.adset_id} />}
-                      {leadSource.ad_name && <InfoItem label="Ad" value={leadSource.ad_name} />}
-                      {leadSource.ad_id && <InfoItem label="Ad ID" value={leadSource.ad_id} />}
+                      {leadSource.ad_title && <InfoItem label="Ad Title" value={leadSource.ad_title} />}
+                      {leadSource.post_id && <InfoItem label="Post ID" value={leadSource.post_id} />}
                       {leadSource.referrer && <InfoItem label="Referrer" value={leadSource.referrer} />}
                       {leadSource.facebook_click_id && <InfoItem label="Facebook Click ID" value={leadSource.facebook_click_id} />}
                     </div>

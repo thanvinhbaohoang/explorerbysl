@@ -18,9 +18,6 @@ const Telegram = () => {
         const utmCampaign = searchParams.get("utm_campaign");
         const utmContent = searchParams.get("utm_content");
         const utmTerm = searchParams.get("utm_term");
-        const utmAdsetId = searchParams.get("utm_adset_id");
-        const utmAdId = searchParams.get("utm_ad_id");
-        const utmCampaignId = searchParams.get("utm_campaign_id");
         const referrer = document.referrer;
 
         // Call edge function to save traffic data (uses service role to bypass RLS)
@@ -36,9 +33,6 @@ const Telegram = () => {
               utm_campaign: utmCampaign,
               utm_content: utmContent,
               utm_term: utmTerm,
-              utm_adset_id: utmAdsetId,
-              utm_ad_id: utmAdId,
-              utm_campaign_id: utmCampaignId,
               referrer: referrer || null,
               messenger_ref: productRef,
               platform: 'telegram',

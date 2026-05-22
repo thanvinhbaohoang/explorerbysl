@@ -22,9 +22,6 @@ interface Customer {
   page_id: string | null;
   lead_source?: {
     messenger_ref?: string;
-    campaign_name?: string;
-    ad_name?: string;
-    adset_name?: string;
     referrer?: string;
   };
 }
@@ -131,7 +128,7 @@ export const fetchCustomersPage = async (
 
     const { data: leadsData } = await supabase
       .from("telegram_leads")
-      .select("user_id, messenger_ref, campaign_name, ad_name, adset_name, referrer")
+      .select("user_id, messenger_ref, referrer")
       .in("user_id", customerIds);
 
     customersWithLeads = customersData.map(customer => ({

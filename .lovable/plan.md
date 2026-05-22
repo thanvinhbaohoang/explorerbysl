@@ -1,50 +1,49 @@
 ## Goal
 
-Promote ad fields out of the opaque `messenger_ad_context` JSON blob into dedicated, queryable columns on `telegram_leads` so the client can analyze which ad / post tag drives traffic.
+Remove the 9 always-empty columns from `telegram_leads` and clean up every UI / code reference so the Traffic table only shows columns that actually carry data.
 
-## Current state
+## Confirmed dead columns (0 of 2,336 rows populated)
 
-- Facebook Messenger referrals return `ads_context_data` shaped like:
-  ```
-  { "post_id": "964872316538029", "ad_title": "KORTC01* | #K01-K_Group_1", "video_url": "..." }
-  ```
-  Note: Facebook does **not** include a real `ad_id` in this payload — only `post_id` and `ad_title`. The existing `ad_id` column is unrelated (Marketing API ad id) and stays empty for these.
-- All of this is currently dumped into `telegram_leads.messenger_ad_context` (jsonb), making it hard to filter, group, or chart.
-- `messenger_ref` (post tag) is already correctly populated — no change needed there.
-- 4 existing rows have ad context that should be backfilled.
+`campaign_id`, `campaign_name`, `adset_id`, `adset_name`, `ad_id`, `ad_name`, `utm_campaign_id`, `utm_adset_id`, `utm_ad_id`.
 
-## Plan
+Kept (populated): `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `facebook_click_id`, `messenger_ref`, `post_id`, `ad_title`, `messenger_ad_context`, `referrer`.
 
-### 1. Schema (migration)
+## Steps
 
-Add dedicated columns on `telegram_leads`:
-- `post_id text` — Facebook post/creative id from `ads_context_data.post_id`
-- `ad_title text` — human-readable ad name from `ads_context_data.ad_title`
-- Indexes on `post_id`, `ad_title`, and `messenger_ref` to support filtering/aggregation.
+### 1. Migration
 
-Backfill existing 4 rows from `messenger_ad_context->>'post_id'` and `->>'ad_title'`.
-
-Keep `messenger_ad_context` column as-is (raw fallback, video_url, future fields).
-
-### 2. Webhook (`supabase/functions/messenger-webhook/index.ts`)
-
-In `handleReferral`, when inserting into `telegram_leads`, also write:
-```
-post_id:  referral.ads_context_data?.post_id ?? null,
-ad_title: referral.ads_context_data?.ad_title ?? null,
+```sql
+ALTER TABLE public.telegram_leads
+  DROP COLUMN campaign_id,
+  DROP COLUMN campaign_name,
+  DROP COLUMN adset_id,
+  DROP COLUMN adset_name,
+  DROP COLUMN ad_id,
+  DROP COLUMN ad_name,
+  DROP COLUMN utm_campaign_id,
+  DROP COLUMN utm_adset_id,
+  DROP COLUMN utm_ad_id;
 ```
 
-### 3. Traffic page (`src/pages/Traffic.tsx` + `src/hooks/useTrafficData.ts`)
+### 2. Code cleanup
 
-- Add `post_id`, `ad_title` to the `TrafficData` interface and to the select list.
-- Add two new filter dropdowns: **Ad Title** and **Post ID** (populated from distinct values, alongside the existing Post Tag filter).
-- Add **Ad Title** and **Post ID** columns to the table (compact, with tooltips for long titles).
-- Update `getTrafficSourceInfo` to prefer `ad_title` over digging into `messenger_ad_context`.
-- Include both new fields in the CSV export and global search.
-- Extend `useTrafficFilterOptions` to also return distinct `ad_title` and `post_id` lists.
+- `supabase/functions/capture-traffic/index.ts` — remove `utm_adset_id`, `utm_ad_id`, `utm_campaign_id` from the insert payload.
+- `src/pages/Telegram.tsx` — remove the `searchParams.get("utm_adset_id" | "utm_ad_id" | "utm_campaign_id")` reads and the fields they're passed into.
+- `src/hooks/useTrafficData.ts` — remove the three `utm_*_id` fields from `TrafficData` and from the `select(...)` column list.
+- `src/pages/Traffic.tsx` —
+  - Remove the 9 entries from the CSV export config (`UTM Campaign ID`, `UTM Adset ID`, `UTM Ad ID`, `Campaign ID`, `Campaign Name`, `Adset ID`, `Adset Name`, `Ad ID`, `Ad Name`).
+  - Remove the three `utm_*_id` blocks in the row-detail panel.
+  - Drop the three fields from the local `TrafficData` interface.
+- `src/pages/Dashboard.tsx` — drop the three `utm_*_id` fields from the interface, the `select(...)` list, the two mapping spots, and the three detail-panel blocks.
+- `src/hooks/useCustomersData.ts` — drop `campaign_name`, `ad_name`, `adset_name` from the `lead_source` type and from the `select(...)`.
+- `src/pages/Customers.tsx` — drop those three fields from the local interface and remove the two render blocks (`campaign_name`, `ad_name`) that always render nothing today.
 
-### Out of scope
+### 3. Verify
 
-- No change to `messenger_ref` capture (already correct).
-- No fetching of real Marketing API `ad_id` (would require ad lookup via Graph API — separate request).
-- No changes to other pages that read `messenger_ad_context`.
+After build, re-open Traffic: the table and CSV export should no longer show the 9 columns; row detail panel should no longer show empty UTM ID rows.
+
+## Out of scope
+
+- No new Marketing API enrichment (would be the only way to populate real campaign/adset/ad names — separate feature).
+- No change to UTM landing-page redirect logic.
+- No change to `messenger_ad_context`, `ad_title`, `post_id`, or `messenger_ref` capture.
