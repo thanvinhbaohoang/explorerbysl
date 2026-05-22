@@ -114,6 +114,8 @@ interface TrafficData {
   referrer: string | null;
   messenger_ref: string | null;
   messenger_ad_context: MessengerAdContext | null;
+  post_id: string | null;
+  ad_title: string | null;
   platform: string;
   created_at: string;
   customer: {
@@ -142,6 +144,8 @@ const Traffic = () => {
   const [campaignFilter, setCampaignFilter] = useState<string>("");
   const [platformFilter, setPlatformFilter] = useState<string>("");
   const [postTagFilter, setPostTagFilter] = useState<string>("");
+  const [adTitleFilter, setAdTitleFilter] = useState<string>("");
+  const [postIdFilter, setPostIdFilter] = useState<string>("");
 
   // Date range filter
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
@@ -166,6 +170,8 @@ const Traffic = () => {
   const uniqueSources = filterOptions?.sources || [];
   const uniqueCampaigns = filterOptions?.campaigns || [];
   const uniquePostTags = filterOptions?.postTags || [];
+  const uniqueAdTitles = filterOptions?.adTitles || [];
+  const uniquePostIds = filterOptions?.postIds || [];
 
   // Build date strings for query
   const startDateStr = startDate ? format(startDate, 'yyyy-MM-dd') : undefined;
@@ -179,6 +185,8 @@ const Traffic = () => {
     campaignFilter,
     platformFilter,
     postTagFilter,
+    adTitleFilter,
+    postIdFilter,
     startDate: startDateStr,
     endDate: endDateStr,
     itemsPerPage,
@@ -194,6 +202,8 @@ const Traffic = () => {
     setCampaignFilter("");
     setPlatformFilter("");
     setPostTagFilter("");
+    setAdTitleFilter("");
+    setPostIdFilter("");
     setStartDate(undefined);
     setEndDate(undefined);
     setCustomerStatusFilter("");
@@ -204,7 +214,7 @@ const Traffic = () => {
     setSearchParams({ page: page.toString() });
   };
 
-  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
+  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
 
   const formatDisplayDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
@@ -230,11 +240,11 @@ const Traffic = () => {
 
   // Get traffic source info
   const getTrafficSourceInfo = (traffic: TrafficData) => {
-    if (traffic.messenger_ad_context) {
+    if (traffic.ad_title || traffic.messenger_ad_context) {
       return {
         type: 'Facebook Ad',
         icon: Megaphone,
-        value: traffic.messenger_ad_context.ad_title || 'Facebook Ad',
+        value: traffic.ad_title || traffic.messenger_ad_context?.ad_title || 'Facebook Ad',
         variant: 'default' as const,
       };
     }
@@ -390,7 +400,9 @@ const Traffic = () => {
                       { key: 'ad_name', header: 'Ad Name' },
                       // Messenger specific
                       { key: 'messenger_ref', header: 'Post Tag' },
-                      { key: 'messenger_ad_context', header: 'Messenger Ad Context', getValue: (t: any) => t.messenger_ad_context ? JSON.stringify(t.messenger_ad_context) : '' },
+                      { key: 'post_id', header: 'FB Post ID' },
+                      { key: 'ad_title', header: 'FB Ad Title' },
+                      { key: 'messenger_ad_context', header: 'Messenger Ad Context (raw)', getValue: (t: any) => t.messenger_ad_context ? JSON.stringify(t.messenger_ad_context) : '' },
                       // Other
                       { key: 'referrer', header: 'Referrer' },
                     ],
@@ -484,6 +496,37 @@ const Traffic = () => {
                             <Hash className="h-3 w-3" />
                             {tag}
                           </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={adTitleFilter} onValueChange={setAdTitleFilter} disabled={isLoadingTraffic}>
+                    <SelectTrigger className="w-full sm:w-[200px]">
+                      <SelectValue placeholder="FB Ad Title" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Ad Titles</SelectItem>
+                      {uniqueAdTitles.map((title) => (
+                        <SelectItem key={title} value={title}>
+                          <div className="flex items-center gap-2">
+                            <Megaphone className="h-3 w-3" />
+                            <span className="truncate max-w-[220px]">{title}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={postIdFilter} onValueChange={setPostIdFilter} disabled={isLoadingTraffic}>
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                      <SelectValue placeholder="FB Post ID" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Post IDs</SelectItem>
+                      {uniquePostIds.map((pid) => (
+                        <SelectItem key={pid} value={pid}>
+                          <span className="font-mono text-xs">{pid}</span>
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -24,6 +24,8 @@ interface TrafficData {
   referrer: string | null;
   messenger_ref: string | null;
   messenger_ad_context: MessengerAdContext | null;
+  post_id: string | null;
+  ad_title: string | null;
   platform: string;
   created_at: string;
   customer: {
@@ -43,16 +45,20 @@ export const useTrafficFilterOptions = () => {
   return useQuery({
     queryKey: ["traffic-filter-options"],
     queryFn: async () => {
-      const [sourcesRes, campaignsRes, postTagsRes] = await Promise.all([
+      const [sourcesRes, campaignsRes, postTagsRes, adTitlesRes, postIdsRes] = await Promise.all([
         supabase.from("telegram_leads").select("utm_source").not("utm_source", "is", null),
         supabase.from("telegram_leads").select("utm_campaign").not("utm_campaign", "is", null),
         supabase.from("telegram_leads").select("messenger_ref").not("messenger_ref", "is", null).neq("messenger_ref", "direct_message"),
+        supabase.from("telegram_leads").select("ad_title").not("ad_title", "is", null),
+        supabase.from("telegram_leads").select("post_id").not("post_id", "is", null),
       ]);
 
       return {
         sources: [...new Set(sourcesRes.data?.map(s => s.utm_source).filter(Boolean))] as string[],
         campaigns: [...new Set(campaignsRes.data?.map(c => c.utm_campaign).filter(Boolean))] as string[],
         postTags: [...new Set(postTagsRes.data?.map(p => p.messenger_ref).filter(Boolean))] as string[],
+        adTitles: [...new Set(adTitlesRes.data?.map(a => a.ad_title).filter(Boolean))] as string[],
+        postIds: [...new Set(postIdsRes.data?.map(p => p.post_id).filter(Boolean))] as string[],
       };
     },
     staleTime: 5 * 60 * 1000,
@@ -67,16 +73,18 @@ interface TrafficQueryParams {
   campaignFilter: string;
   platformFilter: string;
   postTagFilter: string;
+  adTitleFilter?: string;
+  postIdFilter?: string;
   startDate?: string;
   endDate?: string;
   itemsPerPage: number;
 }
 
 export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?: boolean }) => {
-  const { page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, startDate, endDate, itemsPerPage, messengerEnabled = true } = params;
+  const { page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, itemsPerPage, messengerEnabled = true } = params;
 
   return useQuery({
-    queryKey: ["traffic", page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, startDate, endDate, messengerEnabled],
+    queryKey: ["traffic", page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, messengerEnabled],
     queryFn: async () => {
       let userIdsToInclude: string[] = [];
 
@@ -91,7 +99,7 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
 
       // Build query with filters
       let countQuery = supabase.from("telegram_leads").select("*", { count: "exact", head: true });
-      let dataQuery = supabase.from("telegram_leads").select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, messenger_ref, messenger_ad_context, platform, created_at, user_id");
+      let dataQuery = supabase.from("telegram_leads").select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_adset_id, utm_ad_id, utm_campaign_id, referrer, messenger_ref, messenger_ad_context, post_id, ad_title, platform, created_at, user_id");
 
       // Hide messenger platform leads when integration is disabled
       if (!messengerEnabled) {
@@ -125,6 +133,14 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
       if (postTagFilter && postTagFilter !== "all") {
         countQuery = countQuery.eq("messenger_ref", postTagFilter);
         dataQuery = dataQuery.eq("messenger_ref", postTagFilter);
+      }
+      if (adTitleFilter && adTitleFilter !== "all") {
+        countQuery = countQuery.eq("ad_title", adTitleFilter);
+        dataQuery = dataQuery.eq("ad_title", adTitleFilter);
+      }
+      if (postIdFilter && postIdFilter !== "all") {
+        countQuery = countQuery.eq("post_id", postIdFilter);
+        dataQuery = dataQuery.eq("post_id", postIdFilter);
       }
       if (startDate) {
         countQuery = countQuery.gte("created_at", startDate);
