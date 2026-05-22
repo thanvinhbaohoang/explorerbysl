@@ -24,6 +24,8 @@ interface TrafficData {
   referrer: string | null;
   messenger_ref: string | null;
   messenger_ad_context: MessengerAdContext | null;
+  post_id: string | null;
+  ad_title: string | null;
   platform: string;
   created_at: string;
   customer: {
