@@ -400,7 +400,9 @@ const Traffic = () => {
                       { key: 'ad_name', header: 'Ad Name' },
                       // Messenger specific
                       { key: 'messenger_ref', header: 'Post Tag' },
-                      { key: 'messenger_ad_context', header: 'Messenger Ad Context', getValue: (t: any) => t.messenger_ad_context ? JSON.stringify(t.messenger_ad_context) : '' },
+                      { key: 'post_id', header: 'FB Post ID' },
+                      { key: 'ad_title', header: 'FB Ad Title' },
+                      { key: 'messenger_ad_context', header: 'Messenger Ad Context (raw)', getValue: (t: any) => t.messenger_ad_context ? JSON.stringify(t.messenger_ad_context) : '' },
                       // Other
                       { key: 'referrer', header: 'Referrer' },
                     ],
