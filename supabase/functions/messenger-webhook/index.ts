@@ -839,6 +839,8 @@ async function handleReferral(senderId: string, referral: any, pageId: string) {
         platform: 'messenger',
         messenger_ref: referral.ref || null,
         messenger_ad_context: referral.ads_context_data || null,
+        post_id: referral.ads_context_data?.post_id || null,
+        ad_title: referral.ads_context_data?.ad_title || null,
         referrer: referral.source || null,
       });
     
