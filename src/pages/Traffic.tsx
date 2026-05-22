@@ -240,11 +240,11 @@ const Traffic = () => {
 
   // Get traffic source info
   const getTrafficSourceInfo = (traffic: TrafficData) => {
-    if (traffic.messenger_ad_context) {
+    if (traffic.ad_title || traffic.messenger_ad_context) {
       return {
         type: 'Facebook Ad',
         icon: Megaphone,
-        value: traffic.messenger_ad_context.ad_title || 'Facebook Ad',
+        value: traffic.ad_title || traffic.messenger_ad_context?.ad_title || 'Facebook Ad',
         variant: 'default' as const,
       };
     }
