@@ -502,6 +502,7 @@ export type Database = {
         Row: {
           ad_id: string | null
           ad_name: string | null
+          ad_title: string | null
           adset_id: string | null
           adset_name: string | null
           campaign_id: string | null
@@ -512,6 +513,7 @@ export type Database = {
           messenger_ad_context: Json | null
           messenger_ref: string | null
           platform: string
+          post_id: string | null
           referrer: string | null
           updated_at: string | null
           user_id: string | null
@@ -527,6 +529,7 @@ export type Database = {
         Insert: {
           ad_id?: string | null
           ad_name?: string | null
+          ad_title?: string | null
           adset_id?: string | null
           adset_name?: string | null
           campaign_id?: string | null
@@ -537,6 +540,7 @@ export type Database = {
           messenger_ad_context?: Json | null
           messenger_ref?: string | null
           platform?: string
+          post_id?: string | null
           referrer?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -552,6 +556,7 @@ export type Database = {
         Update: {
           ad_id?: string | null
           ad_name?: string | null
+          ad_title?: string | null
           adset_id?: string | null
           adset_name?: string | null
           campaign_id?: string | null
@@ -562,6 +567,7 @@ export type Database = {
           messenger_ad_context?: Json | null
           messenger_ref?: string | null
           platform?: string
+          post_id?: string | null
           referrer?: string | null
           updated_at?: string | null
           user_id?: string | null
