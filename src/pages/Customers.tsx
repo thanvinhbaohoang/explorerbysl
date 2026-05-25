@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCustomersData } from "@/hooks/useCustomersData";
 import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
+import { useCurrentUserName } from "@/hooks/useCurrentUserName";
 import { toast } from "sonner";
 import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
 import { processFileForUpload } from "@/lib/image-conversion";
@@ -150,6 +151,7 @@ const Customers = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { permissions, isAdmin } = useUserPermissions();
+  const currentUserName = useCurrentUserName();
   const queryClient = useQueryClient();
   const { isEnabled: messengerEnabled } = useMessengerIntegration();
   const [customersPage, setCustomersPage] = useState(1);
@@ -430,7 +432,7 @@ const Customers = () => {
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
     
     // Get employee display name from user email
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
     
     // Optimistically add message to UI
     const optimisticMessage: Message = {
@@ -477,7 +479,7 @@ const Customers = () => {
 
     try {
       let response;
-      const employeeName = user?.email?.split('@')[0] || 'Employee';
+      const employeeName = currentUserName;
       
       if (platform === 'messenger') {
         // Send via Messenger webhook
@@ -709,7 +711,7 @@ const Customers = () => {
     const mediaType = getMediaType(file);
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
     const tempId = `temp-media-${Date.now()}-${Math.random()}`;
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
 
     // Optimistically add message to UI
     const optimisticMessage: Message = {
@@ -757,7 +759,7 @@ const Customers = () => {
       const mediaUrl = await uploadFileToStorage(file);
 
       let response;
-      const employeeName = user?.email?.split('@')[0] || 'Employee';
+      const employeeName = currentUserName;
       
       if (platform === 'messenger') {
         response = await supabase.functions.invoke("messenger-webhook", {
@@ -848,7 +850,7 @@ const Customers = () => {
 
     // Batch send for multiple photos/videos
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
     const mediaGroupId = `mg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const caption = replyText.trim() || undefined;
     const tempIds: string[] = [];
@@ -1117,7 +1119,7 @@ const Customers = () => {
 
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
     const tempId = `temp-voice-${Date.now()}`;
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
 
     // Optimistically add message to UI
     const optimisticMessage: Message = {
@@ -1167,7 +1169,7 @@ const Customers = () => {
       console.log("Voice clip uploaded to storage:", mediaUrl);
 
       let response;
-      const employeeName = user?.email?.split('@')[0] || 'Employee';
+      const employeeName = currentUserName;
       
       if (platform === 'messenger') {
         // For Messenger, send as audio attachment

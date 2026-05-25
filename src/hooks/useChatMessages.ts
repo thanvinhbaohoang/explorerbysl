@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCurrentUserName } from "@/hooks/useCurrentUserName";
 import { toast } from "sonner";
 import { detectLanguage } from "@/lib/language-detection";
 import { useQueryClient } from "@tanstack/react-query";
@@ -68,6 +69,7 @@ interface LinkedCustomerInfo {
 
 export const useChatMessages = (selectedCustomer: Customer | null) => {
   const { user } = useAuth();
+  const currentUserName = useCurrentUserName();
   const queryClient = useQueryClient();
   const messagesPerPage = 50;
 
@@ -338,7 +340,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
     const tempId = `temp-${Date.now()}`;
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
     
     const optimisticMessage: Message = {
       id: tempId,
@@ -436,7 +438,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     const mediaType = getMediaType(file);
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
     const tempId = `temp-media-${Date.now()}`;
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
 
     const optimisticMessage: Message = {
       id: tempId,
@@ -546,7 +548,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     }
 
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
     const mediaGroupId = `mg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const tempIds: string[] = [];
 
@@ -761,7 +763,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
     const tempId = `temp-voice-${Date.now()}`;
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
     const duration = recordingDuration;
 
     const optimisticMessage: Message = {

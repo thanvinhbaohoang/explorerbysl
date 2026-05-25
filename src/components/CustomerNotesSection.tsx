@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCurrentUserName } from "@/hooks/useCurrentUserName";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +21,7 @@ interface CustomerNotesSectionProps {
 
 export function CustomerNotesSection({ customerId }: CustomerNotesSectionProps) {
   const { user } = useAuth();
+  const currentUserName = useCurrentUserName("Unknown");
   const [notes, setNotes] = useState<CustomerNote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [newNoteText, setNewNoteText] = useState("");
@@ -58,7 +60,7 @@ export function CustomerNotesSection({ customerId }: CustomerNotesSectionProps) 
         customer_id: customerId,
         note_text: newNoteText.trim(),
         created_by: user?.id,
-        created_by_name: user?.email?.split('@')[0] || 'Unknown'
+        created_by_name: currentUserName
       });
 
     if (error) {

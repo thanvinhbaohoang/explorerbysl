@@ -1,27 +1,46 @@
-## Goal
-Hide traffic rows that never linked to a customer ("Not Linked" — `user_id IS NULL` on `telegram_leads`) from both the Traffic table and the CSV export.
+## Problem
 
-## Why
-These rows have no associated customer and are noise — the client doesn't want them in the table or in exports.
+Staff names displayed in chat messages, notes, action items, and other places are derived from `user.email.split('@')[0]` instead of the `display_name` configured on the Roles page (`user_roles.display_name`).
 
-## Changes
+## Fix
 
-### 1. `src/hooks/useTrafficData.ts`
-In `useTrafficData` queryFn, add a `.not("user_id", "is", null)` filter to both `countQuery` and `dataQuery` so unlinked leads are excluded from the table and the total count.
+Use the existing `displayName` already loaded by `useUserPermissions()` as the source of truth for the current user's name, with a sensible fallback chain:
 
-### 2. `src/pages/Traffic.tsx` — Export CSV handler (~line 350)
-Add `.not('user_id', 'is', null)` to the `allTraffic` query so the CSV only includes linked rows. Update the success toast to reflect the filtered count.
+```
+display_name (from user_roles)
+  → user_metadata.full_name / name
+  → email prefix (email.split('@')[0])
+  → 'Employee' / 'Unknown'
+```
 
-### 3. (Optional) `useTrafficFilterOptions` in `useTrafficData.ts`
-Leave as-is — filter dropdowns can still show all historical values; this avoids extra query complexity. Skip unless you want stricter filtering.
+### 1. Add a small helper hook `useCurrentUserName()`
 
-## Out of scope
-- No DB schema or RLS changes
-- No deletion of unlinked leads (they remain in DB for webhook recovery / debugging)
-- No changes to the capture-traffic edge function
-- No UI changes beyond the row count naturally shrinking
+New file `src/hooks/useCurrentUserName.ts` that returns a single string by combining `useAuth()` + `useUserPermissions()` using the fallback chain above. Centralizing this prevents future drift.
 
-## Verification
-- Open `/traffic` → confirm no "Not Linked" badges appear
-- Total count badge matches new filtered total
-- Export CSV → row count matches table total, no rows with empty Customer ID
+### 2. Replace every `user?.email?.split('@')[0]` usage
+
+Files (all client-side, presentation only):
+
+- `src/hooks/useChatMessages.ts` — 5 occurrences (sendMessage, sendPhoto, sendVoice, sendDocument paths)
+- `src/pages/Customers.tsx` — 6 occurrences (same send-message flows in the customers page chat)
+- `src/components/QuickActionsPanel.tsx` — 1 occurrence (`completed_by_name`)
+- `src/components/CustomerNotesSection.tsx` — 1 occurrence (`created_by_name`)
+
+In each file, replace the inline `email.split('@')[0]` with the value from the new `useCurrentUserName()` hook (or pass it in). The value is then sent as `sent_by_name` / `completed_by_name` / `created_by_name` when inserting into the DB, so going forward all new messages, notes, and action items will store the display name.
+
+### 3. Historical rows
+
+Existing messages/notes already in the DB will keep their old email-prefix `sent_by_name`. This plan does not rewrite history — it only fixes display going forward. If desired, a one-off backfill can be added later.
+
+### Out of scope
+
+- No schema changes, no RLS changes, no edge function changes.
+- No changes to how the display name is *edited* (still done on the Roles page).
+- Reading display names for *other* users in existing chat history is unchanged — UI already shows whatever `sent_by_name` was saved at send time.
+
+### Verification
+
+1. Set a custom Display Name for the logged-in user on `/user-roles`.
+2. Send a chat message → the green "sent by" badge shows the new display name (not the email prefix).
+3. Add a customer note and complete an action item → entries show the display name.
+4. Old messages still show their original stored name (expected).

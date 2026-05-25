@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCurrentUserName } from "@/hooks/useCurrentUserName";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,6 +23,7 @@ interface QuickActionsPanelProps {
 
 export function QuickActionsPanel({ customerId, aiActionItems }: QuickActionsPanelProps) {
   const { user } = useAuth();
+  const currentUserName = useCurrentUserName("Unknown");
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -89,7 +91,7 @@ export function QuickActionsPanel({ customerId, aiActionItems }: QuickActionsPan
         is_completed: !currentState,
         completed_at: !currentState ? new Date().toISOString() : null,
         completed_by: !currentState ? user?.id : null,
-        completed_by_name: !currentState ? (user?.email?.split('@')[0] || 'Unknown') : null
+        completed_by_name: !currentState ? (currentUserName) : null
       })
       .eq('id', actionId);
 
