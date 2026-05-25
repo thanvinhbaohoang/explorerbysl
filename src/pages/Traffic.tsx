@@ -352,6 +352,7 @@ const Traffic = () => {
                   const { data: allTraffic, error } = await supabase
                     .from('telegram_leads')
                     .select('*, customer:user_id(id, telegram_id, username, first_name, last_name, messenger_id, messenger_name, first_message_at)')
+                    .not('user_id', 'is', null)
                     .order('created_at', { ascending: false });
                   
                   if (error) {
