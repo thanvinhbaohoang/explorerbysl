@@ -58,7 +58,7 @@ export function CustomerNotesSection({ customerId }: CustomerNotesSectionProps) 
         customer_id: customerId,
         note_text: newNoteText.trim(),
         created_by: user?.id,
-        created_by_name: user?.email?.split('@')[0] || 'Unknown'
+        created_by_name: currentUserName
       });
 
     if (error) {

@@ -338,7 +338,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
     const tempId = `temp-${Date.now()}`;
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
     
     const optimisticMessage: Message = {
       id: tempId,
@@ -436,7 +436,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     const mediaType = getMediaType(file);
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
     const tempId = `temp-media-${Date.now()}`;
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
 
     const optimisticMessage: Message = {
       id: tempId,
@@ -546,7 +546,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     }
 
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
     const mediaGroupId = `mg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const tempIds: string[] = [];
 
@@ -761,7 +761,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
     const tempId = `temp-voice-${Date.now()}`;
-    const employeeName = user?.email?.split('@')[0] || 'Employee';
+    const employeeName = currentUserName;
     const duration = recordingDuration;
 
     const optimisticMessage: Message = {

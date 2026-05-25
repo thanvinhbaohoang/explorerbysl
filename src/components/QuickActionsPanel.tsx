@@ -89,7 +89,7 @@ export function QuickActionsPanel({ customerId, aiActionItems }: QuickActionsPan
         is_completed: !currentState,
         completed_at: !currentState ? new Date().toISOString() : null,
         completed_by: !currentState ? user?.id : null,
-        completed_by_name: !currentState ? (user?.email?.split('@')[0] || 'Unknown') : null
+        completed_by_name: !currentState ? (currentUserName) : null
       })
       .eq('id', actionId);
 
