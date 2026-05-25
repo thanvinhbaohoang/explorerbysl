@@ -23,6 +23,7 @@ interface QuickActionsPanelProps {
 
 export function QuickActionsPanel({ customerId, aiActionItems }: QuickActionsPanelProps) {
   const { user } = useAuth();
+  const currentUserName = useCurrentUserName("Unknown");
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
