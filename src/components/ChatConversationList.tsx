@@ -451,12 +451,22 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     searchTimeoutRef.current = setTimeout(async () => {
       const query = searchQuery.trim();
       try {
+        const orParts = [
+          `first_name.ilike.%${query}%`,
+          `last_name.ilike.%${query}%`,
+          `username.ilike.%${query}%`,
+          `messenger_name.ilike.%${query}%`,
+          `messenger_id.ilike.%${query}%`,
+        ];
+        if (/^\d+$/.test(query)) orParts.push(`telegram_id.eq.${query}`);
+
         // Search across all customer fields using ilike
         let searchQ = supabase
           .from("customer")
           .select("*")
           .is("linked_customer_id", null)
-          .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,username.ilike.%${query}%,messenger_name.ilike.%${query}%`);
+          .or(orParts.join(","));
+
 
         // Hide broken messenger customers when integration is disabled
         if (!messengerEnabled) {
