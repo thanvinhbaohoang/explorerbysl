@@ -789,6 +789,15 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       recordingIntervalRef.current = null;
     }
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    animationFrameRef.current = null;
+    if (vizStreamRef.current) {
+      vizStreamRef.current.getTracks().forEach((t) => t.stop());
+      vizStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
     setAnalyser(null);
     setAudioLevels([0, 0, 0, 0, 0]);
     setRecordingDuration(0);
