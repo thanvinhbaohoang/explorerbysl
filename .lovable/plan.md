@@ -1,46 +1,79 @@
-## Problem
+## Goal
 
-Staff names displayed in chat messages, notes, action items, and other places are derived from `user.email.split('@')[0]` instead of the `display_name` configured on the Roles page (`user_roles.display_name`).
+Eliminate the "underwater / muffled" distortion heard in recorded voice messages (visible already in the local preview, before sending).
 
-## Fix
+## Root cause recap
 
-Use the existing `displayName` already loaded by `useUserPermissions()` as the source of truth for the current user's name, with a sensible fallback chain:
+In `src/hooks/useChatMessages.ts` `startRecording()`:
 
+- `getUserMedia({ audio: true })` uses Chrome defaults — `autoGainControl` and `noiseSuppression` on, no channel/rate hints.
+- An `AudioContext` + `AnalyserNode` is connected directly to the live mic stream. Chrome then resamples that stream through the context (often at a mismatched rate vs. the mic track), and the artifact ends up in what `MediaRecorder` captures.
+- No `audioBitsPerSecond`, suboptimal codec preference order.
+
+## Changes (single file: `src/hooks/useChatMessages.ts`)
+
+### 1. Tighter mic constraints
+
+```ts
+const stream = await navigator.mediaDevices.getUserMedia({
+  audio: {
+    channelCount: 1,
+    echoCancellation: true,
+    noiseSuppression: false,
+    autoGainControl: false,
+  },
+});
 ```
-display_name (from user_roles)
-  → user_metadata.full_name / name
-  → email prefix (email.split('@')[0])
-  → 'Employee' / 'Unknown'
+
+### 2. Better codec preference (adds Safari/iOS support)
+
+```ts
+const candidates = [
+  'audio/webm;codecs=opus',
+  'audio/mp4;codecs=mp4a.40.2',
+  'audio/ogg;codecs=opus',
+  'audio/webm',
+];
+const mimeType = candidates.find(t => MediaRecorder.isTypeSupported(t)) ?? '';
+const fileExt =
+  mimeType.startsWith('audio/mp4') ? 'm4a' :
+  mimeType.startsWith('audio/ogg') ? 'ogg' : 'webm';
 ```
 
-### 1. Add a small helper hook `useCurrentUserName()`
+### 3. Explicit bitrate + timesliced start
 
-New file `src/hooks/useCurrentUserName.ts` that returns a single string by combining `useAuth()` + `useUserPermissions()` using the fallback chain above. Centralizing this prevents future drift.
+```ts
+const recorder = new MediaRecorder(stream, {
+  mimeType,
+  audioBitsPerSecond: 64000,
+});
+recorder.start(250);
+```
 
-### 2. Replace every `user?.email?.split('@')[0]` usage
+### 4. Isolate the visualizer onto a cloned stream
 
-Files (all client-side, presentation only):
+The 5-bar animation keeps working, but `AudioContext` no longer touches the recording track:
 
-- `src/hooks/useChatMessages.ts` — 5 occurrences (sendMessage, sendPhoto, sendVoice, sendDocument paths)
-- `src/pages/Customers.tsx` — 6 occurrences (same send-message flows in the customers page chat)
-- `src/components/QuickActionsPanel.tsx` — 1 occurrence (`completed_by_name`)
-- `src/components/CustomerNotesSection.tsx` — 1 occurrence (`created_by_name`)
+```ts
+const vizStream = stream.clone();
+const audioContext = new AudioContext();
+const source = audioContext.createMediaStreamSource(vizStream);
+// ...connect analyser as today
+```
 
-In each file, replace the inline `email.split('@')[0]` with the value from the new `useCurrentUserName()` hook (or pass it in). The value is then sent as `sent_by_name` / `completed_by_name` / `created_by_name` when inserting into the DB, so going forward all new messages, notes, and action items will store the display name.
+In `recorder.onstop` and in `cancelRecording`, also stop `vizStream` tracks and close `audioContext`.
 
-### 3. Historical rows
+## Out of scope (per your decision)
 
-Existing messages/notes already in the DB will keep their old email-prefix `sent_by_name`. This plan does not rewrite history — it only fixes display going forward. If desired, a one-off backfill can be added later.
+- Telegram `sendVoice` behavior is unchanged — voice clips to Telegram will still go as native voice notes (Telegram re-encodes those server-side; that's a separate trade-off we'll leave alone).
+- No changes to `messenger-webhook` / `telegram-bot` edge functions.
+- No changes to playback UI in `ChatPanel.tsx`.
 
-### Out of scope
+## Verification
 
-- No schema changes, no RLS changes, no edge function changes.
-- No changes to how the display name is *edited* (still done on the Roles page).
-- Reading display names for *other* users in existing chat history is unchanged — UI already shows whatever `sent_by_name` was saved at send time.
-
-### Verification
-
-1. Set a custom Display Name for the logged-in user on `/user-roles`.
-2. Send a chat message → the green "sent by" badge shows the new display name (not the email prefix).
-3. Add a customer note and complete an action item → entries show the display name.
-4. Old messages still show their original stored name (expected).
+1. Record on desktop Chrome with speakers active → local preview is clean (no underwater).
+2. Switch output to Bluetooth headset, record again → still clean.
+3. Record on Android Chrome → still clean.
+4. Send to Messenger → recipient hears improved fidelity (no transcoding on that path).
+5. Send to Telegram → still arrives as a native voice note; quality matches today (capture is cleaner but Telegram's voice-note encoding is the cap).
+6. Confirm visualizer bars still animate while recording, and that stopping/canceling fully releases mic (no recording indicator left in browser tab).
