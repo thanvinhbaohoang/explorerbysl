@@ -659,22 +659,49 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   };
 
   // Voice recording functions
+  const vizStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      let mimeType = 'audio/webm';
-      let fileExt = 'webm';
-      if (MediaRecorder.isTypeSupported('audio/ogg')) {
-        mimeType = 'audio/ogg';
-        fileExt = 'ogg';
-      }
-      
-      const recorder = new MediaRecorder(stream, { mimeType });
+      // Tight mic constraints — disable AGC/NS which cause "underwater" artifacts.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+
+      // Codec preference — adds Safari/iOS (audio/mp4) support.
+      const candidates = [
+        'audio/webm;codecs=opus',
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/ogg;codecs=opus',
+        'audio/webm',
+      ];
+      const mimeType =
+        candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
+      const fileExt = mimeType.startsWith('audio/mp4')
+        ? 'm4a'
+        : mimeType.startsWith('audio/ogg')
+        ? 'ogg'
+        : 'webm';
+
+      const recorder = new MediaRecorder(stream, {
+        ...(mimeType ? { mimeType } : {}),
+        audioBitsPerSecond: 64000,
+      });
       const chunks: Blob[] = [];
 
+      // Visualizer runs on a CLONED stream so the AudioContext can't
+      // resample / corrupt the recording track.
+      const vizStream = stream.clone();
+      vizStreamRef.current = vizStream;
       const audioContext = new AudioContext();
-      const source = audioContext.createMediaStreamSource(stream);
+      audioContextRef.current = audioContext;
+      const source = audioContext.createMediaStreamSource(vizStream);
       const analyserNode = audioContext.createAnalyser();
       analyserNode.fftSize = 32;
       source.connect(analyserNode);
@@ -683,35 +710,55 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       const updateLevels = () => {
         const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
         analyserNode.getByteFrequencyData(dataArray);
-        const levels = Array.from(dataArray.slice(0, 5)).map(v => v / 255);
+        const levels = Array.from(dataArray.slice(0, 5)).map((v) => v / 255);
         setAudioLevels(levels);
         animationFrameRef.current = requestAnimationFrame(updateLevels);
       };
       updateLevels();
+
+      const cleanupViz = () => {
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+        if (vizStreamRef.current) {
+          vizStreamRef.current.getTracks().forEach((t) => t.stop());
+          vizStreamRef.current = null;
+        }
+        if (audioContextRef.current) {
+          audioContextRef.current.close().catch(() => {});
+          audioContextRef.current = null;
+        }
+        setAnalyser(null);
+        setAudioLevels([0, 0, 0, 0, 0]);
+      };
 
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunks.push(e.data);
       };
 
       recorder.onstop = () => {
-        stream.getTracks().forEach(track => track.stop());
-        audioContext.close();
-        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-        setAnalyser(null);
-        setAudioLevels([0, 0, 0, 0, 0]);
-        
-        const audioBlob = new Blob(chunks, { type: mimeType });
-        const audioFile = new File([audioBlob], `voice_${Date.now()}.${fileExt}`, { type: mimeType });
+        stream.getTracks().forEach((track) => track.stop());
+        cleanupViz();
+
+        const blobType = mimeType || 'audio/webm';
+        const audioBlob = new Blob(chunks, { type: blobType });
+        const audioFile = new File(
+          [audioBlob],
+          `voice_${Date.now()}.${fileExt}`,
+          { type: blobType }
+        );
         const audioUrl = URL.createObjectURL(audioBlob);
         setRecordedAudio({ file: audioFile, url: audioUrl });
       };
 
-      recorder.start();
+      recorder.start(250); // timesliced — avoids first-second corruption on long clips
       setMediaRecorder(recorder);
       setIsRecording(true);
       setRecordingDuration(0);
 
-      const interval = setInterval(() => setRecordingDuration(prev => prev + 1), 1000);
+      const interval = setInterval(
+        () => setRecordingDuration((prev) => prev + 1),
+        1000
+      );
       recordingIntervalRef.current = interval;
     } catch (error) {
       console.error('Error starting recording:', error);
@@ -742,6 +789,15 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       recordingIntervalRef.current = null;
     }
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    animationFrameRef.current = null;
+    if (vizStreamRef.current) {
+      vizStreamRef.current.getTracks().forEach((t) => t.stop());
+      vizStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
     setAnalyser(null);
     setAudioLevels([0, 0, 0, 0, 0]);
     setRecordingDuration(0);
