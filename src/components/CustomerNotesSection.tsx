@@ -21,6 +21,7 @@ interface CustomerNotesSectionProps {
 
 export function CustomerNotesSection({ customerId }: CustomerNotesSectionProps) {
   const { user } = useAuth();
+  const currentUserName = useCurrentUserName("Unknown");
   const [notes, setNotes] = useState<CustomerNote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [newNoteText, setNewNoteText] = useState("");
