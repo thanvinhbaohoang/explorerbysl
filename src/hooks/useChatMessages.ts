@@ -69,6 +69,7 @@ interface LinkedCustomerInfo {
 
 export const useChatMessages = (selectedCustomer: Customer | null) => {
   const { user } = useAuth();
+  const currentUserName = useCurrentUserName();
   const queryClient = useQueryClient();
   const messagesPerPage = 50;
 
