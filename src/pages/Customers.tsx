@@ -151,6 +151,7 @@ const Customers = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { permissions, isAdmin } = useUserPermissions();
+  const currentUserName = useCurrentUserName();
   const queryClient = useQueryClient();
   const { isEnabled: messengerEnabled } = useMessengerIntegration();
   const [customersPage, setCustomersPage] = useState(1);
