@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCustomersData } from "@/hooks/useCustomersData";
 import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
+import { useCurrentUserName } from "@/hooks/useCurrentUserName";
 import { toast } from "sonner";
 import { playMessageNotification, playNewCustomerNotification } from "@/lib/notification-sound";
 import { processFileForUpload } from "@/lib/image-conversion";
