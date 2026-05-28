@@ -1,79 +1,33 @@
-## Goal
+# Fix infinite "Loading Messages" on fast chat switching
 
-Eliminate the "underwater / muffled" distortion heard in recorded voice messages (visible already in the local preview, before sending).
+## Root cause
 
-## Root cause recap
+In `src/hooks/useChatMessages.ts`:
 
-In `src/hooks/useChatMessages.ts` `startRecording()`:
+1. A `useEffect` (lines 105–109) **unconditionally sets `isLoadingMessages = true`** every time `selectedCustomer.id` changes.
+2. `loadMessages` (line 193) **early-returns on a cache hit** (lines 259–267) **without ever calling `setIsLoadingMessages(false)`**. The `finally` block that clears the flag is only reached on the network path.
 
-- `getUserMedia({ audio: true })` uses Chrome defaults — `autoGainControl` and `noiseSuppression` on, no channel/rate hints.
-- An `AudioContext` + `AnalyserNode` is connected directly to the live mic stream. Chrome then resamples that stream through the context (often at a mismatched rate vs. the mic track), and the artifact ends up in what `MediaRecorder` captures.
-- No `audioBitsPerSecond`, suboptimal codec preference order.
+Result: when you switch to a conversation whose messages are already in `messagesCache` (which happens constantly when bouncing back and forth between two chats), the loader is flipped on by the effect, the cache branch paints the messages and returns, and the loader is never flipped off → infinite "Loading Messages…" overlay even though the messages are actually rendered underneath.
 
-## Changes (single file: `src/hooks/useChatMessages.ts`)
+A secondary race also exists: there is no guard against an in-flight `loadMessages(A)` resolving after the user has already selected B. The late resolution can overwrite B's `messages`, `messageOffset`, `hasMoreMessages`, `linkedCustomersMap`, and clobber the loading state with values from the stale conversation.
 
-### 1. Tighter mic constraints
+## Fix (single file: `src/hooks/useChatMessages.ts`)
 
-```ts
-const stream = await navigator.mediaDevices.getUserMedia({
-  audio: {
-    channelCount: 1,
-    echoCancellation: true,
-    noiseSuppression: false,
-    autoGainControl: false,
-  },
-});
-```
+1. **Cache hit must clear the loading flag.** In the early-return block at lines 259–267, call `setIsLoadingMessages(false)` (and `setIsLoadingMoreMessages(false)` for safety) before `return`.
 
-### 2. Better codec preference (adds Safari/iOS support)
+2. **Guard against stale fetches on fast switching.** Add a ref like `activeCustomerIdRef` that tracks the most recently requested customer id:
+   - Set `activeCustomerIdRef.current = customer.id` at the top of `loadMessages` (only when `offset === 0`).
+   - Before every `setMessages / setMessageOffset / setHasMoreMessages / setLinkedCustomerIds / setLinkedCustomersMap / setIsLoadingMessages(false)` that happens after an `await`, check `if (activeCustomerIdRef.current !== customer.id) return;` so a late response for the previous conversation cannot overwrite the current one or wedge the loading state.
+   - Apply the same guard in the cache-hit branch (a cache hit for the now-stale customer should also be a no-op).
+   - In the `finally` block, only clear loading flags when the request is still the active one.
 
-```ts
-const candidates = [
-  'audio/webm;codecs=opus',
-  'audio/mp4;codecs=mp4a.40.2',
-  'audio/ogg;codecs=opus',
-  'audio/webm',
-];
-const mimeType = candidates.find(t => MediaRecorder.isTypeSupported(t)) ?? '';
-const fileExt =
-  mimeType.startsWith('audio/mp4') ? 'm4a' :
-  mimeType.startsWith('audio/ogg') ? 'ogg' : 'webm';
-```
+3. **Keep the "reset loading on customer change" effect** at lines 105–109 — it's correct intent, just needs the two fixes above so it always gets cleared.
 
-### 3. Explicit bitrate + timesliced start
-
-```ts
-const recorder = new MediaRecorder(stream, {
-  mimeType,
-  audioBitsPerSecond: 64000,
-});
-recorder.start(250);
-```
-
-### 4. Isolate the visualizer onto a cloned stream
-
-The 5-bar animation keeps working, but `AudioContext` no longer touches the recording track:
-
-```ts
-const vizStream = stream.clone();
-const audioContext = new AudioContext();
-const source = audioContext.createMediaStreamSource(vizStream);
-// ...connect analyser as today
-```
-
-In `recorder.onstop` and in `cancelRecording`, also stop `vizStream` tracks and close `audioContext`.
-
-## Out of scope (per your decision)
-
-- Telegram `sendVoice` behavior is unchanged — voice clips to Telegram will still go as native voice notes (Telegram re-encodes those server-side; that's a separate trade-off we'll leave alone).
-- No changes to `messenger-webhook` / `telegram-bot` edge functions.
-- No changes to playback UI in `ChatPanel.tsx`.
+No changes to UI components, edge functions, or message-sending logic. The voice-recording work from the previous turn stays untouched.
 
 ## Verification
 
-1. Record on desktop Chrome with speakers active → local preview is clean (no underwater).
-2. Switch output to Bluetooth headset, record again → still clean.
-3. Record on Android Chrome → still clean.
-4. Send to Messenger → recipient hears improved fidelity (no transcoding on that path).
-5. Send to Telegram → still arrives as a native voice note; quality matches today (capture is cleaner but Telegram's voice-note encoding is the cap).
-6. Confirm visualizer bars still animate while recording, and that stopping/canceling fully releases mic (no recording indicator left in browser tab).
+- Rapidly click back and forth between two conversations in `/chat`. The "Loading Messages" overlay should disappear as soon as either cached or freshly fetched messages are rendered, every time.
+- Open conversation A (cold) → switch to B (cold) → switch back to A: A should snap in from cache instantly with no spinner.
+- Network-throttled: start opening A, immediately click B before A finishes. B must end up displayed; the late A response must not overwrite B or leave the spinner on.
+- Pagination ("Load more") and a normal cold load of a brand-new conversation still work.

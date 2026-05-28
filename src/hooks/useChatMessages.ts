@@ -101,9 +101,13 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   const [audioLevels, setAudioLevels] = useState<number[]>([0, 0, 0, 0, 0]);
   const animationFrameRef = useRef<number | null>(null);
 
+  // Tracks the most recently requested customer to guard against stale fetches
+  const activeCustomerIdRef = useRef<string | null>(selectedCustomer?.id ?? null);
+
   // Reset loading state immediately when customer changes
   useEffect(() => {
     if (selectedCustomer?.id) {
+      activeCustomerIdRef.current = selectedCustomer.id;
       setIsLoadingMessages(true);
     }
   }, [selectedCustomer?.id]);
