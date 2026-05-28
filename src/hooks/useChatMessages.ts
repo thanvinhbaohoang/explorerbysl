@@ -101,9 +101,13 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   const [audioLevels, setAudioLevels] = useState<number[]>([0, 0, 0, 0, 0]);
   const animationFrameRef = useRef<number | null>(null);
 
+  // Tracks the most recently requested customer to guard against stale fetches
+  const activeCustomerIdRef = useRef<string | null>(selectedCustomer?.id ?? null);
+
   // Reset loading state immediately when customer changes
   useEffect(() => {
     if (selectedCustomer?.id) {
+      activeCustomerIdRef.current = selectedCustomer.id;
       setIsLoadingMessages(true);
     }
   }, [selectedCustomer?.id]);
@@ -192,10 +196,13 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   // Load messages for customer
   const loadMessages = async (customer: Customer, offset = 0, forceRefresh = false) => {
     if (offset === 0) {
+      activeCustomerIdRef.current = customer.id;
       const initialPlatform = customer.messenger_id ? 'messenger' : 'telegram';
       setPlatformFilter(initialPlatform);
     }
-    
+
+    const isStale = () => offset === 0 && activeCustomerIdRef.current !== customer.id;
+
     const allCustomerIds = [customer.id];
     const linkedMap: Record<string, LinkedCustomerInfo> = {};
     
@@ -247,7 +254,9 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     } catch (err) {
       console.error("Error fetching linked customers:", err);
     }
-    
+
+    if (isStale()) return;
+
     setLinkedCustomerIds(allCustomerIds);
     setLinkedCustomersMap(linkedMap);
     
@@ -257,12 +266,15 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     
     // Check cache
     if (offset === 0 && !forceRefresh && messagesCache[cacheKey]?.length > 0) {
+      if (isStale()) return;
       setMessages(messagesCache[cacheKey]);
       const meta = messageMetaCache[cacheKey];
       if (meta) {
         setMessageOffset(meta.offset);
         setHasMoreMessages(meta.hasMore);
       }
+      setIsLoadingMessages(false);
+      setIsLoadingMoreMessages(false);
       return;
     }
     
@@ -280,11 +292,11 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         .select("*", { count: "exact", head: true })
         .in("customer_id", allCustomerIds);
 
+      if (isStale()) return;
+
       const totalMessages = count || 0;
       const newOffset = offset + messagesPerPage;
       const hasMore = newOffset < totalMessages;
-      setHasMoreMessages(hasMore);
-      setMessageOffset(newOffset);
 
       const { data, error } = await supabase
         .from("messages")
@@ -294,7 +306,11 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         .range(offset, offset + messagesPerPage - 1);
 
       if (error) throw error;
-      
+      if (isStale()) return;
+
+      setHasMoreMessages(hasMore);
+      setMessageOffset(newOffset);
+
       const messagesData = (data || []).reverse();
       
       if (offset === 0) {
@@ -326,10 +342,12 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
     } catch (error) {
       console.error("Error fetching messages:", error);
-      toast.error("Failed to load messages");
+      if (!isStale()) toast.error("Failed to load messages");
     } finally {
-      setIsLoadingMessages(false);
-      setIsLoadingMoreMessages(false);
+      if (offset !== 0 || activeCustomerIdRef.current === customer.id) {
+        setIsLoadingMessages(false);
+        setIsLoadingMoreMessages(false);
+      }
     }
   };
 
