@@ -175,7 +175,7 @@ const Traffic = () => {
   const endDateStr = endDate ? format(new Date(endDate.getTime() + 86400000), 'yyyy-MM-dd') : undefined;
 
   // Use cached traffic data
-  const { data: trafficResult, isLoading: isLoadingTraffic } = useTrafficData({
+  const { data: trafficResult, isLoading: isLoadingTraffic, refetch: refetchTraffic, isFetching: isFetchingTraffic } = useTrafficData({
     page: trafficPage,
     searchTerm: debouncedSearchTerm,
     sourceFilter,
