@@ -175,7 +175,7 @@ const Traffic = () => {
   const endDateStr = endDate ? format(new Date(endDate.getTime() + 86400000), 'yyyy-MM-dd') : undefined;
 
   // Use cached traffic data
-  const { data: trafficResult, isLoading: isLoadingTraffic } = useTrafficData({
+  const { data: trafficResult, isLoading: isLoadingTraffic, refetch: refetchTraffic, isFetching: isFetchingTraffic } = useTrafficData({
     page: trafficPage,
     searchTerm: debouncedSearchTerm,
     sourceFilter,
@@ -404,6 +404,15 @@ const Traffic = () => {
                 Export CSV
               </Button>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetchTraffic()}
+              disabled={isFetchingTraffic}
+            >
+              <TrendingUp className={cn("h-4 w-4 mr-2", isFetchingTraffic && "animate-pulse")} />
+              {isFetchingTraffic ? "Refreshing…" : "Refresh"}
+            </Button>
           </div>
         </div>
 
