@@ -206,7 +206,8 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
 
       return { data: trafficWithCustomers as TrafficData[], total: count || 0 };
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
     gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 };
