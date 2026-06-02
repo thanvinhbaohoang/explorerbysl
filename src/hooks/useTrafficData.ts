@@ -80,6 +80,24 @@ interface TrafficQueryParams {
 
 export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?: boolean }) => {
   const { page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, itemsPerPage, messengerEnabled = true } = params;
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("telegram_leads_traffic")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "telegram_leads" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["traffic"] });
+          queryClient.invalidateQueries({ queryKey: ["traffic-filter-options"] });
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   return useQuery({
     queryKey: ["traffic", page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, messengerEnabled],
