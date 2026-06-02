@@ -1,33 +1,42 @@
-# Fix infinite "Loading Messages" on fast chat switching
+# Why traffic stopped on 2026-05-22
 
-## Root cause
+## Root cause (confirmed)
 
-In `src/hooks/useChatMessages.ts`:
+The `capture-traffic` edge function is returning **500** on every call since 5/22. Edge function logs show:
 
-1. A `useEffect` (lines 105–109) **unconditionally sets `isLoadingMessages = true`** every time `selectedCustomer.id` changes.
-2. `loadMessages` (line 193) **early-returns on a cache hit** (lines 259–267) **without ever calling `setIsLoadingMessages(false)`**. The `finally` block that clears the flag is only reached on the network path.
+```
+ERROR Database insert error: {
+  code: "PGRST204",
+  message: "Could not find the 'utm_ad_id' column of 'telegram_leads' in the schema cache"
+}
+```
 
-Result: when you switch to a conversation whose messages are already in `messagesCache` (which happens constantly when bouncing back and forth between two chats), the loader is flipped on by the effect, the cache branch paints the messages and returns, and the loader is never flipped off → infinite "Loading Messages…" overlay even though the messages are actually rendered underneath.
+The deployed edge function tries to insert `utm_ad_id`, `utm_adset_id`, and `utm_campaign_id` (fields the `/redirect` page started sending), but those columns do not exist on `public.telegram_leads`. Every `/redirect` and `/telegram` visit fails silently — the user is still redirected to Telegram, but no lead row is written. Direct `/start` chats with the bot still work, which is why messages keep arriving but Traffic stays empty.
 
-A secondary race also exists: there is no guard against an in-flight `loadMessages(A)` resolving after the user has already selected B. The late resolution can overwrite B's `messages`, `messageOffset`, `hasMoreMessages`, `linkedCustomersMap`, and clobber the loading state with values from the stale conversation.
+Background checks done:
+- `telegram_leads` last row: 2026-05-22 17:27 UTC.
+- Telegram bot still receiving messages today (so users + bot are fine).
+- Direct SQL insert into `telegram_leads` works — only the PostgREST insert fails.
+- Manual `curl` to the edge function reproduces the 500.
 
-## Fix (single file: `src/hooks/useChatMessages.ts`)
+## Fix
 
-1. **Cache hit must clear the loading flag.** In the early-return block at lines 259–267, call `setIsLoadingMessages(false)` (and `setIsLoadingMoreMessages(false)` for safety) before `return`.
+Add the three missing columns to `telegram_leads` so the captured ad-level attribution actually gets stored. This matches what `Redirect.tsx` already collects and what the deployed edge function tries to insert.
 
-2. **Guard against stale fetches on fast switching.** Add a ref like `activeCustomerIdRef` that tracks the most recently requested customer id:
-   - Set `activeCustomerIdRef.current = customer.id` at the top of `loadMessages` (only when `offset === 0`).
-   - Before every `setMessages / setMessageOffset / setHasMoreMessages / setLinkedCustomerIds / setLinkedCustomersMap / setIsLoadingMessages(false)` that happens after an `await`, check `if (activeCustomerIdRef.current !== customer.id) return;` so a late response for the previous conversation cannot overwrite the current one or wedge the loading state.
-   - Apply the same guard in the cache-hit branch (a cache hit for the now-stale customer should also be a no-op).
-   - In the `finally` block, only clear loading flags when the request is still the active one.
+Migration:
+```sql
+ALTER TABLE public.telegram_leads
+  ADD COLUMN IF NOT EXISTS utm_adset_id text,
+  ADD COLUMN IF NOT EXISTS utm_ad_id text,
+  ADD COLUMN IF NOT EXISTS utm_campaign_id text;
+```
 
-3. **Keep the "reset loading on customer change" effect** at lines 105–109 — it's correct intent, just needs the two fixes above so it always gets cleared.
+Also reconcile the repo copy of `supabase/functions/capture-traffic/index.ts` so its `insert({...})` includes the three new fields (the version in the repo is older than what is deployed — without this, the next push would regress the fix).
 
-No changes to UI components, edge functions, or message-sending logic. The voice-recording work from the previous turn stays untouched.
+No frontend changes needed. After the migration runs and the function is redeployed, new visits to `/redirect` and `/telegram` will land in `telegram_leads` again and the Traffic page will repopulate.
 
 ## Verification
 
-- Rapidly click back and forth between two conversations in `/chat`. The "Loading Messages" overlay should disappear as soon as either cached or freshly fetched messages are rendered, every time.
-- Open conversation A (cold) → switch to B (cold) → switch back to A: A should snap in from cache instantly with no spinner.
-- Network-throttled: start opening A, immediately click B before A finishes. B must end up displayed; the late A response must not overwrite B or leave the spinner on.
-- Pagination ("Load more") and a normal cold load of a brand-new conversation still work.
+1. `curl -X POST .../functions/v1/capture-traffic -d '{"platform":"telegram","utm_ad_id":"x"}'` returns 200 with an `id`.
+2. New row appears in `telegram_leads` with `utm_ad_id = 'x'`.
+3. Visit `/redirect?fbclid=test&utm_ad_id=123` → row written, Traffic page shows it.

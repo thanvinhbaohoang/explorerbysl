@@ -511,7 +511,10 @@ export type Database = {
           referrer: string | null
           updated_at: string | null
           user_id: string | null
+          utm_ad_id: string | null
+          utm_adset_id: string | null
           utm_campaign: string | null
+          utm_campaign_id: string | null
           utm_content: string | null
           utm_medium: string | null
           utm_source: string | null
@@ -529,7 +532,10 @@ export type Database = {
           referrer?: string | null
           updated_at?: string | null
           user_id?: string | null
+          utm_ad_id?: string | null
+          utm_adset_id?: string | null
           utm_campaign?: string | null
+          utm_campaign_id?: string | null
           utm_content?: string | null
           utm_medium?: string | null
           utm_source?: string | null
@@ -547,7 +553,10 @@ export type Database = {
           referrer?: string | null
           updated_at?: string | null
           user_id?: string | null
+          utm_ad_id?: string | null
+          utm_adset_id?: string | null
           utm_campaign?: string | null
+          utm_campaign_id?: string | null
           utm_content?: string | null
           utm_medium?: string | null
           utm_source?: string | null
