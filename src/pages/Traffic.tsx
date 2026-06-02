@@ -404,6 +404,15 @@ const Traffic = () => {
                 Export CSV
               </Button>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetchTraffic()}
+              disabled={isFetchingTraffic}
+            >
+              <TrendingUp className={cn("h-4 w-4 mr-2", isFetchingTraffic && "animate-pulse")} />
+              {isFetchingTraffic ? "Refreshing…" : "Refresh"}
+            </Button>
           </div>
         </div>
 
