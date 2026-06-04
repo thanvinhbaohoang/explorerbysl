@@ -100,27 +100,22 @@ const CustomerDetail = () => {
       const { data, error } = await supabase.functions.invoke('backfill-profile-pics', {
         body: { customer_id: accountId },
       });
+      let payload: any = data;
       if (error) {
-        // Try to extract Graph error body from non-2xx response
         const ctx: any = (error as any).context;
-        let detail = error.message;
         try {
           const txt = await ctx?.text?.();
-          if (txt) {
-            const parsed = JSON.parse(txt);
-            detail = parsed.error || parsed.attempts?.[0]?.error || txt;
-          }
+          if (txt) payload = JSON.parse(txt);
         } catch { /* ignore */ }
-        toast.error('Refresh failed', { description: String(detail) });
-      } else if (data?.success) {
-        toast.success(`Updated to ${data.name}`, {
-          description: `Source: ${data.source}${data.profile_pic ? ' · photo refreshed' : ''}`,
+      }
+      if (payload?.success) {
+        toast.success(`Updated: ${payload.name}`, {
+          description: 'Profile refreshed from Facebook',
         });
         if (id) await fetchUnifiedCustomerData(id);
       } else {
-        const firstAttempt = data?.attempts?.[0]?.error;
-        toast.error('Facebook rejected the lookup', {
-          description: firstAttempt || data?.error || 'Unknown error',
+        toast.error('Refresh failed', {
+          description: payload?.error || error?.message || 'Unknown error',
         });
       }
     } catch (err: any) {
