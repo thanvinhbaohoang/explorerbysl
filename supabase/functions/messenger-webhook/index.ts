@@ -244,7 +244,9 @@ async function verifySignature(payload: string, signature: string): Promise<bool
 
 // Try a single Graph API profile fetch with a given token. Returns parsed profile or null.
 async function tryFetchProfile(psid: string, token: string, source: string, pageId: string) {
-  const url = `https://graph.facebook.com/v19.0/${psid}?fields=first_name,last_name,name,profile_pic,locale,timezone&access_token=${token}`;
+  // NOTE: do NOT add locale/timezone — those require pages_user_locale / pages_user_timezone
+  // approval; including them causes the whole call to fail with (#100) subcode 2018247.
+  const url = `https://graph.facebook.com/v19.0/${psid}?fields=name,first_name,last_name,profile_pic&access_token=${token}`;
   try {
     const response = await fetch(url);
     const bodyText = await response.text();
