@@ -798,10 +798,9 @@ const FacebookPages = () => {
                   <Button
                     onClick={syncPages}
                     disabled={syncing}
-                    variant="outline"
                   >
                     <Database className={`h-4 w-4 mr-2 ${syncing ? 'animate-pulse' : ''}`} />
-                    {syncing ? 'Syncing...' : 'Sync to DB'}
+                    {syncing ? 'Re-syncing...' : 'Re-sync tokens from System User'}
                   </Button>
                   <Button
                     onClick={() => { fetchPages(); fetchAppInfo(); }}
