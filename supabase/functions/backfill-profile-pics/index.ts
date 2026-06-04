@@ -287,11 +287,16 @@ async function refreshSingleCustomer(customerId: string): Promise<any> {
   if (error) return { success: false, error: `DB error: ${error.message}` };
   if (!customer) return { success: false, error: 'Customer not found' };
   if (!customer.messenger_id) return { success: false, error: 'Customer has no messenger_id' };
-  if (!SYSTEM_USER_TOKEN) return { success: false, error: 'FACEBOOK_SYSTEM_USER_TOKEN not configured' };
+
+  const { token: SYSTEM_USER_TOKEN, source: tokenSource } = await getSystemUserToken();
+  if (!SYSTEM_USER_TOKEN) {
+    return { success: false, error: 'System User Token not configured (checked bot_settings + FACEBOOK_SYSTEM_USER_TOKEN env)' };
+  }
 
   const url = `https://graph.facebook.com/v19.0/${customer.messenger_id}?fields=name,first_name,profile_pic&access_token=${SYSTEM_USER_TOKEN}`;
   const maskedUrl = url.replace(SYSTEM_USER_TOKEN, `${SYSTEM_USER_TOKEN.slice(0, 8)}…${SYSTEM_USER_TOKEN.slice(-4)}`);
   const tokenMeta = {
+    source: tokenSource,
     length: SYSTEM_USER_TOKEN.length,
     prefix: SYSTEM_USER_TOKEN.slice(0, 8),
     suffix: SYSTEM_USER_TOKEN.slice(-4),
