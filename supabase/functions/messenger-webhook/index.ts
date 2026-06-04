@@ -242,52 +242,54 @@ async function verifySignature(payload: string, signature: string): Promise<bool
   return expectedSignature === signature;
 }
 
-// Fetch user profile from Facebook using page token from DB
-async function getUserProfile(psid: string, pageId: string) {
-  const token = await getPageToken(pageId);
-
-  if (!token) {
-    console.error(`[profile-fetch] No page token for page=${pageId} psid=${psid}`);
-    return null;
-  }
-
-  const url = `https://graph.facebook.com/v18.0/${psid}?fields=first_name,last_name,profile_pic,locale,timezone&access_token=${token}`;
-
+// Try a single Graph API profile fetch with a given token. Returns parsed profile or null.
+async function tryFetchProfile(psid: string, token: string, source: string, pageId: string) {
+  const url = `https://graph.facebook.com/v19.0/${psid}?fields=first_name,last_name,name,profile_pic,locale,timezone&access_token=${token}`;
   try {
     const response = await fetch(url);
     const bodyText = await response.text();
-
     if (!response.ok) {
-      console.error(
-        `[profile-fetch] FAILED page=${pageId} psid=${psid} status=${response.status} body=${bodyText}`
-      );
+      console.error(`[profile-fetch] FAILED via=${source} page=${pageId} psid=${psid} status=${response.status} body=${bodyText}`);
       return null;
     }
-
     let parsed: any;
     try { parsed = JSON.parse(bodyText); } catch {
-      console.error(`[profile-fetch] Non-JSON success body page=${pageId} psid=${psid}: ${bodyText}`);
+      console.error(`[profile-fetch] Non-JSON via=${source} page=${pageId} psid=${psid}: ${bodyText}`);
       return null;
     }
-
     if (parsed?.error) {
-      console.error(
-        `[profile-fetch] Graph error page=${pageId} psid=${psid} body=${bodyText}`
-      );
+      console.error(`[profile-fetch] Graph error via=${source} page=${pageId} psid=${psid} body=${bodyText}`);
       return null;
     }
-
-    if (!parsed?.first_name && !parsed?.last_name) {
-      console.warn(
-        `[profile-fetch] Empty name fields page=${pageId} psid=${psid} body=${bodyText}`
-      );
+    if (!parsed?.first_name && !parsed?.last_name && !parsed?.name) {
+      console.warn(`[profile-fetch] Empty name via=${source} page=${pageId} psid=${psid} body=${bodyText}`);
+      return null;
     }
-
+    if (!parsed.first_name && parsed.name) {
+      const parts = String(parsed.name).trim().split(/\s+/);
+      parsed.first_name = parts.shift() || '';
+      parsed.last_name = parts.join(' ');
+    }
+    console.log(`[profile-fetch] success via=${source} page=${pageId} psid=${psid} name="${parsed.first_name} ${parsed.last_name || ''}"`);
     return parsed;
   } catch (error) {
-    console.error(`[profile-fetch] Exception page=${pageId} psid=${psid}:`, error);
+    console.error(`[profile-fetch] Exception via=${source} page=${pageId} psid=${psid}:`, error);
     return null;
   }
+}
+
+// Fetch user profile - prefer system user token, fall back to page token.
+async function getUserProfile(psid: string, pageId: string) {
+  if (systemUserToken) {
+    const profile = await tryFetchProfile(psid, systemUserToken, 'system_user_token', pageId);
+    if (profile) return profile;
+  }
+  const token = await getPageToken(pageId);
+  if (!token) {
+    console.error(`[profile-fetch] No page token fallback for page=${pageId} psid=${psid}`);
+    return null;
+  }
+  return await tryFetchProfile(psid, token, 'page_token', pageId);
 }
 
 // Send message via Facebook Send API using page token from DB
