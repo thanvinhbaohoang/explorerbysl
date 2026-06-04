@@ -22,7 +22,8 @@ import {
   MapPin,
   Image as ImageIcon,
   Link,
-  Unlink
+  Unlink,
+  RefreshCw
 } from "lucide-react";
 
 interface Customer {
