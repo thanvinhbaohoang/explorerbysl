@@ -285,6 +285,28 @@ const FacebookPages = () => {
 
   // Backfill profile pics + names for Unknown / missing-pic customers
   const [backfillRunning, setBackfillRunning] = useState(false);
+  const [diagnoseRunning, setDiagnoseRunning] = useState(false);
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+  const [diagnoseResult, setDiagnoseResult] = useState<any>(null);
+
+  const runTokenDiagnose = async () => {
+    setDiagnoseRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('backfill-profile-pics', {
+        body: { mode: 'diagnose' },
+      });
+      if (error) {
+        toast.error('Diagnostic failed', { description: error.message });
+      } else {
+        setDiagnoseResult(data);
+        setDiagnoseOpen(true);
+      }
+    } catch (err: any) {
+      toast.error('Diagnostic failed', { description: err.message });
+    } finally {
+      setDiagnoseRunning(false);
+    }
+  };
   const runBackfillProfiles = async () => {
     setBackfillRunning(true);
     try {
