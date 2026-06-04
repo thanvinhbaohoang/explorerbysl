@@ -92,6 +92,43 @@ const CustomerDetail = () => {
   const [unifiedData, setUnifiedData] = useState<UnifiedCustomerData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+
+  const refreshMessengerProfile = async (accountId: string) => {
+    setRefreshingId(accountId);
+    try {
+      const { data, error } = await supabase.functions.invoke('backfill-profile-pics', {
+        body: { customer_id: accountId },
+      });
+      if (error) {
+        // Try to extract Graph error body from non-2xx response
+        const ctx: any = (error as any).context;
+        let detail = error.message;
+        try {
+          const txt = await ctx?.text?.();
+          if (txt) {
+            const parsed = JSON.parse(txt);
+            detail = parsed.error || parsed.attempts?.[0]?.error || txt;
+          }
+        } catch { /* ignore */ }
+        toast.error('Refresh failed', { description: String(detail) });
+      } else if (data?.success) {
+        toast.success(`Updated to ${data.name}`, {
+          description: `Source: ${data.source}${data.profile_pic ? ' · photo refreshed' : ''}`,
+        });
+        if (id) await fetchUnifiedCustomerData(id);
+      } else {
+        const firstAttempt = data?.attempts?.[0]?.error;
+        toast.error('Facebook rejected the lookup', {
+          description: firstAttempt || data?.error || 'Unknown error',
+        });
+      }
+    } catch (err: any) {
+      toast.error('Refresh failed', { description: err.message });
+    } finally {
+      setRefreshingId(null);
+    }
+  };
 
   useEffect(() => {
     if (id) {
