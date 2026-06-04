@@ -282,6 +282,26 @@ const FacebookPages = () => {
       setCleanupRunning(false);
     }
   };
+
+  // Backfill profile pics + names for Unknown / missing-pic customers
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const runBackfillProfiles = async () => {
+    setBackfillRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('backfill-profile-pics', {
+        body: { limit: 200 },
+      });
+      if (error) throw error;
+      const r = data as { processed: number; updated: number; failed: number; remaining: number };
+      toast.success('Profile backfill complete', {
+        description: `Processed ${r.processed} · Updated ${r.updated} · Failed ${r.failed} · Remaining ${r.remaining}`,
+      });
+    } catch (err: any) {
+      toast.error('Backfill failed', { description: err.message });
+    } finally {
+      setBackfillRunning(false);
+    }
+  };
   
   // Fetch database pages for token management
   const fetchDbPages = async () => {
