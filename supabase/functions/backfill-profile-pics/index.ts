@@ -29,14 +29,22 @@ async function getActivePageTokens(): Promise<Array<{ page_id: string; access_to
   return data;
 }
 
-// Try to fetch Messenger profile using a page token
-async function fetchMessengerProfile(messengerId: string, pageToken: string): Promise<any | null> {
+// Try fetching Messenger profile - prefers system user token, falls back to a page token.
+const SYSTEM_USER_TOKEN = Deno.env.get("FACEBOOK_SYSTEM_USER_TOKEN");
+
+async function fetchMessengerProfile(messengerId: string, token: string): Promise<any | null> {
   try {
-    const url = `https://graph.facebook.com/v18.0/${messengerId}?fields=first_name,last_name,profile_pic,locale,timezone&access_token=${pageToken}`;
+    const url = `https://graph.facebook.com/v19.0/${messengerId}?fields=first_name,last_name,name,profile_pic,locale,timezone&access_token=${token}`;
     const response = await fetch(url);
     if (!response.ok) return null;
     const profile = await response.json();
     if (profile.error) return null;
+    if (!profile.first_name && profile.name) {
+      const parts = String(profile.name).trim().split(/\s+/);
+      profile.first_name = parts.shift() || '';
+      profile.last_name = parts.join(' ');
+    }
+    if (!profile.first_name && !profile.last_name) return null;
     return profile;
   } catch {
     return null;
