@@ -259,36 +259,127 @@ async function backfillProfilePics(limit: number = 50): Promise<{
   return results;
 }
 
+// Single-customer refresh with verbose result (used by CustomerDetail "Refresh from Facebook" button)
+async function refreshSingleCustomer(customerId: string): Promise<any> {
+  const { data: customer, error } = await supabase
+    .from('customer')
+    .select('id, messenger_id, messenger_name, page_id')
+    .eq('id', customerId)
+    .maybeSingle();
+
+  if (error) return { success: false, error: `DB error: ${error.message}` };
+  if (!customer) return { success: false, error: 'Customer not found' };
+  if (!customer.messenger_id) return { success: false, error: 'Customer has no messenger_id' };
+
+  const activePages = await getActivePageTokens();
+  const attempts: Array<{ source: string; error?: string }> = [];
+  let profile: any = null;
+  let source: 'system_user_token' | 'page_token' | null = null;
+  let sourcePageId: string | null = customer.page_id || null;
+
+  const fetchRaw = async (token: string, label: string) => {
+    const url = `https://graph.facebook.com/v19.0/${customer.messenger_id}?fields=first_name,last_name,name,profile_pic,locale,timezone&access_token=${token}`;
+    const r = await fetch(url);
+    const txt = await r.text();
+    if (!r.ok) { attempts.push({ source: label, error: `HTTP ${r.status}: ${txt}` }); return null; }
+    let p: any; try { p = JSON.parse(txt); } catch { attempts.push({ source: label, error: `Non-JSON: ${txt}` }); return null; }
+    if (p?.error) { attempts.push({ source: label, error: p.error.message || JSON.stringify(p.error) }); return null; }
+    if (!p.first_name && p.name) {
+      const parts = String(p.name).trim().split(/\s+/);
+      p.first_name = parts.shift() || ''; p.last_name = parts.join(' ');
+    }
+    if (!p.first_name && !p.last_name) { attempts.push({ source: label, error: 'Empty name fields' }); return null; }
+    return p;
+  };
+
+  if (SYSTEM_USER_TOKEN) {
+    profile = await fetchRaw(SYSTEM_USER_TOKEN, 'system_user_token');
+    if (profile) source = 'system_user_token';
+  } else {
+    attempts.push({ source: 'system_user_token', error: 'FACEBOOK_SYSTEM_USER_TOKEN not set' });
+  }
+
+  if (!profile) {
+    const pagesToTry = customer.page_id
+      ? [{ page_id: customer.page_id, access_token: activePages.find(p => p.page_id === customer.page_id)?.access_token || '' }, ...activePages.filter(p => p.page_id !== customer.page_id)]
+      : activePages;
+    for (const page of pagesToTry) {
+      if (!page.access_token) continue;
+      const p = await fetchRaw(page.access_token, `page_token(${page.page_id})`);
+      if (p) { profile = p; source = 'page_token'; sourcePageId = page.page_id; break; }
+    }
+  }
+
+  if (!profile) {
+    return { success: false, customer_id: customerId, error: 'Facebook profile fetch failed', attempts };
+  }
+
+  let photoUrl: string | null = null;
+  if (profile.profile_pic) {
+    photoUrl = await downloadAndStorePhoto(profile.profile_pic, customer.id);
+  }
+
+  const updateData: any = {
+    messenger_name: `${profile.first_name}${profile.last_name ? ' ' + profile.last_name : ''}`.trim(),
+    updated_at: new Date().toISOString(),
+  };
+  if (photoUrl) updateData.messenger_profile_pic = photoUrl;
+  if (!customer.page_id && sourcePageId) updateData.page_id = sourcePageId;
+  if (profile.locale) updateData.locale = profile.locale;
+  if (profile.timezone !== undefined) updateData.timezone_offset = profile.timezone;
+
+  const { error: updErr } = await supabase.from('customer').update(updateData).eq('id', customer.id);
+  if (updErr) return { success: false, error: `DB update failed: ${updErr.message}`, attempts };
+
+  return {
+    success: true,
+    customer_id: customerId,
+    updated: true,
+    name: updateData.messenger_name,
+    profile_pic: photoUrl,
+    source,
+    attempts,
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
-  
+
   try {
     let limit = 50;
-    
+    let customerId: string | null = null;
+
     if (req.method === 'POST') {
       try {
         const body = await req.json();
+        if (typeof body.customer_id === 'string') customerId = body.customer_id;
         if (body.limit && typeof body.limit === 'number') {
           limit = Math.min(body.limit, 200);
         }
-      } catch {
-        // Use default limit
-      }
+      } catch { /* defaults */ }
     }
-    
+
+    if (customerId) {
+      console.log(`Refreshing single customer: ${customerId}`);
+      const result = await refreshSingleCustomer(customerId);
+      return new Response(JSON.stringify(result), {
+        status: result.success ? 200 : 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     console.log(`Starting profile picture backfill with limit: ${limit}`);
     const results = await backfillProfilePics(limit);
-    
+
     return new Response(JSON.stringify(results), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error("Error in backfill-profile-pics:", error);
-    
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       success: false, error: String(error),
       processed: 0, updated: 0, failed: 0, remaining: 0, errors: [],
     }), {

@@ -1,49 +1,35 @@
 ## Goal
 
-Use the working `FACEBOOK_SYSTEM_USER_TOKEN` to fetch Messenger user profiles (name + profile pic), and repopulate every existing "Unknown" customer.
+Add a per-customer **"Refresh from Facebook"** button on `/customers/[id]` that re-fetches the Messenger name + profile picture from Facebook for that one customer and updates the row immediately.
 
-You confirmed this call returns valid data:
-```
-GET https://graph.facebook.com/v19.0/{PSID}?fields=name,first_name,profile_pic&access_token={SYSTEM_USER_TOKEN}
-```
-
-So we switch profile lookups to prefer the system user token instead of per-page tokens.
+This bypasses the bulk backfill (which appears to be silently failing on certain rows) and gives you direct visibility per customer.
 
 ## Changes
 
-### 1. `supabase/functions/messenger-webhook/index.ts` — `getUserProfile()`
+### 1. `supabase/functions/backfill-profile-pics/index.ts`
 
-Rewrite the fetch order so new incoming messages resolve names immediately:
+Extend the existing function to accept an optional `customer_id` in the request body. When provided:
+- Skip the bulk query and process only that single customer's row.
+- Use the same logic already in place: try `FACEBOOK_SYSTEM_USER_TOKEN` first (the call you confirmed works), then fall back to per-page tokens.
+- Return a clear per-customer result: `{ customer_id, updated: true/false, name, profile_pic, source: 'system_user_token' | 'page_token' | null, error?: '<graph error body>' }` so the UI can show exactly what happened (and surface the Graph error if Facebook rejects the PSID).
 
-1. **Try system user token first** (the one that works in your test).
-   `GET /v19.0/{psid}?fields=first_name,last_name,name,profile_pic,locale,timezone&access_token={SYSTEM_USER_TOKEN}`
-2. If that returns an error or empty name, fall back to the page token from `facebook_pages` (current behavior).
-3. If both fail, log the Graph error body and store `Unknown` as today.
+### 2. `src/pages/CustomerDetail.tsx` — Messenger Account card
 
-No change to how the profile is then written into `customer` (name, `messenger_profile_pic` via `downloadAndStoreProfilePic`, locale, timezone). The existing "refresh on next message if name is Unknown" block keeps working — it just calls the new `getUserProfile`, so any old Unknown that messages again will self-heal.
+Add a small **"Refresh from Facebook"** button (with `RefreshCw` icon) in the Messenger Account card header, next to the card title — only shown for accounts that have a `messenger_id`.
 
-### 2. `supabase/functions/backfill-profile-pics/index.ts` — Messenger branch
+On click:
+1. Call `supabase.functions.invoke('backfill-profile-pics', { body: { customer_id: account.id } })`.
+2. Show a toast with the outcome:
+   - Success → "Updated to {new name}" (or "Profile picture refreshed" if name was already set).
+   - Failure → "Facebook returned: {error message}" so you can see *why* it failed (token issue, PSID not visible to the system user, etc.).
+3. Reload the customer data (re-run the existing fetch) so the new name + photo appear right away without a page refresh.
 
-Replace the "loop through every active page token" logic with:
+## What this won't change
 
-1. Read `FACEBOOK_SYSTEM_USER_TOKEN` once at startup.
-2. For each customer with `messenger_id` + (missing pic OR `messenger_name = 'Unknown'`):
-   - Call Graph with the system user token (same URL as above).
-   - On success → update `messenger_name`, download/store `profile_pic` into `chat-attachments/profile-pics/{id}.jpg`, set `locale`, `timezone_offset`, and `page_id` if missing.
-   - On failure → fall back to existing per-page-token loop (so we don't regress for any PSID the system user can't see).
-3. Keep current rate-limiting (`delay(100)`) and the `limit` parameter (default 50, max 200).
+- No DB schema changes, no new secrets.
+- No change to the bulk button on `/facebook-pages` — it stays for batch use.
+- The webhook's auto-resolution on new incoming messages is unchanged.
 
-### 3. `src/pages/FacebookPages.tsx` — Backfill trigger
+## Why this should expose the real problem
 
-Add a small admin button **"Repopulate Unknown customers"** that calls `supabase.functions.invoke('backfill-profile-pics', { body: { limit: 200 } })` and toasts the result (`processed / updated / failed / remaining`). User can click it repeatedly until `remaining = 0`. No new table, no migration.
-
-## Out of scope
-
-- No DB schema changes, no new secrets (we reuse `FACEBOOK_SYSTEM_USER_TOKEN`).
-- No change to the chat UI / conversation switching code from previous turns.
-- We are **not** removing the page-token path — it stays as a fallback so existing logic that sends messages (which requires a page token) is untouched. Only profile lookups switch to system-user-first.
-
-## How to verify after build
-
-1. Send a brand-new Messenger message from a test account → webhook log should show `[profile-fetch] success via system_user_token` and the customer row should be created with the real name + photo, not Unknown.
-2. Click **Repopulate Unknown customers** on `/facebook-pages` → existing Unknowns (Saddam, Prince, etc.) get filled in within a few seconds per batch.
+Right now the bulk backfill silently logs failures to edge function logs. Per-customer mode surfaces the exact Graph API error in a toast, so if the System User token still can't see a particular PSID, you'll see the specific reason (e.g. "user has blocked the page", "PSID does not belong to a page assigned to this system user") and we can address it.
