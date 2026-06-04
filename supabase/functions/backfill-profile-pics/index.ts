@@ -343,11 +343,12 @@ async function refreshSingleCustomer(customerId: string, overrideToken?: string)
     return p;
   };
 
-  if (SYSTEM_USER_TOKEN) {
-    profile = await fetchRaw(SYSTEM_USER_TOKEN, 'system_user_token');
-    if (profile) source = 'system_user_token';
+  const effectiveSystemToken = (overrideToken || SYSTEM_USER_TOKEN || '').trim();
+  if (effectiveSystemToken) {
+    profile = await fetchRaw(effectiveSystemToken, overrideToken ? 'override_token' : 'system_user_token');
+    if (profile) source = overrideToken ? 'system_user_token' : 'system_user_token';
   } else {
-    attempts.push({ source: 'system_user_token', error: 'FACEBOOK_SYSTEM_USER_TOKEN not set' });
+    attempts.push({ source: 'system_user_token', error: 'No token available' });
   }
 
   if (!profile) {
