@@ -274,7 +274,7 @@ async function verifySignature(payload: string, signature: string): Promise<bool
 }
 
 // Fetch user profile from Facebook using page token from DB
-async function getUserProfile(psid: string, pageId: string) {
+async function getUserProfile(psid: string, pageId: string, _retry = false): Promise<any | null> {
   const token = await getPageToken(pageId);
 
   if (!token) {
@@ -288,6 +288,20 @@ async function getUserProfile(psid: string, pageId: string) {
     const response = await fetch(url);
     const bodyText = await response.text();
 
+    let parsed: any = null;
+    try { parsed = JSON.parse(bodyText); } catch { /* */ }
+
+    // Self-heal: if Graph returns code 100 / subcode 2018247 (no matching user),
+    // it usually means the cached page token is stale. Force-refresh from DB and retry once.
+    const errCode = parsed?.error?.code;
+    const errSub = parsed?.error?.error_subcode;
+    if (!_retry && (errCode === 100 || errSub === 2018247)) {
+      console.warn(`[profile-fetch] code=${errCode}/sub=${errSub} for page=${pageId} psid=${psid} — invalidating token cache and retrying once`);
+      pageTokensCache = new Map();
+      pageTokensCacheTime = 0;
+      return await getUserProfile(psid, pageId, true);
+    }
+
     if (!response.ok) {
       console.error(
         `[profile-fetch] FAILED page=${pageId} psid=${psid} status=${response.status} body=${bodyText}`
@@ -295,8 +309,7 @@ async function getUserProfile(psid: string, pageId: string) {
       return null;
     }
 
-    let parsed: any;
-    try { parsed = JSON.parse(bodyText); } catch {
+    if (!parsed) {
       console.error(`[profile-fetch] Non-JSON success body page=${pageId} psid=${psid}: ${bodyText}`);
       return null;
     }
