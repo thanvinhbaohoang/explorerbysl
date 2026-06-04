@@ -232,56 +232,93 @@ async function backfillProfilePics(limit: number = 50): Promise<{
         }
         
         if (customer.messenger_id) {
-          // Messenger customer - try known page_id first, then all active pages
-          const pagesToTry = customer.page_id
-            ? [{ page_id: customer.page_id, access_token: activePages.find(p => p.page_id === customer.page_id)?.access_token || '' }, ...activePages.filter(p => p.page_id !== customer.page_id)]
-            : activePages;
-          
           let profileFound = false;
-          
-          for (const page of pagesToTry) {
-            if (!page.access_token) continue;
-            
-            const profile = await fetchMessengerProfile(customer.messenger_id, page.access_token);
-            if (profile && profile.first_name) {
-              console.log(`Found profile for ${customer.id} via page ${page.page_id}: ${profile.first_name} ${profile.last_name}`);
-              
-              // Download and store profile pic
+
+          // STEP 1: Try conversations participant map (most reliable with system user token)
+          const pageOrder = customer.page_id
+            ? [customer.page_id, ...activePages.filter(p => p.page_id !== customer.page_id).map(p => p.page_id)]
+            : activePages.map(p => p.page_id);
+
+          for (const pid of pageOrder) {
+            const map = conversationsByPage.get(pid);
+            const found = map?.get(customer.messenger_id);
+            if (found && found.name) {
+              const nameParts = found.name.trim().split(/\s+/);
+              const firstName = nameParts[0] || found.name;
+              const lastName = nameParts.slice(1).join(' ') || '';
+
+              const pageToken = activePages.find(p => p.page_id === pid)?.access_token || '';
+              const token = FB_SYSTEM_USER_TOKEN || pageToken;
+
+              // Try to fetch & store profile pic
               let photoUrl: string | null = null;
-              if (profile.profile_pic) {
-                photoUrl = await downloadAndStorePhoto(profile.profile_pic, customer.id);
+              if (token) {
+                const picUrl = await fetchProfilePicOnly(customer.messenger_id, token);
+                if (picUrl) photoUrl = await downloadAndStorePhoto(picUrl, customer.id);
               }
-              
-              // Update customer with name, pic, and page_id
+
               const updateData: any = {
-                messenger_name: `${profile.first_name} ${profile.last_name}`,
+                messenger_name: found.name,
                 updated_at: new Date().toISOString(),
               };
               if (photoUrl) updateData.messenger_profile_pic = photoUrl;
-              if (!customer.page_id) updateData.page_id = page.page_id;
-              if (profile.locale) updateData.locale = profile.locale;
-              if (profile.timezone) updateData.timezone_offset = profile.timezone;
-              
-              await supabase
-                .from('customer')
-                .update(updateData)
-                .eq('id', customer.id);
-              
+              if (!customer.page_id) updateData.page_id = pid;
+
+              await supabase.from('customer').update(updateData).eq('id', customer.id);
+
+              console.log(`Resolved via conversations for ${customer.id} on page ${pid}: ${found.name}`);
               results.updated++;
               profileFound = true;
               break;
             }
-            
-            await delay(50); // Small delay between page attempts
           }
-          
+
+          // STEP 2: Fall back to per-PSID profile fetch
+          if (!profileFound) {
+            const pagesToTry = customer.page_id
+              ? [{ page_id: customer.page_id, access_token: activePages.find(p => p.page_id === customer.page_id)?.access_token || '' }, ...activePages.filter(p => p.page_id !== customer.page_id)]
+              : activePages;
+
+            for (const page of pagesToTry) {
+              if (!page.access_token) continue;
+
+              const profile = await fetchMessengerProfile(customer.messenger_id, page.access_token);
+              if (profile && profile.first_name) {
+                console.log(`Found profile for ${customer.id} via page ${page.page_id}: ${profile.first_name} ${profile.last_name}`);
+
+                let photoUrl: string | null = null;
+                if (profile.profile_pic) {
+                  photoUrl = await downloadAndStorePhoto(profile.profile_pic, customer.id);
+                }
+
+                const updateData: any = {
+                  messenger_name: `${profile.first_name} ${profile.last_name}`,
+                  updated_at: new Date().toISOString(),
+                };
+                if (photoUrl) updateData.messenger_profile_pic = photoUrl;
+                if (!customer.page_id) updateData.page_id = page.page_id;
+                if (profile.locale) updateData.locale = profile.locale;
+                if (profile.timezone) updateData.timezone_offset = profile.timezone;
+
+                await supabase.from('customer').update(updateData).eq('id', customer.id);
+
+                results.updated++;
+                profileFound = true;
+                break;
+              }
+
+              await delay(50);
+            }
+          }
+
           if (!profileFound) {
             console.log(`Could not fetch profile for messenger customer ${customer.id}`);
           }
-          
+
           results.processed++;
           continue;
         }
+
         
         // No telegram_id or messenger_id
         results.processed++;
