@@ -145,6 +145,8 @@ async function backfillProfilePics(limit: number = 50): Promise<{
     // Get active pages for inferring page_id
     const activePages = await getActivePageTokens();
     console.log(`Found ${activePages.length} active pages for profile lookups`);
+    const { token: bulkSystemToken, source: bulkTokenSource } = await getSystemUserToken();
+    console.log(`[bulk] system user token source=${bulkTokenSource} length=${bulkSystemToken?.length || 0}`);
 
     // Get customers that need fixing:
     // - Missing profile pic OR messenger_name is 'Unknown'
