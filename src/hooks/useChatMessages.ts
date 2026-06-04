@@ -104,17 +104,10 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   // Tracks the most recently requested customer to guard against stale fetches
   const activeCustomerIdRef = useRef<string | null>(selectedCustomer?.id ?? null);
 
-  // Fully reset chat state when customer changes to prevent stale data leaking across conversations
+  // Reset loading state immediately when customer changes
   useEffect(() => {
     if (selectedCustomer?.id) {
       activeCustomerIdRef.current = selectedCustomer.id;
-      setMessages([]);
-      setLinkedCustomerIds([]);
-      setLinkedCustomersMap({});
-      setPlatformFilter(null);
-      setMessageOffset(0);
-      setHasMoreMessages(false);
-      setIsLoadingMoreMessages(false);
       setIsLoadingMessages(true);
     }
   }, [selectedCustomer?.id]);
