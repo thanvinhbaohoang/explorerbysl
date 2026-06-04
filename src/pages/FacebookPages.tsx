@@ -282,6 +282,26 @@ const FacebookPages = () => {
       setCleanupRunning(false);
     }
   };
+
+  // Backfill profile pics + names for Unknown / missing-pic customers
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const runBackfillProfiles = async () => {
+    setBackfillRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('backfill-profile-pics', {
+        body: { limit: 200 },
+      });
+      if (error) throw error;
+      const r = data as { processed: number; updated: number; failed: number; remaining: number };
+      toast.success('Profile backfill complete', {
+        description: `Processed ${r.processed} · Updated ${r.updated} · Failed ${r.failed} · Remaining ${r.remaining}`,
+      });
+    } catch (err: any) {
+      toast.error('Backfill failed', { description: err.message });
+    } finally {
+      setBackfillRunning(false);
+    }
+  };
   
   // Fetch database pages for token management
   const fetchDbPages = async () => {
@@ -1292,6 +1312,28 @@ const FacebookPages = () => {
                         );
                       })}
                     </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Repopulate Unknown Messenger profiles - Admin Only */}
+              {isAdmin && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <RefreshCw className="h-5 w-5" />
+                      Repopulate Unknown customers
+                    </CardTitle>
+                    <CardDescription>
+                      Re-fetches names &amp; profile pictures from Facebook (using the System User token) for any customer currently
+                      shown as "Unknown" or missing a profile picture. Safe to run repeatedly — processes up to 200 at a time.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button onClick={runBackfillProfiles} disabled={backfillRunning} className="gap-2">
+                      {backfillRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      {backfillRunning ? 'Running…' : 'Repopulate now'}
+                    </Button>
                   </CardContent>
                 </Card>
               )}

@@ -1,36 +1,49 @@
-## Why your new traffic isn't showing
+## Goal
 
-Your test **did** land in the database — lead `5e4ad7c1…` (messenger_ref `HAROLDTESTING`, user_id `acd24eb7…`) was created at 21:46:16 UTC and the Telegram bot successfully linked it to your customer. So the capture pipeline is healthy.
+Use the working `FACEBOOK_SYSTEM_USER_TOKEN` to fetch Messenger user profiles (name + profile pic), and repopulate every existing "Unknown" customer.
 
-The reason it isn't on the `/traffic` page in your browser:
+You confirmed this call returns valid data:
+```
+GET https://graph.facebook.com/v19.0/{PSID}?fields=name,first_name,profile_pic&access_token={SYSTEM_USER_TOKEN}
+```
 
-- `useTrafficData` in `src/hooks/useTrafficData.ts` uses React Query with `staleTime: 5 * 60 * 1000` (5 minutes) and no realtime subscription / no `refetchOnWindowFocus`.
-- You loaded `/traffic` before the test, so React Query is serving the cached page. It will not refetch until 5 minutes pass or the page is hard-reloaded.
+So we switch profile lookups to prefer the system user token instead of per-page tokens.
 
-A manual refresh of the browser tab right now will already show the row. The plan below fixes it so you never have to.
+## Changes
 
-## Plan
+### 1. `supabase/functions/messenger-webhook/index.ts` — `getUserProfile()`
 
-1. **Add a Postgres realtime subscription** to `telegram_leads` inside `useTrafficData` (and `useTrafficFilterOptions`):
-   - Subscribe to `INSERT` and `UPDATE` events on `public.telegram_leads`.
-   - On any event, call `queryClient.invalidateQueries({ queryKey: ["traffic"] })` and `["traffic-filter-options"]`.
-   - Clean up the channel on unmount.
+Rewrite the fetch order so new incoming messages resolve names immediately:
 
-2. **Enable realtime on the table** via a migration:
-   ```sql
-   ALTER PUBLICATION supabase_realtime ADD TABLE public.telegram_leads;
-   ```
-   (No-op if already added.)
+1. **Try system user token first** (the one that works in your test).
+   `GET /v19.0/{psid}?fields=first_name,last_name,name,profile_pic,locale,timezone&access_token={SYSTEM_USER_TOKEN}`
+2. If that returns an error or empty name, fall back to the page token from `facebook_pages` (current behavior).
+3. If both fail, log the Graph error body and store `Unknown` as today.
 
-3. **Tighten freshness defaults** on the traffic query:
-   - Drop `staleTime` from 5 min to 30 s.
-   - Add `refetchOnWindowFocus: true` so switching back to the tab also refreshes.
+No change to how the profile is then written into `customer` (name, `messenger_profile_pic` via `downloadAndStoreProfilePic`, locale, timezone). The existing "refresh on next message if name is Unknown" block keeps working — it just calls the new `getUserProfile`, so any old Unknown that messages again will self-heal.
 
-4. **Add a manual "Refresh" button** next to the existing filters in `Traffic.tsx` that calls `refetch()` — useful belt-and-suspenders for the admin.
+### 2. `supabase/functions/backfill-profile-pics/index.ts` — Messenger branch
 
-No changes to the capture pipeline, edge functions, or RLS — those are all working.
+Replace the "loop through every active page token" logic with:
 
-### Files touched
-- `src/hooks/useTrafficData.ts` — realtime channel + lower staleTime + refetchOnWindowFocus
-- `src/pages/Traffic.tsx` — small Refresh button
-- New migration enabling realtime on `telegram_leads`
+1. Read `FACEBOOK_SYSTEM_USER_TOKEN` once at startup.
+2. For each customer with `messenger_id` + (missing pic OR `messenger_name = 'Unknown'`):
+   - Call Graph with the system user token (same URL as above).
+   - On success → update `messenger_name`, download/store `profile_pic` into `chat-attachments/profile-pics/{id}.jpg`, set `locale`, `timezone_offset`, and `page_id` if missing.
+   - On failure → fall back to existing per-page-token loop (so we don't regress for any PSID the system user can't see).
+3. Keep current rate-limiting (`delay(100)`) and the `limit` parameter (default 50, max 200).
+
+### 3. `src/pages/FacebookPages.tsx` — Backfill trigger
+
+Add a small admin button **"Repopulate Unknown customers"** that calls `supabase.functions.invoke('backfill-profile-pics', { body: { limit: 200 } })` and toasts the result (`processed / updated / failed / remaining`). User can click it repeatedly until `remaining = 0`. No new table, no migration.
+
+## Out of scope
+
+- No DB schema changes, no new secrets (we reuse `FACEBOOK_SYSTEM_USER_TOKEN`).
+- No change to the chat UI / conversation switching code from previous turns.
+- We are **not** removing the page-token path — it stays as a fallback so existing logic that sends messages (which requires a page token) is untouched. Only profile lookups switch to system-user-first.
+
+## How to verify after build
+
+1. Send a brand-new Messenger message from a test account → webhook log should show `[profile-fetch] success via system_user_token` and the customer row should be created with the real name + photo, not Unknown.
+2. Click **Repopulate Unknown customers** on `/facebook-pages` → existing Unknowns (Saddam, Prince, etc.) get filled in within a few seconds per batch.
