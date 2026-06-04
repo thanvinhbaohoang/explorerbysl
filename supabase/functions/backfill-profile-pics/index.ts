@@ -197,10 +197,10 @@ async function backfillProfilePics(limit: number = 50): Promise<{
           let profile: any = null;
 
           // 1. Try system user token first
-          if (SYSTEM_USER_TOKEN) {
-            profile = await fetchMessengerProfile(customer.messenger_id, SYSTEM_USER_TOKEN);
+          if (bulkSystemToken) {
+            profile = await fetchMessengerProfile(customer.messenger_id, bulkSystemToken);
             if (profile) {
-              console.log(`Found profile for ${customer.id} via system_user_token: ${profile.first_name} ${profile.last_name || ''}`);
+              console.log(`Found profile for ${customer.id} via system_user_token(${bulkTokenSource}): ${profile.first_name} ${profile.last_name || ''}`);
             }
           }
 
