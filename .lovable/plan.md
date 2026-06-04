@@ -1,36 +1,44 @@
-## Why your new traffic isn't showing
 
-Your test **did** land in the database — lead `5e4ad7c1…` (messenger_ref `HAROLDTESTING`, user_id `acd24eb7…`) was created at 21:46:16 UTC and the Telegram bot successfully linked it to your customer. So the capture pipeline is healthy.
+## Goal
 
-The reason it isn't on the `/traffic` page in your browser:
+Use the Page `/conversations?fields=participants,messages{message,from}` endpoint (with the System User token) as a more reliable way to resolve "Unknown" Messenger customers — names + IDs come straight from the conversation participants, bypassing the per-PSID profile permission issue.
 
-- `useTrafficData` in `src/hooks/useTrafficData.ts` uses React Query with `staleTime: 5 * 60 * 1000` (5 minutes) and no realtime subscription / no `refetchOnWindowFocus`.
-- You loaded `/traffic` before the test, so React Query is serving the cached page. It will not refetch until 5 minutes pass or the page is hard-reloaded.
+## Why this works better
 
-A manual refresh of the browser tab right now will already show the row. The plan below fixes it so you never have to.
+The single-PSID profile lookup (`/{psid}?fields=first_name,...`) fails with `2018247` for some PSIDs. The `/conversations` endpoint returns participants (PSID + name) for every active thread on the page in one call, which we already verified works with the System User token.
 
-## Plan
+## Changes
 
-1. **Add a Postgres realtime subscription** to `telegram_leads` inside `useTrafficData` (and `useTrafficFilterOptions`):
-   - Subscribe to `INSERT` and `UPDATE` events on `public.telegram_leads`.
-   - On any event, call `queryClient.invalidateQueries({ queryKey: ["traffic"] })` and `["traffic-filter-options"]`.
-   - Clean up the channel on unmount.
+### 1. `supabase/functions/backfill-profile-pics/index.ts`
 
-2. **Enable realtime on the table** via a migration:
-   ```sql
-   ALTER PUBLICATION supabase_realtime ADD TABLE public.telegram_leads;
-   ```
-   (No-op if already added.)
+Add a new resolution path that runs BEFORE the per-PSID fetch:
 
-3. **Tighten freshness defaults** on the traffic query:
-   - Drop `staleTime` from 5 min to 30 s.
-   - Add `refetchOnWindowFocus: true` so switching back to the tab also refreshes.
+- For each active page, call:
+  ```
+  GET /v19.0/{page_id}/conversations
+    ?fields=participants,updated_time
+    &limit=100
+    &access_token={page or system token}
+  ```
+  Paginate via `paging.next` (cap at ~10 pages to stay safe).
+- Build an in-memory map `{ pageId: { psid: { name, id } } }`.
+- For each customer needing fix with `messenger_id`:
+  1. Look up name in the conversations map (try known `page_id` first, else any page).
+  2. If found → set `messenger_name`, `page_id`, then fetch profile pic via the existing `/{psid}?fields=profile_pic` call (this field is usually allowed even when name isn't) and store it.
+  3. If still missing → fall back to existing per-PSID profile flow.
+- Use `FACEBOOK_SYSTEM_USER_TOKEN` as the token for the conversations call (falls back to page's stored `access_token` if missing).
 
-4. **Add a manual "Refresh" button** next to the existing filters in `Traffic.tsx` that calls `refetch()` — useful belt-and-suspenders for the admin.
+### 2. `src/pages/FacebookPages.tsx` (small)
 
-No changes to the capture pipeline, edge functions, or RLS — those are all working.
+Rename the existing backfill button tooltip / add a note that it now uses the Conversations API for name resolution. No new button needed — same endpoint, smarter logic.
 
-### Files touched
-- `src/hooks/useTrafficData.ts` — realtime channel + lower staleTime + refetchOnWindowFocus
-- `src/pages/Traffic.tsx` — small Refresh button
-- New migration enabling realtime on `telegram_leads`
+## What this fixes
+
+- "Unknown" customers like Saddam, Prince get real names on the next backfill run.
+- Future inbound webhooks still try per-PSID first; if that fails the customer stays "Unknown" until the next scheduled/manual backfill, which will now succeed via conversations.
+
+## Out of scope
+
+- No schema changes.
+- No webhook changes (separate concern — the webhook self-heal from previous plan still applies if you want it later).
+- No new secrets.

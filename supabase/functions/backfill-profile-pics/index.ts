@@ -4,9 +4,64 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const FB_SYSTEM_USER_TOKEN = Deno.env.get("FACEBOOK_SYSTEM_USER_TOKEN") || "";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+
+// Fetch all conversation participants for a page via /conversations endpoint
+// Returns map: psid -> { name, id }
+async function fetchPageConversationParticipants(
+  pageId: string,
+  token: string,
+): Promise<Map<string, { name: string; id: string }>> {
+  const map = new Map<string, { name: string; id: string }>();
+  let url: string | null =
+    `https://graph.facebook.com/v19.0/${pageId}/conversations?fields=participants&limit=100&access_token=${token}`;
+  let pages = 0;
+  while (url && pages < 10) {
+    pages++;
+    try {
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.error) {
+        console.error(`Conversations error for page ${pageId}:`, json.error);
+        break;
+      }
+      const data = json.data || [];
+      for (const convo of data) {
+        const participants = convo.participants?.data || [];
+        for (const p of participants) {
+          // Skip the page itself
+          if (p.id === pageId) continue;
+          if (p.id && p.name) {
+            map.set(String(p.id), { name: p.name, id: String(p.id) });
+          }
+        }
+      }
+      url = json.paging?.next || null;
+    } catch (e) {
+      console.error(`Failed to fetch conversations for page ${pageId}:`, e);
+      break;
+    }
+  }
+  console.log(`Page ${pageId}: collected ${map.size} participants from ${pages} pages`);
+  return map;
+}
+
+// Fetch just the profile pic for a PSID (often allowed even when name isn't)
+async function fetchProfilePicOnly(psid: string, token: string): Promise<string | null> {
+  try {
+    const url = `https://graph.facebook.com/v19.0/${psid}?fields=profile_pic&access_token=${token}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (json.error) return null;
+    return json.profile_pic || null;
+  } catch {
+    return null;
+  }
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
