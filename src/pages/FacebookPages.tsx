@@ -402,10 +402,43 @@ const FacebookPages = () => {
       );
 
       const result = await response.json();
-      
+
       if (result.success) {
-        toast.success(`Synced ${result.pages.length} pages to database`);
+        const refreshed: Array<{ page_id: string; name: string; old_token_len: number; new_token_len: number }> = result.refreshed || [];
+        const missing: Array<{ page_id: string; name: string }> = result.missing || [];
+
+        const lines = refreshed.map(r => `${r.name}: token rotated (${r.old_token_len} → ${r.new_token_len} chars)`);
+        toast.success(`Refreshed ${refreshed.length} page${refreshed.length === 1 ? '' : 's'} from System User`, {
+          description: lines.length ? lines.join('\n') : undefined,
+          duration: 8000,
+        });
+
+        if (missing.length) {
+          toast.warning(`${missing.length} page${missing.length === 1 ? '' : 's'} not visible to System User`, {
+            description: missing.map(m => m.name).join(', ') + ' — assign these to your System User in Meta Business Suite.',
+            duration: 12000,
+          });
+        }
+
+        // Auto-backfill existing "Unknown" customers with the freshly-rotated tokens
+        try {
+          const { data: bf } = await supabase.functions.invoke('backfill-profile-pics', {
+            method: 'POST',
+            body: { limit: 100 },
+          });
+          if (bf?.results) {
+            const r = bf.results;
+            toast.info('Backfill complete', {
+              description: `Updated ${r.updated ?? 0} of ${r.processed ?? 0} customers with fresh names & photos.`,
+              duration: 6000,
+            });
+          }
+        } catch (bfErr: any) {
+          console.error('Backfill error:', bfErr);
+        }
+
         await fetchPages();
+        await fetchDbPages();
       } else {
         toast.error(result.error || 'Failed to sync pages');
       }
