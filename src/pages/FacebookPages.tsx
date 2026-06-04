@@ -1360,9 +1360,9 @@ const FacebookPages = () => {
                       variant="outline"
                       className="gap-2 ml-2"
                       onClick={runTokenDiagnose}
-                      disabled={diagnoseRunning}
+                      disabled={tokenDiagRunning}
                     >
-                      {diagnoseRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Info className="h-4 w-4" />}
+                      {tokenDiagRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Info className="h-4 w-4" />}
                       Diagnose System User Token
                     </Button>
                   </CardContent>
@@ -1370,20 +1370,20 @@ const FacebookPages = () => {
               )}
 
               {/* Diagnose result dialog */}
-              <AlertDialog open={diagnoseOpen} onOpenChange={setDiagnoseOpen}>
+              <AlertDialog open={tokenDiagOpen} onOpenChange={setTokenDiagOpen}>
                 <AlertDialogContent className="max-w-3xl">
                   <AlertDialogHeader>
                     <AlertDialogTitle>System User Token Diagnostic</AlertDialogTitle>
                     <AlertDialogDescription asChild>
                       <div className="text-left">
                         <pre className="mt-2 max-h-[60vh] overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">
-{diagnoseResult ? JSON.stringify(diagnoseResult, null, 2) : 'No data'}
+{tokenDiagResult ? JSON.stringify(tokenDiagResult, null, 2) : 'No data'}
                         </pre>
                       </div>
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogAction onClick={() => setDiagnoseOpen(false)}>Close</AlertDialogAction>
+                    <AlertDialogAction onClick={() => setTokenDiagOpen(false)}>Close</AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
