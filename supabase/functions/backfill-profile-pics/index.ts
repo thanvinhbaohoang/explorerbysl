@@ -201,6 +201,16 @@ async function backfillProfilePics(limit: number = 50): Promise<{
       .select('*', { count: 'exact', head: true })
       .or('messenger_profile_pic.is.null,messenger_name.eq.Unknown');
 
+    // Pre-fetch conversation participants for every active page (one-time cost per run)
+    const conversationsByPage = new Map<string, Map<string, { name: string; id: string }>>();
+    for (const page of activePages) {
+      const token = FB_SYSTEM_USER_TOKEN || page.access_token;
+      if (!token) continue;
+      const participants = await fetchPageConversationParticipants(page.page_id, token);
+      conversationsByPage.set(page.page_id, participants);
+      await delay(100);
+    }
+
     console.log(`Processing ${customers.length} customers (${totalMissing} total need fixing)...`);
     
     for (const customer of customers) {
