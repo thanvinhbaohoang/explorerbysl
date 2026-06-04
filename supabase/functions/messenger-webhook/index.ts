@@ -133,48 +133,34 @@ async function getPageToken(pageId: string): Promise<string | null> {
 }
 
 // Sync pages from Facebook to database using System User Token
-async function syncPagesToDatabase(): Promise<{
-  success: boolean;
-  pages: any[];
-  refreshed?: Array<{ page_id: string; name: string; old_token_len: number; new_token_len: number }>;
-  missing?: Array<{ page_id: string; name: string }>;
-  error?: string;
-}> {
+async function syncPagesToDatabase(): Promise<{ success: boolean; pages: any[]; error?: string }> {
   console.log('Syncing pages from Facebook to database using System User Token...');
-
+  
   if (!systemUserToken) {
     return { success: false, pages: [], error: 'FACEBOOK_SYSTEM_USER_TOKEN is not configured' };
   }
-
+  
   try {
     const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token,category,picture&access_token=${systemUserToken}`;
     const response = await fetch(pagesUrl);
-
+    
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Failed to fetch pages from Facebook:', errorText);
       return { success: false, pages: [], error: errorText };
     }
-
+    
     const data = await response.json();
     const pages = data.data || [];
-    const syncedPages: any[] = [];
-    const refreshed: Array<{ page_id: string; name: string; old_token_len: number; new_token_len: number }> = [];
-
-    // Snapshot existing pages in DB to compute diff and missing-from-Graph
-    const { data: existingRows } = await supabase
-      .from('facebook_pages')
-      .select('page_id, name, access_token');
-    const existingMap = new Map<string, { name: string; access_token: string | null }>();
-    for (const row of existingRows || []) {
-      existingMap.set(row.page_id, { name: row.name, access_token: row.access_token });
-    }
-
-    const returnedPageIds = new Set<string>();
-
+    const syncedPages = [];
+    
     for (const page of pages) {
-      returnedPageIds.add(page.id);
-      const existing = existingMap.get(page.id);
+      // Check if page already exists so we don't overwrite an admin's "paused" toggle
+      const { data: existing } = await supabase
+        .from('facebook_pages')
+        .select('id')
+        .eq('page_id', page.id)
+        .maybeSingle();
 
       const baseData = {
         page_id: page.id,
@@ -182,13 +168,12 @@ async function syncPagesToDatabase(): Promise<{
         category: page.category,
         picture_url: page.picture?.data?.url || null,
         access_token: page.access_token,
-        token_expires_at: null, // System User tokens don't expire
-        updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
 
       const pageData = existing
-        ? baseData
-        : { ...baseData, is_active: true };
+        ? baseData                       // update: preserve is_active
+        : { ...baseData, is_active: true }; // insert: default to active
 
       const { error } = await supabase
         .from('facebook_pages')
@@ -196,38 +181,22 @@ async function syncPagesToDatabase(): Promise<{
 
       if (error) {
         console.error(`Error upserting page ${page.id}:`, error);
-        continue;
-      }
-
-      syncedPages.push({
-        id: page.id,
-        name: page.name,
-        category: page.category,
-        picture: page.picture?.data?.url,
-      });
-
-      refreshed.push({
-        page_id: page.id,
-        name: page.name,
-        old_token_len: existing?.access_token?.length || 0,
-        new_token_len: (page.access_token || '').length,
-      });
-    }
-
-    // Pages in DB that the System User can't see (not assigned in Business Manager)
-    const missing: Array<{ page_id: string; name: string }> = [];
-    for (const [pageId, row] of existingMap.entries()) {
-      if (!returnedPageIds.has(pageId)) {
-        missing.push({ page_id: pageId, name: row.name });
+      } else {
+        syncedPages.push({
+          id: page.id,
+          name: page.name,
+          category: page.category,
+          picture: page.picture?.data?.url
+        });
       }
     }
-
-    // Invalidate cache so new tokens are used immediately
+    
+    // Invalidate cache to use new tokens
     pageTokensCache = new Map();
     pageTokensCacheTime = 0;
-
-    console.log(`Synced ${syncedPages.length} pages to database; ${missing.length} missing from /me/accounts`);
-    return { success: true, pages: syncedPages, refreshed, missing };
+    
+    console.log(`Synced ${syncedPages.length} pages to database`);
+    return { success: true, pages: syncedPages };
   } catch (error) {
     console.error('Error syncing pages:', error);
     return { success: false, pages: [], error: String(error) };
@@ -274,7 +243,7 @@ async function verifySignature(payload: string, signature: string): Promise<bool
 }
 
 // Fetch user profile from Facebook using page token from DB
-async function getUserProfile(psid: string, pageId: string, _retry = false): Promise<any | null> {
+async function getUserProfile(psid: string, pageId: string) {
   const token = await getPageToken(pageId);
 
   if (!token) {
@@ -288,20 +257,6 @@ async function getUserProfile(psid: string, pageId: string, _retry = false): Pro
     const response = await fetch(url);
     const bodyText = await response.text();
 
-    let parsed: any = null;
-    try { parsed = JSON.parse(bodyText); } catch { /* */ }
-
-    // Self-heal: if Graph returns code 100 / subcode 2018247 (no matching user),
-    // it usually means the cached page token is stale. Force-refresh from DB and retry once.
-    const errCode = parsed?.error?.code;
-    const errSub = parsed?.error?.error_subcode;
-    if (!_retry && (errCode === 100 || errSub === 2018247)) {
-      console.warn(`[profile-fetch] code=${errCode}/sub=${errSub} for page=${pageId} psid=${psid} — invalidating token cache and retrying once`);
-      pageTokensCache = new Map();
-      pageTokensCacheTime = 0;
-      return await getUserProfile(psid, pageId, true);
-    }
-
     if (!response.ok) {
       console.error(
         `[profile-fetch] FAILED page=${pageId} psid=${psid} status=${response.status} body=${bodyText}`
@@ -309,7 +264,8 @@ async function getUserProfile(psid: string, pageId: string, _retry = false): Pro
       return null;
     }
 
-    if (!parsed) {
+    let parsed: any;
+    try { parsed = JSON.parse(bodyText); } catch {
       console.error(`[profile-fetch] Non-JSON success body page=${pageId} psid=${psid}: ${bodyText}`);
       return null;
     }
