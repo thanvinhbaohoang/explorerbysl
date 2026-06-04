@@ -425,13 +425,24 @@ const CustomerDetail = () => {
                       </div>
                     )}
                   </div>
-                  {hasBothPlatforms && account.linked_customer_id && (
-                    <div className="mt-3 flex justify-end">
+                  <div className="mt-3 flex justify-end gap-2">
+                    {account.messenger_id && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => refreshMessengerProfile(account.id)}
+                        disabled={refreshingId === account.id}
+                      >
+                        <RefreshCw className={`h-4 w-4 mr-1 ${refreshingId === account.id ? 'animate-spin' : ''}`} />
+                        {refreshingId === account.id ? 'Refreshing…' : 'Refresh from Facebook'}
+                      </Button>
+                    )}
+                    {hasBothPlatforms && account.linked_customer_id && (
                       <Button variant="ghost" size="sm" onClick={() => unlinkCustomer(account.id)}>
                         <Unlink className="h-4 w-4 mr-1" /> Unlink
                       </Button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               ))}
             </CardContent>
