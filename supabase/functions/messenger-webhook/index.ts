@@ -278,11 +278,41 @@ async function tryFetchProfile(psid: string, token: string, source: string, page
   }
 }
 
-// Fetch user profile - prefer system user token, fall back to page token.
+// Fresh System User token: DB (bot_settings) first, env fallback. Bypasses 5-min cache.
+async function getSystemUserTokenFresh(): Promise<{ token: string | null; source: 'db' | 'env' | null }> {
+  try {
+    const { data } = await supabase
+      .from('bot_settings')
+      .select('value')
+      .eq('key', 'facebook_system_user_token')
+      .maybeSingle();
+    const v = (data?.value || '').trim();
+    if (v) {
+      // Keep in-memory cache in sync so other code paths see the latest token.
+      if (systemUserToken !== v) {
+        systemUserToken = v;
+        configCache.set('facebook_system_user_token', v);
+      }
+      return { token: v, source: 'db' };
+    }
+  } catch (e) {
+    console.error('getSystemUserTokenFresh: bot_settings lookup failed', e);
+  }
+  const envTok = (Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN') || '').trim();
+  if (envTok) return { token: envTok, source: 'env' };
+  return { token: null, source: null };
+}
+
+// Fetch user profile - prefer system user token (fresh from DB), fall back to page token.
 async function getUserProfile(psid: string, pageId: string) {
-  if (systemUserToken) {
-    const profile = await tryFetchProfile(psid, systemUserToken, 'system_user_token', pageId);
+  const { token: sysToken, source: sysSource } = await getSystemUserTokenFresh();
+  if (sysToken) {
+    const meta = { source: sysSource, length: sysToken.length, prefix: sysToken.slice(0, 8), suffix: sysToken.slice(-4) };
+    console.log(`[profile-fetch] using system_user_token psid=${psid} page=${pageId} token=${JSON.stringify(meta)}`);
+    const profile = await tryFetchProfile(psid, sysToken, `system_user_token:${sysSource}`, pageId);
     if (profile) return profile;
+  } else {
+    console.warn(`[profile-fetch] no system_user_token available, falling back to page token for psid=${psid} page=${pageId}`);
   }
   const token = await getPageToken(pageId);
   if (!token) {

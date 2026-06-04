@@ -1,19 +1,42 @@
-## Fix: read System User token from `bot_settings`, not env
+## Goal
 
-### Root cause
-`/system` saves the token to `bot_settings.facebook_system_user_token`. `messenger-webhook` reads DB-first (correct). `backfill-profile-pics` only reads `Deno.env.get("FACEBOOK_SYSTEM_USER_TOKEN")` — so the Refresh button keeps using the stale env-var secret instead of the token you updated in the UI.
+Make sure new Messenger customers (created by `messenger-webhook` on first inbound event) populate `messenger_name` / `messenger_profile_pic` using the same Graph call and same token source as the now-working "Refetch from Facebook" button on `/customers/[id]`.
 
-### Change
+## Current state
 
-**`supabase/functions/backfill-profile-pics/index.ts`**
+- `messenger-webhook/index.ts` already calls Graph `v19.0/<psid>?fields=first_name,last_name,name,profile_pic,locale,timezone` for new senders (`getUserProfile` → `tryFetchProfile`) and prefers the system user token before falling back to the page token. Good.
+- BUT the system user token is read from a 5-minute config cache (`getConfigValue` in `messenger-webhook`). When you update the token in `/system`, new inbound messages can use the **stale cached token** for up to 5 minutes — which mimics the original bug the Refresh button had.
+- `backfill-profile-pics` (the Refresh path) now reads the token **DB-first, no cache** via `getSystemUserToken()`. We want the webhook's new-customer path to match.
 
-1. Remove the module-level `const SYSTEM_USER_TOKEN = Deno.env.get(...)`.
-2. Add `async function getSystemUserToken(): Promise<{ token: string | null; source: 'db' | 'env' | null }>`:
-   - `SELECT value FROM bot_settings WHERE key = 'facebook_system_user_token'`. If non-empty → return `{ token, source: 'db' }`.
-   - Else fall back to `Deno.env.get("FACEBOOK_SYSTEM_USER_TOKEN")` → `{ token, source: 'env' }` (or `null`).
-3. `refreshSingleCustomer`: call `getSystemUserToken()` at the top; use the returned token everywhere `SYSTEM_USER_TOKEN` is referenced; include `token_source` (`'db' | 'env'`) and token length/prefix/suffix in the log line + the JSON response so the toast makes it visible which one was used.
-4. Bulk Messenger branch in `backfillProfilePics`: same — fetch the token once at the start of the run and use it.
+## Change
 
-### Out of scope
-- No frontend changes; the existing toast/logging will now show `token_source` automatically.
-- No schema or secret changes.
+**`supabase/functions/messenger-webhook/index.ts`** — single file, no schema or frontend changes.
+
+1. Add a helper mirroring backfill:
+   ```ts
+   async function getSystemUserTokenFresh(): Promise<{ token: string | null; source: 'db' | 'env' | null }>
+   ```
+   - `SELECT value FROM bot_settings WHERE key='facebook_system_user_token'` (no cache).
+   - Falls back to `Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN')`.
+   - Returns `{ token, source }`.
+
+2. Update `getUserProfile(psid, pageId)`:
+   - Call `getSystemUserTokenFresh()` at the top instead of reading the module-level `systemUserToken`.
+   - Use that token for the first `tryFetchProfile(...)` attempt (`source` label becomes `system_user_token:db` / `system_user_token:env` for log visibility).
+   - Keep the existing page-token fallback unchanged.
+   - Also refresh the in-memory `systemUserToken` + `configCache` entry whenever the DB value differs, so other call sites (Send API page-token lookups, etc.) pick up the change immediately.
+
+3. Logging: in the new-customer creation block (around line 574 and the duplicate path around line 806), log `token_source` + length/prefix/suffix once per fetch — same shape as `refreshSingleCustomer` — so we can confirm in edge logs which token created each new customer.
+
+4. No behavior change for already-existing customers beyond the "Unknown name refresh" branch (line 525), which already calls `getUserProfile` and will inherit the fix automatically.
+
+## Out of scope
+
+- No changes to `backfill-profile-pics`, no DB migrations, no frontend, no changes to the page-token cache (only the system-user-token path needs to bypass cache).
+- Not changing the Graph field list — the current field set is a superset of the Refresh button's fields, which is fine.
+
+## How to verify
+
+1. Update the System User token in `/system`.
+2. Send a brand-new Messenger message from a never-seen-before user.
+3. Check `messenger-webhook` logs: should show `token_source=db length=…` and `[profile-fetch] success via=system_user_token:db …` within the same request, and the new customer row should have a real `messenger_name` + stored `messenger_profile_pic` immediately (no "Unknown").
