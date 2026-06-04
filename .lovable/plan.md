@@ -1,36 +1,52 @@
-## Why your new traffic isn't showing
+## Goal
 
-Your test **did** land in the database — lead `5e4ad7c1…` (messenger_ref `HAROLDTESTING`, user_id `acd24eb7…`) was created at 21:46:16 UTC and the Telegram bot successfully linked it to your customer. So the capture pipeline is healthy.
+Use your newly-pasted `FACEBOOK_SYSTEM_USER_TOKEN` to mint a fresh Page Token for Explorer By SL, save it into `facebook_pages`, and self-heal future "Unknown" Messenger profile lookups.
 
-The reason it isn't on the `/traffic` page in your browser:
+## Changes
 
-- `useTrafficData` in `src/hooks/useTrafficData.ts` uses React Query with `staleTime: 5 * 60 * 1000` (5 minutes) and no realtime subscription / no `refetchOnWindowFocus`.
-- You loaded `/traffic` before the test, so React Query is serving the cached page. It will not refetch until 5 minutes pass or the page is hard-reloaded.
+### 1. `supabase/functions/facebook-oauth/index.ts` — add `POST /resync-page-tokens`
 
-A manual refresh of the browser tab right now will already show the row. The plan below fixes it so you never have to.
+- Read `FACEBOOK_SYSTEM_USER_TOKEN` from env.
+- Call `GET https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,category,picture{url}&access_token=<systemUserToken>`.
+- For each returned page, UPSERT into `facebook_pages` (overwrites `access_token`, `name`, `picture_url`, `category`, sets `is_active = true`, clears `token_expires_at` since System User tokens don't expire).
+- Compare against existing `facebook_pages` rows and return:
+  ```json
+  {
+    "refreshed": [{ "page_id", "name", "old_token_len", "new_token_len" }],
+    "missing":   [{ "page_id", "name" }]   // in DB but not returned by /me/accounts
+  }
+  ```
+- After upsert, POST `{ action: "invalidate_token_cache" }` to `messenger-webhook` with the service-role key so the in-memory page-token cache resets immediately.
+- Requires admin JWT (checks `has_role(auth.uid(), 'admin')`).
 
-## Plan
+### 2. `supabase/functions/messenger-webhook/index.ts` — add cache invalidation + self-heal
 
-1. **Add a Postgres realtime subscription** to `telegram_leads` inside `useTrafficData` (and `useTrafficFilterOptions`):
-   - Subscribe to `INSERT` and `UPDATE` events on `public.telegram_leads`.
-   - On any event, call `queryClient.invalidateQueries({ queryKey: ["traffic"] })` and `["traffic-filter-options"]`.
-   - Clean up the channel on unmount.
+- At the top of the POST handler, short-circuit on `{ action: "invalidate_token_cache" }` when the `x-service-role` header matches `SUPABASE_SERVICE_ROLE_KEY` — resets `pageTokensCache = {}` and `pageTokensCacheTime = 0`, returns `{ ok: true }`.
+- In `fetchUserProfile`, when Graph returns error code `100` / subcode `2018247`, force-refresh the page-token cache from `facebook_pages` and retry the profile call once before falling back to "Unknown".
 
-2. **Enable realtime on the table** via a migration:
-   ```sql
-   ALTER PUBLICATION supabase_realtime ADD TABLE public.telegram_leads;
-   ```
-   (No-op if already added.)
+### 3. `src/pages/FacebookPages.tsx` — admin button
 
-3. **Tighten freshness defaults** on the traffic query:
-   - Drop `staleTime` from 5 min to 30 s.
-   - Add `refetchOnWindowFocus: true` so switching back to the tab also refreshes.
+- Add a **"Re-sync tokens from System User"** button (admin-only) in the header area.
+- On click: invoke `facebook-oauth/resync-page-tokens`, show a toast like:
+  > Refreshed 1 page. Explorer By SL: token rotated (207 → 213 chars). Missing: none.
+- If `missing` is non-empty, surface a warning toast naming the pages — those aren't assigned to the System User in Business Manager.
 
-4. **Add a manual "Refresh" button** next to the existing filters in `Traffic.tsx` that calls `refetch()` — useful belt-and-suspenders for the admin.
+### 4. Auto-backfill existing "Unknown" customers
 
-No changes to the capture pipeline, edge functions, or RLS — those are all working.
+- After a successful resync, automatically invoke `backfill-profile-pics` with `{ limit: 100 }` so customers like Saddam and Prince get their names/photos filled in within seconds.
 
-### Files touched
-- `src/hooks/useTrafficData.ts` — realtime channel + lower staleTime + refetchOnWindowFocus
-- `src/pages/Traffic.tsx` — small Refresh button
-- New migration enabling realtime on `telegram_leads`
+## How you'll use it
+
+1. Approve this plan → I implement the changes.
+2. Open **System → Facebook Pages** in the app.
+3. Click **Re-sync tokens from System User**.
+4. Toast confirms Explorer By SL's token was rotated, and the backfill job updates existing Unknown customers. All new inbound messages will resolve names/photos correctly from then on.
+
+## What this won't fix
+
+If `/me/accounts` doesn't return Explorer By SL, the System User isn't assigned to that page (with the User Profile capability) in Business Manager. The `missing[]` list in the toast will tell you exactly which page is unreachable so you can fix the assignment in Meta Business Suite.
+
+## Out of scope
+
+- No DB migration, no new secrets, no schema changes.
+- No changes to existing OAuth or webhook ingestion logic.
