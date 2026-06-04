@@ -94,12 +94,12 @@ const CustomerDetail = () => {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
 
-  const refreshMessengerProfile = async (accountId: string) => {
+  const refreshMessengerProfile = async (accountId: string, overrideToken?: string) => {
     setRefreshingId(accountId);
     try {
-      const { data, error } = await supabase.functions.invoke('backfill-profile-pics', {
-        body: { customer_id: accountId },
-      });
+      const body: any = { customer_id: accountId };
+      if (overrideToken) body.override_token = overrideToken;
+      const { data, error } = await supabase.functions.invoke('backfill-profile-pics', { body });
       if (error) {
         // Try to extract Graph error body from non-2xx response
         const ctx: any = (error as any).context;
