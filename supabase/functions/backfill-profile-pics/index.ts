@@ -402,20 +402,35 @@ serve(async (req) => {
   try {
     let limit = 50;
     let customerId: string | null = null;
+    let overrideToken: string | undefined;
+    let mode: string | null = null;
+    let testPsid: string | undefined;
 
     if (req.method === 'POST') {
       try {
         const body = await req.json();
+        if (typeof body.mode === 'string') mode = body.mode;
         if (typeof body.customer_id === 'string') customerId = body.customer_id;
+        if (typeof body.override_token === 'string' && body.override_token.trim()) overrideToken = body.override_token.trim();
+        if (typeof body.test_psid === 'string') testPsid = body.test_psid;
         if (body.limit && typeof body.limit === 'number') {
           limit = Math.min(body.limit, 200);
         }
       } catch { /* defaults */ }
     }
 
+    if (mode === 'diagnose') {
+      console.log('Running token diagnostic');
+      const result = await diagnoseSystemUserToken(testPsid);
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (customerId) {
-      console.log(`Refreshing single customer: ${customerId}`);
-      const result = await refreshSingleCustomer(customerId);
+      console.log(`Refreshing single customer: ${customerId}${overrideToken ? ' (with override token)' : ''}`);
+      const result = await refreshSingleCustomer(customerId, overrideToken);
       return new Response(JSON.stringify(result), {
         status: result.success ? 200 : 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
