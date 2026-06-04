@@ -273,11 +273,24 @@ async function refreshSingleCustomer(customerId: string): Promise<any> {
   if (!SYSTEM_USER_TOKEN) return { success: false, error: 'FACEBOOK_SYSTEM_USER_TOKEN not configured' };
 
   const url = `https://graph.facebook.com/v19.0/${customer.messenger_id}?fields=name,first_name,profile_pic&access_token=${SYSTEM_USER_TOKEN}`;
+  const maskedUrl = url.replace(SYSTEM_USER_TOKEN, `${SYSTEM_USER_TOKEN.slice(0, 8)}…${SYSTEM_USER_TOKEN.slice(-4)}`);
+  const tokenMeta = {
+    length: SYSTEM_USER_TOKEN.length,
+    prefix: SYSTEM_USER_TOKEN.slice(0, 8),
+    suffix: SYSTEM_USER_TOKEN.slice(-4),
+  };
+
+  console.log(`[refreshSingleCustomer] customer=${customerId} psid=${customer.messenger_id}`);
+  console.log(`[refreshSingleCustomer] GET ${maskedUrl}`);
+  console.log(`[refreshSingleCustomer] token meta=${JSON.stringify(tokenMeta)}`);
+
   const r = await fetch(url);
   const txt = await r.text();
+  console.log(`[refreshSingleCustomer] HTTP ${r.status} body=${txt}`);
+
   let graph: any;
   try { graph = JSON.parse(txt); } catch {
-    return { success: false, customer_id: customerId, error: `Non-JSON response: ${txt}` };
+    return { success: false, customer_id: customerId, error: `Non-JSON response: ${txt}`, request: { url: maskedUrl, token: tokenMeta } };
   }
 
   if (!r.ok || graph?.error) {
@@ -285,7 +298,9 @@ async function refreshSingleCustomer(customerId: string): Promise<any> {
       success: false,
       customer_id: customerId,
       error: graph?.error?.message || `HTTP ${r.status}`,
+      status: r.status,
       graph,
+      request: { url: maskedUrl, token: tokenMeta },
     };
   }
 

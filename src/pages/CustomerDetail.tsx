@@ -108,6 +108,9 @@ const CustomerDetail = () => {
           if (txt) payload = JSON.parse(txt);
         } catch { /* ignore */ }
       }
+      console.log('[refreshMessengerProfile] response:', payload);
+      if (payload?.request) console.log('[refreshMessengerProfile] graph request:', payload.request);
+      if (payload?.graph) console.log('[refreshMessengerProfile] graph response:', payload.graph);
       if (payload?.success) {
         toast.success(`Updated: ${payload.name}`, {
           description: 'Profile refreshed from Facebook',
@@ -115,7 +118,7 @@ const CustomerDetail = () => {
         if (id) await fetchUnifiedCustomerData(id);
       } else {
         toast.error('Refresh failed', {
-          description: payload?.error || error?.message || 'Unknown error',
+          description: `${payload?.error || error?.message || 'Unknown error'}${payload?.request?.url ? ` — ${payload.request.url}` : ''}`,
         });
       }
     } catch (err: any) {
