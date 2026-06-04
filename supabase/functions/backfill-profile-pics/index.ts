@@ -29,8 +29,23 @@ async function getActivePageTokens(): Promise<Array<{ page_id: string; access_to
   return data;
 }
 
-// Try fetching Messenger profile - prefers system user token, falls back to a page token.
-const SYSTEM_USER_TOKEN = Deno.env.get("FACEBOOK_SYSTEM_USER_TOKEN");
+// System User Token: DB (bot_settings) first, env var fallback.
+async function getSystemUserToken(): Promise<{ token: string | null; source: 'db' | 'env' | null }> {
+  try {
+    const { data } = await supabase
+      .from('bot_settings')
+      .select('value')
+      .eq('key', 'facebook_system_user_token')
+      .maybeSingle();
+    const v = (data?.value || '').trim();
+    if (v) return { token: v, source: 'db' };
+  } catch (e) {
+    console.error('getSystemUserToken: bot_settings lookup failed', e);
+  }
+  const envTok = (Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN') || '').trim();
+  if (envTok) return { token: envTok, source: 'env' };
+  return { token: null, source: null };
+}
 
 async function fetchMessengerProfile(messengerId: string, token: string): Promise<any | null> {
   try {
@@ -130,6 +145,8 @@ async function backfillProfilePics(limit: number = 50): Promise<{
     // Get active pages for inferring page_id
     const activePages = await getActivePageTokens();
     console.log(`Found ${activePages.length} active pages for profile lookups`);
+    const { token: bulkSystemToken, source: bulkTokenSource } = await getSystemUserToken();
+    console.log(`[bulk] system user token source=${bulkTokenSource} length=${bulkSystemToken?.length || 0}`);
 
     // Get customers that need fixing:
     // - Missing profile pic OR messenger_name is 'Unknown'
@@ -180,10 +197,10 @@ async function backfillProfilePics(limit: number = 50): Promise<{
           let profile: any = null;
 
           // 1. Try system user token first
-          if (SYSTEM_USER_TOKEN) {
-            profile = await fetchMessengerProfile(customer.messenger_id, SYSTEM_USER_TOKEN);
+          if (bulkSystemToken) {
+            profile = await fetchMessengerProfile(customer.messenger_id, bulkSystemToken);
             if (profile) {
-              console.log(`Found profile for ${customer.id} via system_user_token: ${profile.first_name} ${profile.last_name || ''}`);
+              console.log(`Found profile for ${customer.id} via system_user_token(${bulkTokenSource}): ${profile.first_name} ${profile.last_name || ''}`);
             }
           }
 
@@ -270,11 +287,16 @@ async function refreshSingleCustomer(customerId: string): Promise<any> {
   if (error) return { success: false, error: `DB error: ${error.message}` };
   if (!customer) return { success: false, error: 'Customer not found' };
   if (!customer.messenger_id) return { success: false, error: 'Customer has no messenger_id' };
-  if (!SYSTEM_USER_TOKEN) return { success: false, error: 'FACEBOOK_SYSTEM_USER_TOKEN not configured' };
+
+  const { token: SYSTEM_USER_TOKEN, source: tokenSource } = await getSystemUserToken();
+  if (!SYSTEM_USER_TOKEN) {
+    return { success: false, error: 'System User Token not configured (checked bot_settings + FACEBOOK_SYSTEM_USER_TOKEN env)' };
+  }
 
   const url = `https://graph.facebook.com/v19.0/${customer.messenger_id}?fields=name,first_name,profile_pic&access_token=${SYSTEM_USER_TOKEN}`;
   const maskedUrl = url.replace(SYSTEM_USER_TOKEN, `${SYSTEM_USER_TOKEN.slice(0, 8)}…${SYSTEM_USER_TOKEN.slice(-4)}`);
   const tokenMeta = {
+    source: tokenSource,
     length: SYSTEM_USER_TOKEN.length,
     prefix: SYSTEM_USER_TOKEN.slice(0, 8),
     suffix: SYSTEM_USER_TOKEN.slice(-4),
@@ -339,6 +361,7 @@ async function refreshSingleCustomer(customerId: string): Promise<any> {
     name: fullName,
     profile_pic: photoUrl,
     graph,
+    request: { url: maskedUrl, token: tokenMeta },
   };
 }
 
