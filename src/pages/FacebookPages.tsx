@@ -1316,6 +1316,28 @@ const FacebookPages = () => {
                 </Card>
               )}
 
+              {/* Repopulate Unknown Messenger profiles - Admin Only */}
+              {isAdmin && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <RefreshCw className="h-5 w-5" />
+                      Repopulate Unknown customers
+                    </CardTitle>
+                    <CardDescription>
+                      Re-fetches names &amp; profile pictures from Facebook (using the System User token) for any customer currently
+                      shown as "Unknown" or missing a profile picture. Safe to run repeatedly — processes up to 200 at a time.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button onClick={runBackfillProfiles} disabled={backfillRunning} className="gap-2">
+                      {backfillRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      {backfillRunning ? 'Running…' : 'Repopulate now'}
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Cleanup Unknown Messenger Customers - Admin Only */}
               {isAdmin && (
                 <Card className="border-destructive/30">
