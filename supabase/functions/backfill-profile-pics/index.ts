@@ -29,8 +29,23 @@ async function getActivePageTokens(): Promise<Array<{ page_id: string; access_to
   return data;
 }
 
-// Try fetching Messenger profile - prefers system user token, falls back to a page token.
-const SYSTEM_USER_TOKEN = Deno.env.get("FACEBOOK_SYSTEM_USER_TOKEN");
+// System User Token: DB (bot_settings) first, env var fallback.
+async function getSystemUserToken(): Promise<{ token: string | null; source: 'db' | 'env' | null }> {
+  try {
+    const { data } = await supabase
+      .from('bot_settings')
+      .select('value')
+      .eq('key', 'facebook_system_user_token')
+      .maybeSingle();
+    const v = (data?.value || '').trim();
+    if (v) return { token: v, source: 'db' };
+  } catch (e) {
+    console.error('getSystemUserToken: bot_settings lookup failed', e);
+  }
+  const envTok = (Deno.env.get('FACEBOOK_SYSTEM_USER_TOKEN') || '').trim();
+  if (envTok) return { token: envTok, source: 'env' };
+  return { token: null, source: null };
+}
 
 async function fetchMessengerProfile(messengerId: string, token: string): Promise<any | null> {
   try {
