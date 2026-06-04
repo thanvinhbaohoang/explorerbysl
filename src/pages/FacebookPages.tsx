@@ -285,6 +285,28 @@ const FacebookPages = () => {
 
   // Backfill profile pics + names for Unknown / missing-pic customers
   const [backfillRunning, setBackfillRunning] = useState(false);
+  const [tokenDiagRunning, setTokenDiagRunning] = useState(false);
+  const [tokenDiagOpen, setTokenDiagOpen] = useState(false);
+  const [tokenDiagResult, setTokenDiagResult] = useState<any>(null);
+
+  const runTokenDiagnose = async () => {
+    setTokenDiagRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('backfill-profile-pics', {
+        body: { mode: 'diagnose' },
+      });
+      if (error) {
+        toast.error('Diagnostic failed', { description: error.message });
+      } else {
+        setTokenDiagResult(data);
+        setTokenDiagOpen(true);
+      }
+    } catch (err: any) {
+      toast.error('Diagnostic failed', { description: err.message });
+    } finally {
+      setTokenDiagRunning(false);
+    }
+  };
   const runBackfillProfiles = async () => {
     setBackfillRunning(true);
     try {
@@ -1334,9 +1356,37 @@ const FacebookPages = () => {
                       {backfillRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                       {backfillRunning ? 'Running…' : 'Repopulate now'}
                     </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-2 ml-2"
+                      onClick={runTokenDiagnose}
+                      disabled={tokenDiagRunning}
+                    >
+                      {tokenDiagRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Info className="h-4 w-4" />}
+                      Diagnose System User Token
+                    </Button>
                   </CardContent>
                 </Card>
               )}
+
+              {/* Diagnose result dialog */}
+              <AlertDialog open={tokenDiagOpen} onOpenChange={setTokenDiagOpen}>
+                <AlertDialogContent className="max-w-3xl">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>System User Token Diagnostic</AlertDialogTitle>
+                    <AlertDialogDescription asChild>
+                      <div className="text-left">
+                        <pre className="mt-2 max-h-[60vh] overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">
+{tokenDiagResult ? JSON.stringify(tokenDiagResult, null, 2) : 'No data'}
+                        </pre>
+                      </div>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogAction onClick={() => setTokenDiagOpen(false)}>Close</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
 
               {/* Cleanup Unknown Messenger Customers - Admin Only */}
               {isAdmin && (

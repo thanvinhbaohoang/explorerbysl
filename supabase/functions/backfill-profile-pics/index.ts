@@ -259,8 +259,59 @@ async function backfillProfilePics(limit: number = 50): Promise<{
   return results;
 }
 
+// Token diagnostic - returns stored-token shape + debug_token + visible pages + test PSID lookup
+async function diagnoseSystemUserToken(testPsid?: string): Promise<any> {
+  const tok = SYSTEM_USER_TOKEN || '';
+  const trimmed = tok.trim();
+  const storedShape = {
+    present: !!tok,
+    length: tok.length,
+    trimmed_length: trimmed.length,
+    differs_when_trimmed: tok !== trimmed,
+    first8: tok.slice(0, 8),
+    last8: tok.slice(-8),
+    contains_whitespace: /\s/.test(tok),
+    contains_newline: /[\r\n]/.test(tok),
+    contains_quote: /["']/.test(tok),
+  };
+
+  if (!tok) return { stored: storedShape, error: 'FACEBOOK_SYSTEM_USER_TOKEN is not set' };
+
+  const result: any = { stored: storedShape };
+
+  // debug_token (use the same token as the access_token for self-debug)
+  try {
+    const debugUrl = `https://graph.facebook.com/v19.0/debug_token?input_token=${encodeURIComponent(trimmed)}&access_token=${encodeURIComponent(trimmed)}`;
+    const r = await fetch(debugUrl);
+    result.debug_token = await r.json();
+  } catch (e) { result.debug_token = { error: String(e) }; }
+
+  // /me
+  try {
+    const r = await fetch(`https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${encodeURIComponent(trimmed)}`);
+    result.me = await r.json();
+  } catch (e) { result.me = { error: String(e) }; }
+
+  // visible pages
+  try {
+    const r = await fetch(`https://graph.facebook.com/v19.0/me/accounts?fields=id,name,category&access_token=${encodeURIComponent(trimmed)}`);
+    const j = await r.json();
+    result.pages = j.data || j;
+  } catch (e) { result.pages = { error: String(e) }; }
+
+  // Test PSID lookup if provided
+  if (testPsid) {
+    try {
+      const r = await fetch(`https://graph.facebook.com/v19.0/${testPsid}?fields=name,first_name,profile_pic&access_token=${encodeURIComponent(trimmed)}`);
+      result.psid_test = { status: r.status, body: await r.json() };
+    } catch (e) { result.psid_test = { error: String(e) }; }
+  }
+
+  return result;
+}
+
 // Single-customer refresh with verbose result (used by CustomerDetail "Refresh from Facebook" button)
-async function refreshSingleCustomer(customerId: string): Promise<any> {
+async function refreshSingleCustomer(customerId: string, overrideToken?: string): Promise<any> {
   const { data: customer, error } = await supabase
     .from('customer')
     .select('id, messenger_id, messenger_name, page_id')
@@ -292,11 +343,12 @@ async function refreshSingleCustomer(customerId: string): Promise<any> {
     return p;
   };
 
-  if (SYSTEM_USER_TOKEN) {
-    profile = await fetchRaw(SYSTEM_USER_TOKEN, 'system_user_token');
-    if (profile) source = 'system_user_token';
+  const effectiveSystemToken = (overrideToken || SYSTEM_USER_TOKEN || '').trim();
+  if (effectiveSystemToken) {
+    profile = await fetchRaw(effectiveSystemToken, overrideToken ? 'override_token' : 'system_user_token');
+    if (profile) source = overrideToken ? 'system_user_token' : 'system_user_token';
   } else {
-    attempts.push({ source: 'system_user_token', error: 'FACEBOOK_SYSTEM_USER_TOKEN not set' });
+    attempts.push({ source: 'system_user_token', error: 'No token available' });
   }
 
   if (!profile) {
@@ -350,20 +402,35 @@ serve(async (req) => {
   try {
     let limit = 50;
     let customerId: string | null = null;
+    let overrideToken: string | undefined;
+    let mode: string | null = null;
+    let testPsid: string | undefined;
 
     if (req.method === 'POST') {
       try {
         const body = await req.json();
+        if (typeof body.mode === 'string') mode = body.mode;
         if (typeof body.customer_id === 'string') customerId = body.customer_id;
+        if (typeof body.override_token === 'string' && body.override_token.trim()) overrideToken = body.override_token.trim();
+        if (typeof body.test_psid === 'string') testPsid = body.test_psid;
         if (body.limit && typeof body.limit === 'number') {
           limit = Math.min(body.limit, 200);
         }
       } catch { /* defaults */ }
     }
 
+    if (mode === 'diagnose') {
+      console.log('Running token diagnostic');
+      const result = await diagnoseSystemUserToken(testPsid);
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (customerId) {
-      console.log(`Refreshing single customer: ${customerId}`);
-      const result = await refreshSingleCustomer(customerId);
+      console.log(`Refreshing single customer: ${customerId}${overrideToken ? ' (with override token)' : ''}`);
+      const result = await refreshSingleCustomer(customerId, overrideToken);
       return new Response(JSON.stringify(result), {
         status: result.success ? 200 : 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
