@@ -1597,33 +1597,68 @@ serve(async (req) => {
             const isEcho = event.message.is_echo === true;
             
             if (isEcho) {
+              const mid = event.message.mid;
               const { data: existingMessage } = await supabase
                 .from('messages')
                 .select('id')
-                .eq('messenger_mid', event.message.mid)
+                .eq('messenger_mid', mid)
                 .maybeSingle();
-              
+
               if (existingMessage) {
-                console.log('Skipping echo - message already saved from interface');
+                console.log('[echo] skip - already saved from our UI');
                 continue;
               }
-              
-              console.log(`Employee message sent via Messenger app on page ${currentPageId}`);
-              
-              const { data: customer } = await supabase
+
+              console.log(`[echo] employee reply via Page Inbox on page ${currentPageId} to ${recipientId}`);
+
+              // Look up customer; create one if this is a brand-new conversation
+              let { data: customer } = await supabase
                 .from('customer')
                 .select('*')
                 .eq('messenger_id', recipientId)
                 .maybeSingle();
-              
-              if (customer) {
-                const timestamp = event.message.timestamp ? new Date(event.message.timestamp).toISOString() : new Date().toISOString();
-                
-                await supabase
+
+              if (!customer) {
+                console.log(`[echo] customer not found for ${recipientId}, creating`);
+                const profile = await getUserProfile(recipientId, currentPageId);
+                const { data: newCustomer, error: insertErr } = await supabase
+                  .from('customer')
+                  .insert({
+                    messenger_id: recipientId,
+                    messenger_name: profile ? `${profile.first_name} ${profile.last_name}` : 'Unknown',
+                    messenger_profile_pic: null,
+                    locale: profile?.locale || null,
+                    timezone_offset: profile?.timezone || null,
+                    first_message_at: new Date().toISOString(),
+                    page_id: currentPageId,
+                  })
+                  .select()
+                  .single();
+
+                if (insertErr || !newCustomer) {
+                  console.error('[echo] failed to create customer:', insertErr);
+                  continue;
+                }
+                customer = newCustomer;
+
+                if (profile?.profile_pic) {
+                  const stored = await downloadAndStoreProfilePic(profile.profile_pic, customer.id);
+                  if (stored) {
+                    await supabase.from('customer').update({ messenger_profile_pic: stored }).eq('id', customer.id);
+                  }
+                }
+              }
+
+              const timestamp = event.message.timestamp ? new Date(event.message.timestamp).toISOString() : new Date().toISOString();
+              const attachments = Array.isArray(event.message.attachments) ? event.message.attachments : [];
+
+              // Text-only echo
+              if (!attachments.length) {
+                const { error: msgErr } = await supabase
                   .from('messages')
                   .insert({
                     customer_id: customer.id,
-                    messenger_mid: event.message.mid,
+                    messenger_mid: mid,
                     platform: 'messenger',
                     message_type: 'text',
                     message_text: event.message.text || null,
@@ -1631,8 +1666,107 @@ serve(async (req) => {
                     is_read: true,
                     timestamp,
                   });
-                
-                console.log('Saved employee message from Messenger app');
+                if (msgErr) console.error('[echo] text insert error:', msgErr);
+                else console.log('[echo] saved text');
+                continue;
+              }
+
+              // Attachment echo(es)
+              const mediaGroupId = attachments.length > 1
+                ? `messenger-echo-${Date.now()}-${Math.random().toString(36).substring(7)}`
+                : null;
+
+              for (let i = 0; i < attachments.length; i++) {
+                const attachment = attachments[i];
+                let attMessageType = 'text';
+                let attMessageText: string | null = i === 0 ? (event.message.text || null) : null;
+                let attPhotoUrl: string | null = null;
+                let attPhotoFileId: string | null = null;
+                let attVideoUrl: string | null = null;
+                let attVideoFileId: string | null = null;
+                let attVideoMimeType: string | null = null;
+                let attVoiceUrl: string | null = null;
+                let attVoiceFileId: string | null = null;
+                let attDocumentUrl: string | null = null;
+                let attDocumentName: string | null = null;
+                let attDocumentMimeType: string | null = null;
+                let attDocumentSize: number | null = null;
+
+                const payloadUrl = attachment?.payload?.url || null;
+
+                if (attachment.type === 'image') {
+                  attMessageType = 'photo';
+                  if (payloadUrl) {
+                    const result = await downloadAndStoreFile(payloadUrl, 'photo');
+                    attPhotoUrl = result.ok ? result.url : payloadUrl;
+                  }
+                  attPhotoFileId = attachment.payload?.sticker_id || 'fb_image';
+                } else if (attachment.type === 'video') {
+                  attMessageType = 'video';
+                  if (payloadUrl) {
+                    const result = await downloadAndStoreFile(payloadUrl, 'video');
+                    attVideoUrl = result.ok ? result.url : payloadUrl;
+                  }
+                  attVideoFileId = 'fb_video';
+                  attVideoMimeType = 'video/mp4';
+                } else if (attachment.type === 'audio') {
+                  attMessageType = 'voice';
+                  if (payloadUrl) {
+                    const result = await downloadAndStoreFile(payloadUrl, 'voice');
+                    attVoiceUrl = result.ok ? result.url : payloadUrl;
+                  }
+                  attVoiceFileId = 'fb_audio';
+                } else if (attachment.type === 'file') {
+                  attMessageType = 'document';
+                  const fileName = attachment.payload?.name || 'document';
+                  const declaredMime = attachment.payload?.mime_type || null;
+                  attDocumentName = fileName;
+                  attDocumentMimeType = declaredMime || 'application/octet-stream';
+                  if (payloadUrl) {
+                    const result = await downloadAndStoreFile(payloadUrl, 'document', fileName);
+                    if (result.ok) {
+                      attDocumentUrl = result.url;
+                      attDocumentSize = result.size;
+                      attDocumentMimeType = declaredMime || result.contentType || attDocumentMimeType;
+                      attMessageText = attMessageText || `[Document: ${fileName}]`;
+                    } else {
+                      attDocumentUrl = payloadUrl;
+                      attMessageText = attMessageText || `[Document: ${fileName}]`;
+                    }
+                  }
+                } else {
+                  // sticker / template / fallback — render as text placeholder
+                  attMessageType = 'text';
+                  attMessageText = attMessageText || `[${attachment.type || 'attachment'}]`;
+                }
+
+                const { error: attErr } = await supabase
+                  .from('messages')
+                  .insert({
+                    customer_id: customer.id,
+                    messenger_mid: attachments.length > 1 ? `${mid}-${i}` : mid,
+                    platform: 'messenger',
+                    message_type: attMessageType,
+                    message_text: attMessageText,
+                    photo_url: attPhotoUrl,
+                    photo_file_id: attPhotoFileId,
+                    video_url: attVideoUrl,
+                    video_file_id: attVideoFileId,
+                    video_mime_type: attVideoMimeType,
+                    voice_url: attVoiceUrl,
+                    voice_file_id: attVoiceFileId,
+                    document_url: attDocumentUrl,
+                    document_name: attDocumentName,
+                    document_mime_type: attDocumentMimeType,
+                    document_size: attDocumentSize,
+                    media_group_id: mediaGroupId,
+                    sender_type: 'employee',
+                    is_read: true,
+                    timestamp,
+                  });
+
+                if (attErr) console.error(`[echo] attachment ${i + 1} insert error:`, attErr);
+                else console.log(`[echo] saved ${attMessageType} ${i + 1}/${attachments.length}`);
               }
             }
             continue;

@@ -1,33 +1,38 @@
-## Root cause
+## Goal
+When an employee replies to a customer from the Facebook Page's Messenger inbox (Page Inbox, Meta Business Suite, or Messenger mobile app), that outbound message should appear in our chat collection just like messages sent from our app.
 
-New-customer creation fails because the webhook asks Graph for `locale,timezone` in addition to name/profile_pic. Those fields need `pages_user_locale` and `pages_user_timezone`, which the app isn't approved for, so Facebook returns `(#100) Insufficient permission to access user profile (subcode 2018247)` and the whole response is dropped → customer is saved as `Unknown`.
+## Current behavior
+The webhook (`supabase/functions/messenger-webhook/index.ts`, lines 1595–1639) already handles `is_echo` events, but with gaps:
+- Only saves **text** messages — any image, video, audio, file, or sticker reply sent from Page Inbox is silently dropped.
+- Skips entirely if the customer doesn't exist yet in our `customer` table (e.g., employee initiates contact, or first interaction came in while messenger integration was off).
+- Doesn't update `customer.last_message_at` ordering for the chat list (the DB trigger handles this, fine).
 
-The Refresh button uses only `name,first_name,profile_pic` against the same token and works.
+Also: echoes only arrive if the page is subscribed to the `message_echoes` webhook field. Need to verify that's part of our subscription setup.
 
-## Change
+## Changes
 
-**`supabase/functions/messenger-webhook/index.ts`** — one file.
+### 1. `supabase/functions/messenger-webhook/index.ts` — expand echo handler
+Replace the text-only echo insert block (~lines 1599–1637) with logic that mirrors `handleMessage` for inbound attachments but stored as `sender_type: 'employee'`:
 
-1. In `tryFetchProfile`, change the Graph URL fields from
-   `first_name,last_name,name,profile_pic,locale,timezone`
-   to
-   `name,first_name,last_name,profile_pic`
-   (drop `locale,timezone`).
+- Detect message type from `event.message.attachments[0].type` (`image`, `video`, `audio`, `file`, `template`, `fallback`) or fall back to `text`.
+- For attachments, store the Facebook CDN URL in the matching column (`photo_url`, `video_url`, `voice_url`, `document_url`), plus `document_name`/`document_mime_type`/`document_size` where available, matching the schema already used for inbound messenger messages.
+- For stickers/templates with no usable URL, save as text with a placeholder like `[sticker]` or the template title so the conversation thread stays coherent.
+- If the recipient (customer) doesn't exist yet, create a minimal customer row first (same shape as `handleMessage`'s "new customer" path: `messenger_id = recipientId`, `page_id = currentPageId`, name = `Unknown` until a profile fetch resolves it), then trigger the same profile fetch flow used for new inbound customers so the row gets populated automatically.
+- Keep the existing dedupe by `messenger_mid` so messages we sent from our own UI (which already inserted with their `mid`) aren't double-saved.
+- Mark `is_read: true` (employee-sent) and use `event.message.timestamp` for ordering.
+- Preserve `sent_by_name` as `null` for echoes (we don't know which employee replied in Page Inbox) — UI already tolerates this.
 
-2. In the new-customer insert blocks (around lines 580 and 810), stop setting `locale` and `timezone_offset` from the profile response (set them to `null`, since the API no longer returns them). Leave the columns nullable as they already are.
-
-3. In the "Unknown name refresh" block (around line 544), drop the `locale` / `timezone_offset` updates for the same reason — keep whatever was already on the row.
-
-4. Keep all existing fallback logic (system_user_token first, page_token fallback) and all logging unchanged.
+### 2. Webhook subscription check (no code change, just verification)
+In the message I send after implementing, remind the user that the Facebook Page must be subscribed to the **`message_echoes`** webhook field for this to work. If they only subscribed to `messages`, no echo events will arrive and Page Inbox replies will never reach us. They can verify in the Facebook App dashboard under Messenger → Webhooks.
 
 ## Out of scope
+- No schema changes.
+- No frontend changes (ChatPanel/ChatConversationList already render `sender_type: 'employee'` messages and attachments).
+- No changes to outbound send flow from our own UI.
+- No changes to `handleMessage`, profile fetch, or any other unrelated handler.
 
-- No schema changes, no frontend changes, no changes to `backfill-profile-pics` (it already matches this behavior or will be aligned only if it shows the same error in logs).
-- Not touching the 5-min config cache — already bypassed by the previous fix for the system user token.
-- Not adding a background retry; once fields are corrected, the first webhook event will populate the profile.
-
-## Verify
-
-1. Send a new Messenger message from a never-seen-before user.
-2. Edge logs should show `[profile-fetch] success via=system_user_token:db psid=… name="…"`.
-3. The new customer row should have a real `messenger_name` and a stored `messenger_profile_pic` immediately (no "Unknown"), matching what the Refresh button produces.
+## Verification
+1. From the Facebook Page Inbox (or Meta Business Suite), reply to an existing customer with: a text message, then a photo, then a file.
+2. All three should appear in our `/chat` view for that customer within seconds, on the employee/right side of the thread.
+3. From Page Inbox, message a brand-new user who isn't in our DB yet — a new customer row should be created and the outbound message should appear under it.
+4. Check edge logs for `[echo]` lines and confirm no duplicate inserts for messages we sent from our own UI.
