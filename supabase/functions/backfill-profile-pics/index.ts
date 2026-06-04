@@ -175,53 +175,65 @@ async function backfillProfilePics(limit: number = 50): Promise<{
         }
         
         if (customer.messenger_id) {
-          // Messenger customer - try known page_id first, then all active pages
-          const pagesToTry = customer.page_id
-            ? [{ page_id: customer.page_id, access_token: activePages.find(p => p.page_id === customer.page_id)?.access_token || '' }, ...activePages.filter(p => p.page_id !== customer.page_id)]
-            : activePages;
-          
           let profileFound = false;
-          
-          for (const page of pagesToTry) {
-            if (!page.access_token) continue;
-            
-            const profile = await fetchMessengerProfile(customer.messenger_id, page.access_token);
-            if (profile && profile.first_name) {
-              console.log(`Found profile for ${customer.id} via page ${page.page_id}: ${profile.first_name} ${profile.last_name}`);
-              
-              // Download and store profile pic
-              let photoUrl: string | null = null;
-              if (profile.profile_pic) {
-                photoUrl = await downloadAndStorePhoto(profile.profile_pic, customer.id);
-              }
-              
-              // Update customer with name, pic, and page_id
-              const updateData: any = {
-                messenger_name: `${profile.first_name} ${profile.last_name}`,
-                updated_at: new Date().toISOString(),
-              };
-              if (photoUrl) updateData.messenger_profile_pic = photoUrl;
-              if (!customer.page_id) updateData.page_id = page.page_id;
-              if (profile.locale) updateData.locale = profile.locale;
-              if (profile.timezone) updateData.timezone_offset = profile.timezone;
-              
-              await supabase
-                .from('customer')
-                .update(updateData)
-                .eq('id', customer.id);
-              
-              results.updated++;
-              profileFound = true;
-              break;
+          let sourcePageId: string | null = customer.page_id || null;
+          let profile: any = null;
+
+          // 1. Try system user token first
+          if (SYSTEM_USER_TOKEN) {
+            profile = await fetchMessengerProfile(customer.messenger_id, SYSTEM_USER_TOKEN);
+            if (profile) {
+              console.log(`Found profile for ${customer.id} via system_user_token: ${profile.first_name} ${profile.last_name || ''}`);
             }
-            
-            await delay(50); // Small delay between page attempts
           }
-          
+
+          // 2. Fall back to per-page tokens
+          if (!profile) {
+            const pagesToTry = customer.page_id
+              ? [{ page_id: customer.page_id, access_token: activePages.find(p => p.page_id === customer.page_id)?.access_token || '' }, ...activePages.filter(p => p.page_id !== customer.page_id)]
+              : activePages;
+
+            for (const page of pagesToTry) {
+              if (!page.access_token) continue;
+              const p = await fetchMessengerProfile(customer.messenger_id, page.access_token);
+              if (p) {
+                profile = p;
+                sourcePageId = page.page_id;
+                console.log(`Found profile for ${customer.id} via page ${page.page_id}: ${p.first_name} ${p.last_name || ''}`);
+                break;
+              }
+              await delay(50);
+            }
+          }
+
+          if (profile) {
+            let photoUrl: string | null = null;
+            if (profile.profile_pic) {
+              photoUrl = await downloadAndStorePhoto(profile.profile_pic, customer.id);
+            }
+
+            const updateData: any = {
+              messenger_name: `${profile.first_name}${profile.last_name ? ' ' + profile.last_name : ''}`.trim(),
+              updated_at: new Date().toISOString(),
+            };
+            if (photoUrl) updateData.messenger_profile_pic = photoUrl;
+            if (!customer.page_id && sourcePageId) updateData.page_id = sourcePageId;
+            if (profile.locale) updateData.locale = profile.locale;
+            if (profile.timezone !== undefined) updateData.timezone_offset = profile.timezone;
+
+            await supabase
+              .from('customer')
+              .update(updateData)
+              .eq('id', customer.id);
+
+            results.updated++;
+            profileFound = true;
+          }
+
           if (!profileFound) {
             console.log(`Could not fetch profile for messenger customer ${customer.id}`);
           }
-          
+
           results.processed++;
           continue;
         }
