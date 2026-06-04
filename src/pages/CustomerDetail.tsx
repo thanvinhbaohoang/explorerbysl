@@ -94,12 +94,12 @@ const CustomerDetail = () => {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
 
-  const refreshMessengerProfile = async (accountId: string, overrideToken?: string) => {
+  const refreshMessengerProfile = async (accountId: string) => {
     setRefreshingId(accountId);
     try {
-      const body: any = { customer_id: accountId };
-      if (overrideToken) body.override_token = overrideToken;
-      const { data, error } = await supabase.functions.invoke('backfill-profile-pics', { body });
+      const { data, error } = await supabase.functions.invoke('backfill-profile-pics', {
+        body: { customer_id: accountId },
+      });
       if (error) {
         // Try to extract Graph error body from non-2xx response
         const ctx: any = (error as any).context;
@@ -435,19 +435,6 @@ const CustomerDetail = () => {
                       >
                         <RefreshCw className={`h-4 w-4 mr-1 ${refreshingId === account.id ? 'animate-spin' : ''}`} />
                         {refreshingId === account.id ? 'Refreshing…' : 'Refresh from Facebook'}
-                      </Button>
-                    )}
-                    {account.messenger_id && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={refreshingId === account.id}
-                        onClick={() => {
-                          const t = window.prompt('Paste a System User / Page token to use for this one-off refresh:');
-                          if (t && t.trim()) refreshMessengerProfile(account.id, t.trim());
-                        }}
-                      >
-                        Use custom token
                       </Button>
                     )}
                     {hasBothPlatforms && account.linked_customer_id && (
