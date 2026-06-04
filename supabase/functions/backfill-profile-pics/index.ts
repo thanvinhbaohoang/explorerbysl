@@ -259,8 +259,59 @@ async function backfillProfilePics(limit: number = 50): Promise<{
   return results;
 }
 
+// Token diagnostic - returns stored-token shape + debug_token + visible pages + test PSID lookup
+async function diagnoseSystemUserToken(testPsid?: string): Promise<any> {
+  const tok = SYSTEM_USER_TOKEN || '';
+  const trimmed = tok.trim();
+  const storedShape = {
+    present: !!tok,
+    length: tok.length,
+    trimmed_length: trimmed.length,
+    differs_when_trimmed: tok !== trimmed,
+    first8: tok.slice(0, 8),
+    last8: tok.slice(-8),
+    contains_whitespace: /\s/.test(tok),
+    contains_newline: /[\r\n]/.test(tok),
+    contains_quote: /["']/.test(tok),
+  };
+
+  if (!tok) return { stored: storedShape, error: 'FACEBOOK_SYSTEM_USER_TOKEN is not set' };
+
+  const result: any = { stored: storedShape };
+
+  // debug_token (use the same token as the access_token for self-debug)
+  try {
+    const debugUrl = `https://graph.facebook.com/v19.0/debug_token?input_token=${encodeURIComponent(trimmed)}&access_token=${encodeURIComponent(trimmed)}`;
+    const r = await fetch(debugUrl);
+    result.debug_token = await r.json();
+  } catch (e) { result.debug_token = { error: String(e) }; }
+
+  // /me
+  try {
+    const r = await fetch(`https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${encodeURIComponent(trimmed)}`);
+    result.me = await r.json();
+  } catch (e) { result.me = { error: String(e) }; }
+
+  // visible pages
+  try {
+    const r = await fetch(`https://graph.facebook.com/v19.0/me/accounts?fields=id,name,category&access_token=${encodeURIComponent(trimmed)}`);
+    const j = await r.json();
+    result.pages = j.data || j;
+  } catch (e) { result.pages = { error: String(e) }; }
+
+  // Test PSID lookup if provided
+  if (testPsid) {
+    try {
+      const r = await fetch(`https://graph.facebook.com/v19.0/${testPsid}?fields=name,first_name,profile_pic&access_token=${encodeURIComponent(trimmed)}`);
+      result.psid_test = { status: r.status, body: await r.json() };
+    } catch (e) { result.psid_test = { error: String(e) }; }
+  }
+
+  return result;
+}
+
 // Single-customer refresh with verbose result (used by CustomerDetail "Refresh from Facebook" button)
-async function refreshSingleCustomer(customerId: string): Promise<any> {
+async function refreshSingleCustomer(customerId: string, overrideToken?: string): Promise<any> {
   const { data: customer, error } = await supabase
     .from('customer')
     .select('id, messenger_id, messenger_name, page_id')
