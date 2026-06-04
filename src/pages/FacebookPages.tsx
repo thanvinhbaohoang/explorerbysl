@@ -1334,9 +1334,37 @@ const FacebookPages = () => {
                       {backfillRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                       {backfillRunning ? 'Running…' : 'Repopulate now'}
                     </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-2 ml-2"
+                      onClick={runTokenDiagnose}
+                      disabled={diagnoseRunning}
+                    >
+                      {diagnoseRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Info className="h-4 w-4" />}
+                      Diagnose System User Token
+                    </Button>
                   </CardContent>
                 </Card>
               )}
+
+              {/* Diagnose result dialog */}
+              <AlertDialog open={diagnoseOpen} onOpenChange={setDiagnoseOpen}>
+                <AlertDialogContent className="max-w-3xl">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>System User Token Diagnostic</AlertDialogTitle>
+                    <AlertDialogDescription asChild>
+                      <div className="text-left">
+                        <pre className="mt-2 max-h-[60vh] overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap break-all">
+{diagnoseResult ? JSON.stringify(diagnoseResult, null, 2) : 'No data'}
+                        </pre>
+                      </div>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogAction onClick={() => setDiagnoseOpen(false)}>Close</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
 
               {/* Cleanup Unknown Messenger Customers - Admin Only */}
               {isAdmin && (
