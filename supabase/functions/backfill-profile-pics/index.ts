@@ -361,6 +361,7 @@ async function refreshSingleCustomer(customerId: string): Promise<any> {
     name: fullName,
     profile_pic: photoUrl,
     graph,
+    request: { url: maskedUrl, token: tokenMeta },
   };
 }
 
