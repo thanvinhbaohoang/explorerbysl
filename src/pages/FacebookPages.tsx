@@ -1083,15 +1083,35 @@ const FacebookPages = () => {
               {/* Connection Status Card */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Facebook className="h-5 w-5" />
-                    Connected Pages
-                  </CardTitle>
-                  <CardDescription>
-                    Pages connected via your Facebook System User Token
-                  </CardDescription>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Facebook className="h-5 w-5" />
+                        Connected Pages
+                      </CardTitle>
+                      <CardDescription>
+                        Pages connected via your Facebook System User Token
+                      </CardDescription>
+                    </div>
+                    {isAdmin && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleDiagnoseAllTokens}
+                        disabled={bulkDiagnosing}
+                        className="gap-2"
+                      >
+                        {bulkDiagnosing ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Shield className="h-4 w-4" />
+                        )}
+                        Diagnose token access
+                      </Button>
+                    )}
+                  </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
                   <div className="flex items-center gap-4">
                     {error ? (
                       <div className="flex items-center gap-2 text-destructive">
@@ -1112,6 +1132,89 @@ const FacebookPages = () => {
                       </div>
                     )}
                   </div>
+
+                  {bulkDiagnosis && (
+                    <div className="space-y-3 border-t pt-4">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Badge variant={bulkDiagnosis.system_user_token_configured ? "default" : "destructive"}>
+                          System User Token: {bulkDiagnosis.system_user_token_configured ? `configured (${bulkDiagnosis.system_user_token_length} chars)` : "missing"}
+                        </Badge>
+                        <Badge variant={bulkDiagnosis.app_credentials_configured ? "default" : "destructive"}>
+                          App ID / Secret: {bulkDiagnosis.app_credentials_configured ? "configured" : "missing"}
+                        </Badge>
+                      </div>
+                      {(bulkDiagnosis.pages || []).map((p: any) => {
+                        const sutOk = p.system_user_token?.can_read_page;
+                        const pageTokOk = p.page_token?.valid;
+                        const pageLookup = p.psid_lookup_with_page_token;
+                        const sutLookup = p.psid_lookup_with_system_token;
+                        const hasMessaging = (p.page_token?.scopes || []).includes("pages_messaging");
+                        return (
+                          <div key={p.page_id} className="rounded-lg border p-3 space-y-2 text-sm">
+                            <div className="flex items-center justify-between">
+                              <div className="font-medium">{p.name}</div>
+                              <div className="font-mono text-xs text-muted-foreground">{p.page_id}</div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              <div className="flex items-start gap-2">
+                                {sutOk ? <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" /> : <AlertCircle className="h-4 w-4 text-destructive mt-0.5" />}
+                                <div>
+                                  <div className="font-medium">System User Token can read page</div>
+                                  {!sutOk && <div className="text-xs text-destructive">{p.system_user_token?.error}</div>}
+                                </div>
+                              </div>
+                              <div className="flex items-start gap-2">
+                                {pageTokOk ? <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" /> : <AlertCircle className="h-4 w-4 text-destructive mt-0.5" />}
+                                <div>
+                                  <div className="font-medium">
+                                    Page token valid
+                                    {p.page_token?.expires_at && <span className="ml-1 text-xs text-muted-foreground">(exp {new Date(p.page_token.expires_at).toLocaleDateString()})</span>}
+                                  </div>
+                                  {!pageTokOk && <div className="text-xs text-destructive">{p.page_token?.error}</div>}
+                                  {pageTokOk && !hasMessaging && (
+                                    <div className="text-xs text-amber-600">Missing <code>pages_messaging</code> scope</div>
+                                  )}
+                                </div>
+                              </div>
+                              {pageLookup && (
+                                <div className="flex items-start gap-2">
+                                  {pageLookup.ok ? <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" /> : <AlertCircle className="h-4 w-4 text-destructive mt-0.5" />}
+                                  <div>
+                                    <div className="font-medium">PSID lookup w/ page token</div>
+                                    {pageLookup.ok ? (
+                                      <div className="text-xs text-muted-foreground">Got: {pageLookup.name || "(no name)"}</div>
+                                    ) : (
+                                      <div className="text-xs text-destructive">
+                                        {pageLookup.error_message} (code {pageLookup.error_code}/{pageLookup.error_subcode || "-"})
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              {sutLookup && (
+                                <div className="flex items-start gap-2">
+                                  {sutLookup.ok ? <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" /> : <AlertCircle className="h-4 w-4 text-destructive mt-0.5" />}
+                                  <div>
+                                    <div className="font-medium">PSID lookup w/ System User Token</div>
+                                    {sutLookup.ok ? (
+                                      <div className="text-xs text-muted-foreground">Got: {sutLookup.name || "(no name)"}</div>
+                                    ) : (
+                                      <div className="text-xs text-destructive">
+                                        {sutLookup.error_message} (code {sutLookup.error_code}/{sutLookup.error_subcode || "-"})
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              {p.note && (
+                                <div className="text-xs text-muted-foreground italic md:col-span-2">{p.note}</div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
