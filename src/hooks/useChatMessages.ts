@@ -493,6 +493,10 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     const tempId = `temp-media-${Date.now()}`;
     const employeeName = currentUserName;
 
+    // Optimistic local preview URL so the bubble renders immediately
+    const previewUrl = URL.createObjectURL(file);
+    trackBlobUrl(tempId, previewUrl);
+
     const optimisticMessage: Message = {
       id: tempId,
       customer_id: customerToReply.id,
@@ -502,16 +506,16 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       timestamp: new Date().toISOString(),
       created_at: new Date().toISOString(),
       photo_file_id: null,
-      photo_url: null,
+      photo_url: mediaType === 'photo' ? previewUrl : null,
       voice_file_id: null,
       voice_duration: null,
       voice_transcription: null,
       voice_url: null,
       video_file_id: null,
-      video_url: null,
+      video_url: mediaType === 'video' ? previewUrl : null,
       video_duration: null,
-      video_mime_type: file.type,
-      document_url: mediaType === 'document' ? null : null,
+      video_mime_type: mediaType === 'video' ? file.type : null,
+      document_url: mediaType === 'document' ? previewUrl : null,
       document_name: mediaType === 'document' ? file.name : null,
       document_mime_type: mediaType === 'document' ? file.type : null,
       sender_type: "employee",
