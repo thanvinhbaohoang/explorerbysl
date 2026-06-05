@@ -26,7 +26,8 @@ async function getConfigFromDb(supabaseAdmin: any) {
 const FLB_STATE_PREFIX = "flb:";
 
 const SUBSCRIBED_FIELDS =
-  "messages,messaging_postbacks,messaging_referrals,message_reads,messaging_handovers";
+  "messages,messaging_postbacks,messaging_referrals,message_reads,messaging_handovers,message_echoes";
+const REQUIRED_FIELDS = SUBSCRIBED_FIELDS.split(",");
 
 async function subscribePageToWebhook(pageId: string, pageAccessToken: string) {
   try {
@@ -315,9 +316,15 @@ Deno.serve(async (req) => {
         );
       }
       const status = await getPageSubscriptionStatus(pageId, row.access_token);
-      const subscribed = status.ok && status.apps.length > 0;
+      const subscribedFields: string[] = status.ok
+        ? (status.apps[0]?.subscribed_fields || [])
+        : [];
+      const hasEchoes = subscribedFields.includes("message_echoes");
+      const missingFields = REQUIRED_FIELDS.filter((f) => !subscribedFields.includes(f));
+      // "Fully subscribed" requires message_echoes so employee replies sync
+      const subscribed = status.ok && status.apps.length > 0 && hasEchoes;
       return new Response(
-        JSON.stringify({ subscribed, ...status }),
+        JSON.stringify({ subscribed, has_echoes: hasEchoes, subscribed_fields: subscribedFields, missing_fields: missingFields, ...status }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

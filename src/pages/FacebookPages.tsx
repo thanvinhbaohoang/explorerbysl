@@ -138,6 +138,8 @@ const FacebookPages = () => {
   const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
   // page_id -> 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'
   const [subStatus, setSubStatus] = useState<Record<string, 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'>>({});
+  // page_id -> true when subscription exists but is missing message_echoes
+  const [needsEchoes, setNeedsEchoes] = useState<Record<string, boolean>>({});
   const [subscribing, setSubscribing] = useState<Set<string>>(new Set());
   const [diagnosing, setDiagnosing] = useState<Set<string>>(new Set());
   const [diagnoseResult, setDiagnoseResult] = useState<any | null>(null);
@@ -209,11 +211,16 @@ const FacebookPages = () => {
         { method: 'GET' }
       );
       if (error) throw error;
-      setSubStatus(prev => ({ ...prev, [pageId]: data?.subscribed ? 'subscribed' : 'not_subscribed' }));
+      const isSubscribed = !!data?.subscribed;
+      const hasApp = Array.isArray(data?.apps) && data.apps.length > 0;
+      setSubStatus(prev => ({ ...prev, [pageId]: isSubscribed ? 'subscribed' : 'not_subscribed' }));
+      // Subscription exists but missing message_echoes → prompt re-subscribe
+      setNeedsEchoes(prev => ({ ...prev, [pageId]: hasApp && data?.has_echoes === false }));
     } catch (e) {
       setSubStatus(prev => ({ ...prev, [pageId]: 'error' }));
     }
   };
+
 
   const handleSubscribePage = async (page: DbPage) => {
     setSubscribing(prev => new Set(prev).add(page.page_id));
@@ -1269,20 +1276,21 @@ const FacebookPages = () => {
                                 <Key className="h-3 w-3" />
                                 Update Token
                               </Button>
-                              {subStatus[dbPage.page_id] !== 'subscribed' && (
+                              {(subStatus[dbPage.page_id] !== 'subscribed' || needsEchoes[dbPage.page_id]) && (
                                 <Button
                                   variant="default"
                                   size="sm"
                                   onClick={() => handleSubscribePage(dbPage)}
                                   disabled={subscribing.has(dbPage.page_id) || !dbPage.access_token}
                                   className="gap-1"
+                                  title={needsEchoes[dbPage.page_id] ? "Re-subscribe to enable employee-reply sync (message_echoes)" : undefined}
                                 >
                                   {subscribing.has(dbPage.page_id) ? (
                                     <Loader2 className="h-3 w-3 animate-spin" />
                                   ) : (
                                     <Webhook className="h-3 w-3" />
                                   )}
-                                  Subscribe
+                                  {needsEchoes[dbPage.page_id] ? "Re-subscribe" : "Subscribe"}
                                 </Button>
                               )}
                               <Button
