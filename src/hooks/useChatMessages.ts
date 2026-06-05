@@ -103,6 +103,24 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
   // Tracks the most recently requested customer to guard against stale fetches
   const activeCustomerIdRef = useRef<string | null>(selectedCustomer?.id ?? null);
+  // Tracks the cache key for the currently displayed conversation (used by realtime handler)
+  const currentCacheKeyRef = useRef<string | null>(null);
+  // Tracks blob: URLs we created for optimistic previews so we can revoke them
+  const tempBlobUrlsRef = useRef<Map<string, string[]>>(new Map());
+
+  const trackBlobUrl = (tempId: string, url: string) => {
+    const arr = tempBlobUrlsRef.current.get(tempId) || [];
+    arr.push(url);
+    tempBlobUrlsRef.current.set(tempId, arr);
+  };
+
+  const revokeBlobUrls = (tempId: string) => {
+    const arr = tempBlobUrlsRef.current.get(tempId);
+    if (arr) {
+      arr.forEach((u) => { try { URL.revokeObjectURL(u); } catch {} });
+      tempBlobUrlsRef.current.delete(tempId);
+    }
+  };
 
   // Fully reset chat state when customer changes to prevent stale data leaking across conversations
   useEffect(() => {
@@ -267,14 +285,16 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     setLinkedCustomerIds(allCustomerIds);
     setLinkedCustomersMap(linkedMap);
     
-    const cacheKey = allCustomerIds.sort().join("-");
+    const cacheKey = allCustomerIds.slice().sort().join("-");
+    if (offset === 0) currentCacheKeyRef.current = cacheKey;
     
     // NOTE: Messages are NOT marked as read here - they are marked when the user explicitly selects a conversation
     
     // Check cache
     if (offset === 0 && !forceRefresh && messagesCache[cacheKey]?.length > 0) {
       if (isStale()) return;
-      setMessages(messagesCache[cacheKey]);
+      const cached = messagesCache[cacheKey];
+      setMessages(cached);
       const meta = messageMetaCache[cacheKey];
       if (meta) {
         setMessageOffset(meta.offset);
@@ -282,6 +302,14 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
       setIsLoadingMessages(false);
       setIsLoadingMoreMessages(false);
+
+      // Self-heal: if newest cached message is older than 30s, kick off a background refresh
+      const newest = cached[cached.length - 1];
+      const newestAge = newest ? Date.now() - new Date(newest.timestamp).getTime() : Infinity;
+      if (newestAge > 30_000) {
+        // fire-and-forget — will overwrite cache + messages when done
+        loadMessages(customer, 0, true).catch(() => {});
+      }
       return;
     }
     
@@ -465,6 +493,10 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     const tempId = `temp-media-${Date.now()}`;
     const employeeName = currentUserName;
 
+    // Optimistic local preview URL so the bubble renders immediately
+    const previewUrl = URL.createObjectURL(file);
+    trackBlobUrl(tempId, previewUrl);
+
     const optimisticMessage: Message = {
       id: tempId,
       customer_id: customerToReply.id,
@@ -474,16 +506,16 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       timestamp: new Date().toISOString(),
       created_at: new Date().toISOString(),
       photo_file_id: null,
-      photo_url: null,
+      photo_url: mediaType === 'photo' ? previewUrl : null,
       voice_file_id: null,
       voice_duration: null,
       voice_transcription: null,
       voice_url: null,
       video_file_id: null,
-      video_url: null,
+      video_url: mediaType === 'video' ? previewUrl : null,
       video_duration: null,
-      video_mime_type: file.type,
-      document_url: mediaType === 'document' ? null : null,
+      video_mime_type: mediaType === 'video' ? file.type : null,
+      document_url: mediaType === 'document' ? previewUrl : null,
       document_name: mediaType === 'document' ? file.name : null,
       document_mime_type: mediaType === 'document' ? file.type : null,
       sender_type: "employee",
@@ -537,6 +569,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
 
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      revokeBlobUrls(tempId);
       toast.success("Media sent successfully");
     } catch (error: any) {
       console.error("Error sending media:", error);
@@ -550,6 +583,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
       
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      revokeBlobUrls(tempId);
     } finally {
       setIsUploadingFile(false);
     }
@@ -582,6 +616,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       const tempId = `temp-album-${Date.now()}-${index}`;
       tempIds.push(tempId);
       const mediaType = file.type.startsWith('image/') ? 'photo' : 'video';
+      const previewUrl = URL.createObjectURL(file);
+      trackBlobUrl(tempId, previewUrl);
       
       return {
         id: tempId,
@@ -592,13 +628,13 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         timestamp: new Date().toISOString(),
         created_at: new Date().toISOString(),
         photo_file_id: null,
-        photo_url: null,
+        photo_url: mediaType === 'photo' ? previewUrl : null,
         voice_file_id: null,
         voice_duration: null,
         voice_transcription: null,
         voice_url: null,
         video_file_id: null,
-        video_url: null,
+        video_url: mediaType === 'video' ? previewUrl : null,
         video_duration: null,
         video_mime_type: mediaType === 'video' ? file.type : null,
         document_url: null,
@@ -660,6 +696,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
       // Remove optimistic messages - real-time subscription will add the real ones
       setMessages(prev => prev.filter(msg => !tempIds.includes(msg.id)));
+      tempIds.forEach(revokeBlobUrls);
       toast.success(`Album sent (${albumFiles.length} items)`);
     } catch (error: any) {
       console.error("Error sending media batch:", error);
@@ -673,6 +710,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
       
       setMessages(prev => prev.filter(msg => !tempIds.includes(msg.id)));
+      tempIds.forEach(revokeBlobUrls);
     } finally {
       setIsUploadingFile(false);
     }
@@ -847,6 +885,10 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     const employeeName = currentUserName;
     const duration = recordingDuration;
 
+    // Local preview URL so the bubble plays immediately
+    const previewUrl = URL.createObjectURL(recordedAudio.file);
+    trackBlobUrl(tempId, previewUrl);
+
     const optimisticMessage: Message = {
       id: tempId,
       customer_id: customerToReply.id,
@@ -860,7 +902,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       voice_file_id: null,
       voice_duration: duration,
       voice_transcription: null,
-      voice_url: null,
+      voice_url: previewUrl,
       video_file_id: null,
       video_url: null,
       video_duration: null,
@@ -913,6 +955,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
 
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      revokeBlobUrls(tempId);
       toast.success("Voice message sent");
     } catch (error: any) {
       console.error("Error sending voice clip:", error);
@@ -926,6 +969,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
       
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      revokeBlobUrls(tempId);
     } finally {
       setIsUploadingFile(false);
       URL.revokeObjectURL(recordedAudio.url);
@@ -961,24 +1005,39 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
           const newMessage = payload.new as Message;
           
           if (linkedCustomerIds.includes(newMessage.customer_id)) {
-            setMessages(prev => {
+            const applyInsert = (list: Message[]): Message[] => {
               // Prevent duplicates - skip if message already exists
-              if (prev.some(msg => msg.id === newMessage.id)) {
-                return prev;
+              if (list.some(msg => msg.id === newMessage.id)) {
+                return list;
               }
-              
               // Replace pending message for sender's UI
               if (newMessage.sender_type === "employee") {
-                const pendingIndex = prev.findIndex(msg => msg.isPending);
+                const pendingIndex = list.findIndex(msg => msg.isPending);
                 if (pendingIndex !== -1) {
-                  const updated = [...prev];
+                  const updated = [...list];
                   updated[pendingIndex] = newMessage;
                   return updated;
                 }
               }
-              
-              return [...prev, newMessage];
-            });
+              return [...list, newMessage];
+            };
+
+            setMessages(prev => applyInsert(prev));
+
+            // Mirror into messagesCache so a re-open doesn't lose this message
+            const cacheKey = currentCacheKeyRef.current;
+            if (cacheKey) {
+              setMessagesCache(prev => {
+                const existing = prev[cacheKey];
+                if (!existing) return prev;
+                return { ...prev, [cacheKey]: applyInsert(existing) };
+              });
+              setMessageMetaCache(prev => {
+                const meta = prev[cacheKey];
+                if (!meta) return prev;
+                return { ...prev, [cacheKey]: { ...meta, offset: meta.offset + 1 } };
+              });
+            }
 
             // Clear expired window flag if customer sends a message (they're back in 24-hour window)
             if (newMessage.sender_type === "customer") {
