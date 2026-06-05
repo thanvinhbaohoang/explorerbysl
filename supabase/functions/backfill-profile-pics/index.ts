@@ -223,6 +223,16 @@ async function backfillProfilePics(limit: number = 50): Promise<{
             }
           }
 
+          // 3. LAST RESORT: system user token
+          if (!profile && bulkSystemToken) {
+            profile = await fetchMessengerProfile(customer.messenger_id, bulkSystemToken);
+            if (profile) {
+              console.log(`[bulk] ${customer.id} via system_user_token(${bulkTokenSource}): ${profile.first_name} ${profile.last_name || ''}`);
+            }
+          }
+
+
+
           if (profile) {
             let photoUrl: string | null = null;
             if (profile.profile_pic) {
