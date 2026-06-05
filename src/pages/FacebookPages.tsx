@@ -1276,20 +1276,21 @@ const FacebookPages = () => {
                                 <Key className="h-3 w-3" />
                                 Update Token
                               </Button>
-                              {subStatus[dbPage.page_id] !== 'subscribed' && (
+                              {(subStatus[dbPage.page_id] !== 'subscribed' || needsEchoes[dbPage.page_id]) && (
                                 <Button
                                   variant="default"
                                   size="sm"
                                   onClick={() => handleSubscribePage(dbPage)}
                                   disabled={subscribing.has(dbPage.page_id) || !dbPage.access_token}
                                   className="gap-1"
+                                  title={needsEchoes[dbPage.page_id] ? "Re-subscribe to enable employee-reply sync (message_echoes)" : undefined}
                                 >
                                   {subscribing.has(dbPage.page_id) ? (
                                     <Loader2 className="h-3 w-3 animate-spin" />
                                   ) : (
                                     <Webhook className="h-3 w-3" />
                                   )}
-                                  Subscribe
+                                  {needsEchoes[dbPage.page_id] ? "Re-subscribe" : "Subscribe"}
                                 </Button>
                               )}
                               <Button
