@@ -927,6 +927,36 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
+
+  // Diagnostic: recent raw webhook events Facebook actually delivered
+  if (url.pathname.endsWith('/recent-events') && req.method === 'GET') {
+    const pageId = url.searchParams.get('page_id');
+    let q = supabase
+      .from('messenger_webhook_events')
+      .select('received_at, page_id, has_echo, event_kinds, body')
+      .order('received_at', { ascending: false })
+      .limit(30);
+    if (pageId) q = q.eq('page_id', pageId);
+    const { data: rows, error } = await q;
+    if (error) {
+      return new Response(JSON.stringify({ ok: false, error: error.message }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    const echoCount = (rows || []).filter((r: any) => r.has_echo).length;
+    return new Response(JSON.stringify({
+      ok: true,
+      total: rows?.length || 0,
+      echo_count: echoCount,
+      echoes_delivered: echoCount > 0,
+      hint: echoCount === 0
+        ? 'No message_echoes events have arrived. Even though message_echoes is in the page subscription, Facebook is not delivering echo callbacks. Most common cause: the App-level webhook configuration in Meta App Dashboard does not have the message_echoes field enabled for the Page product. Open https://developers.facebook.com/apps/ -> your app -> Webhooks -> Page -> Edit subscription, and ensure message_echoes is checked.'
+        : 'Echo events are being delivered.',
+      events: rows || [],
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
   
   // Endpoint to fetch all connected pages (from database or Facebook)
   if (url.pathname.endsWith('/pages') && req.method === 'GET') {
@@ -1555,6 +1585,45 @@ serve(async (req) => {
     // Process webhook events from Facebook
     if (data.object === 'page') {
       console.log(`Processing ${data.entry.length} page entries`);
+
+      // Diagnostic ring buffer — record raw inbound events so admins can see exactly what Facebook delivers
+      try {
+        for (const entry of data.entry || []) {
+          const events = [
+            ...(entry.messaging || []),
+            ...(entry.standby || []),
+            ...(entry.changes || []),
+          ];
+          const kinds = new Set<string>();
+          let hasEcho = false;
+          for (const ev of events) {
+            if (ev?.message?.is_echo === true) { kinds.add('echo'); hasEcho = true; }
+            else if (ev?.message) kinds.add('message');
+            if (ev?.postback) kinds.add('postback');
+            if (ev?.read) kinds.add('read');
+            if (ev?.delivery) kinds.add('delivery');
+            if (ev?.referral) kinds.add('referral');
+          }
+          if (entry.standby) kinds.add('standby');
+          await supabase.from('messenger_webhook_events').insert({
+            page_id: entry.id || null,
+            has_echo: hasEcho,
+            event_kinds: Array.from(kinds),
+            body: entry,
+          });
+        }
+        // Best-effort trim: keep last 200 rows
+        const { data: oldRows } = await supabase
+          .from('messenger_webhook_events')
+          .select('id')
+          .order('received_at', { ascending: false })
+          .range(200, 999);
+        if (oldRows && oldRows.length) {
+          await supabase.from('messenger_webhook_events').delete().in('id', oldRows.map((r: any) => r.id));
+        }
+      } catch (logErr) {
+        console.error('Failed to record diagnostic webhook event:', logErr);
+      }
 
       // Build active-page lookup so paused pages are ignored entirely
       const entryPageIds = Array.from(new Set((data.entry || []).map((e: any) => e.id).filter(Boolean)));
