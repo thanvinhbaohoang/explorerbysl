@@ -1,61 +1,34 @@
-# Diagnose why "Explorer Travel Agency - Cambodia" can't fetch user info
+## Goal
+Make sure that when a new Messenger message arrives from any connected page, the webhook calls Graph with **that page's own access token** (which you've now verified works) to populate the customer's name and profile picture — instead of relying on the System User Token first.
 
-## What the data shows
+## Current behavior (the bug)
+`getUserProfile(psid, pageId)` in `supabase/functions/messenger-webhook/index.ts` (lines 309–325) tries the **System User Token first**, then falls back to the page token. If the SUT can't read a PSID for a given page (the exact problem we just diagnosed for "Explorer Travel Agency - Cambodia"), the new customer is created with `messenger_name = 'Unknown'` and `messenger_profile_pic = null` — even though the page's own token would have worked.
 
-Querying the database confirms the issue is isolated to one page:
+## Fix
+**One small change inside `getUserProfile`** — invert the order so the per-page token is the primary source:
 
-| Page | Page ID | Customers | Unknown names | Missing profile pics |
-|---|---|---|---|---|
-| Explorer by SL | 109469038735899 | 104 | 1 | 1 |
-| **Explorer Travel Agency - Cambodia** | **103275792431920** | **25** | **25** | **25** |
-| Vessels Of Soul | 561589463698263 | — | — | — |
+1. Look up `getPageToken(pageId)` from the `facebook_pages` row that matches the webhook's `entry.id`. This is the exact token+page-id pair you just tested in the browser and confirmed works.
+2. Call `tryFetchProfile(psid, pageToken, 'page_token', pageId)`. If it returns a profile → use it.
+3. Only if the page token call fails (missing row, revoked, network error), fall back to `getSystemUserTokenFresh()` as a safety net.
+4. If both fail, log a clear `[profile-fetch] both tokens failed page=… psid=…` line so it surfaces in the edge-function logs.
 
-Every customer on the Cambodia page is "Unknown" with no photo — the token used by `backfill-profile-pics` cannot read PSIDs for that page. Both pages have a stored per-page token (~200 chars, same `EAAKZBya` prefix), so the failure is almost certainly one of:
+This is the only logic change. All three call sites (`getUserProfile(senderId, pageId)` on lines 559, 607, 838, plus the echo-handler call on line 1692) already pass the correct `pageId` derived from `entry.id`, so they automatically benefit.
 
-1. The **System User Token** (`FACEBOOK_SYSTEM_USER_TOKEN`) was issued in a Business Manager that owns "Explorer by SL" but **not** the Cambodia page.
-2. The Cambodia page's per-page token is expired/revoked, or was issued without `pages_messaging` permission.
-3. The Cambodia page was never granted `pages_messaging` / `Messenger Access` for the connected app, so PSID → profile lookup is rejected even with a valid token.
+## Why this is safe
+- The page token already has `pages_messaging` for its own PSIDs (you verified with the curl). The SUT, by contrast, is only guaranteed to work for pages whose Business Manager actually owns the System User — which is the failure mode we just hit.
+- The existing `backfill-profile-pics` function keeps its current "SUT first, page tokens as fallback" order — that's fine because backfill iterates all pages anyway. Only the realtime webhook path needs the flip.
+- No DB changes, no new secrets, no schema migrations. No UI changes.
 
-We need a diagnostic to tell which one.
-
-## Plan
-
-### 1. New diagnostic edge function `diagnose-page-token`
-
-For each active row in `facebook_pages` (and the global System User Token), call Graph and report results without ever returning the token itself:
-
-- `GET /{page_id}?fields=id,name,access_token` using **System User Token** → confirms whether the SUT can see this page.
-- `GET /debug_token?input_token={page_token}&access_token={app_id}|{app_secret}` → returns scopes, expiry, is_valid, and the user/page the token is bound to.
-- Pick one PSID belonging to that page from `customer.messenger_id` and call `GET /{psid}?fields=first_name,last_name,profile_pic` with (a) the page's stored token and (b) the SUT — report HTTP status + Graph error code/subcode for each.
-
-Response shape per page:
-```json
-{
-  "page_id": "...",
-  "name": "...",
-  "system_user_token": { "can_read_page": true|false, "error": "..." },
-  "page_token": { "valid": true|false, "expires_at": "...", "scopes": [...], "error": "..." },
-  "psid_lookup_with_page_token": { "ok": true|false, "status": 200, "error_code": null },
-  "psid_lookup_with_system_token": { "ok": true|false, "status": 400, "error_code": 100, "error_subcode": 2018218 }
-}
-```
-
-Admin-only (check `has_role(auth.uid(), 'admin')`). Uses existing `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`, `FACEBOOK_SYSTEM_USER_TOKEN` secrets — no new secrets.
-
-### 2. "Diagnose token access" button on `FacebookPages.tsx`
-
-Add a button in the page header. On click, invoke the function and render a per-page result card showing the four checks as green/red badges plus the Graph error message. This makes it obvious whether the fix is:
-- **Re-issue the System User Token** in a BM that owns both pages, OR
-- **Update the Cambodia page's per-page token** via the existing `UpdateTokenDialog`, OR
-- **Add `pages_messaging` to the app** for the Cambodia page in Meta Business Settings.
-
-### Files
-
-- new: `supabase/functions/diagnose-page-token/index.ts`
-- edit: `src/pages/FacebookPages.tsx` (button + results panel)
-
-No DB migrations, no schema changes, no changes to webhook / backfill code.
+## Verification after the change
+1. Send a brand-new Messenger message to **Explorer Travel Agency - Cambodia** from a test account.
+2. Check the edge-function logs for `[profile-fetch] success via=page_token page=103275792431920 psid=…`.
+3. Open the Chat inbox — the new conversation should appear with the real name and avatar (not "Unknown"), without needing to run the backfill button.
+4. Repeat for **ExplorerBySL** to confirm we didn't regress that page.
 
 ## Out of scope
+- Re-running the backfill for the 25 stuck Cambodia customers (separate one-shot — can be triggered from Facebook Pages → "Backfill profile pictures" button after this fix lands).
+- Any changes to send-message paths, attachments, or the SUT itself.
+- The existing `diagnose-page-token` function — still useful for future audits, no changes needed.
 
-Auto-fixing the token. Once the diagnostic identifies the cause, the existing UpdateTokenDialog or a re-issued SUT (via `update_secret`) resolves it.
+## File touched
+- `supabase/functions/messenger-webhook/index.ts` — replace the body of `getUserProfile` (lines 309–325) with the page-token-first ordering described above.
