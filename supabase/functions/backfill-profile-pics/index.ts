@@ -196,32 +196,42 @@ async function backfillProfilePics(limit: number = 50): Promise<{
           let sourcePageId: string | null = customer.page_id || null;
           let profile: any = null;
 
-          // 1. Try system user token first
-          if (bulkSystemToken) {
-            profile = await fetchMessengerProfile(customer.messenger_id, bulkSystemToken);
-            if (profile) {
-              console.log(`Found profile for ${customer.id} via system_user_token(${bulkTokenSource}): ${profile.first_name} ${profile.last_name || ''}`);
+          // 1. PRIMARY: page token matching customer.page_id (matches webhook + refresh button)
+          if (customer.page_id) {
+            const pageRow = activePages.find(p => p.page_id === customer.page_id);
+            if (pageRow?.access_token) {
+              profile = await fetchMessengerProfile(customer.messenger_id, pageRow.access_token);
+              if (profile) {
+                console.log(`[bulk] ${customer.id} via page_token page=${customer.page_id}: ${profile.first_name} ${profile.last_name || ''}`);
+              }
             }
           }
 
-          // 2. Fall back to per-page tokens
+          // 2. FALLBACK: sweep other active page tokens (heals mis-tagged page_id)
           if (!profile) {
-            const pagesToTry = customer.page_id
-              ? [{ page_id: customer.page_id, access_token: activePages.find(p => p.page_id === customer.page_id)?.access_token || '' }, ...activePages.filter(p => p.page_id !== customer.page_id)]
-              : activePages;
-
-            for (const page of pagesToTry) {
+            for (const page of activePages) {
               if (!page.access_token) continue;
+              if (customer.page_id && page.page_id === customer.page_id) continue;
               const p = await fetchMessengerProfile(customer.messenger_id, page.access_token);
               if (p) {
                 profile = p;
                 sourcePageId = page.page_id;
-                console.log(`Found profile for ${customer.id} via page ${page.page_id}: ${p.first_name} ${p.last_name || ''}`);
+                console.log(`[bulk] ${customer.id} via page_sweep page=${page.page_id}: ${p.first_name} ${p.last_name || ''}`);
                 break;
               }
               await delay(50);
             }
           }
+
+          // 3. LAST RESORT: system user token
+          if (!profile && bulkSystemToken) {
+            profile = await fetchMessengerProfile(customer.messenger_id, bulkSystemToken);
+            if (profile) {
+              console.log(`[bulk] ${customer.id} via system_user_token(${bulkTokenSource}): ${profile.first_name} ${profile.last_name || ''}`);
+            }
+          }
+
+
 
           if (profile) {
             let photoUrl: string | null = null;
