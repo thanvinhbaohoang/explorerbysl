@@ -885,6 +885,10 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     const employeeName = currentUserName;
     const duration = recordingDuration;
 
+    // Local preview URL so the bubble plays immediately
+    const previewUrl = URL.createObjectURL(recordedAudio.file);
+    trackBlobUrl(tempId, previewUrl);
+
     const optimisticMessage: Message = {
       id: tempId,
       customer_id: customerToReply.id,
@@ -898,7 +902,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       voice_file_id: null,
       voice_duration: duration,
       voice_transcription: null,
-      voice_url: null,
+      voice_url: previewUrl,
       video_file_id: null,
       video_url: null,
       video_duration: null,
