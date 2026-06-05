@@ -696,6 +696,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
       // Remove optimistic messages - real-time subscription will add the real ones
       setMessages(prev => prev.filter(msg => !tempIds.includes(msg.id)));
+      tempIds.forEach(revokeBlobUrls);
       toast.success(`Album sent (${albumFiles.length} items)`);
     } catch (error: any) {
       console.error("Error sending media batch:", error);
@@ -709,6 +710,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
       
       setMessages(prev => prev.filter(msg => !tempIds.includes(msg.id)));
+      tempIds.forEach(revokeBlobUrls);
     } finally {
       setIsUploadingFile(false);
     }
