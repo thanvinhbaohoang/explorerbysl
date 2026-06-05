@@ -1,26 +1,23 @@
-## What I found
-- The page `109469038735899` is now fully subscribed, including `message_echoes`.
-- Recent webhook logs show normal inbound customer messages reaching the backend.
-- I do **not** see a raw echo event from Facebook for the employee-sent reply after re-subscribe, which means the problem is now either:
-  - Facebook is not delivering the echo event for that action/thread, or
-  - the webhook receives a different event shape (echo / standby / handover-related) that our parser currently ignores.
+## Fix media not persisting in chat
 
-## Plan
-1. Add a read-only diagnostic endpoint for Messenger webhook delivery.
-   - Return the most recent raw webhook event shapes relevant to a page.
-   - Include whether we saw `message.is_echo`, `standby`, `messaging_handovers`, or only normal customer messages.
+Make media (photos, voice, video, documents) reliably appear in the chatbox, both immediately after sending and after reopening a conversation.
 
-2. Tighten webhook handling for page-sent messages.
-   - Verify the parser accepts Facebook echo events where the page/user roles are flipped from normal inbound messages.
-   - Handle the event shapes used when staff reply from the page inbox, not just standard inbound `messaging` events.
+### Root causes
+1. Optimistic media bubbles in `useChatMessages.ts` set `photo_url/video_url/voice_url/document_url = null`, so the bubble is blank until the real-time INSERT round-trips.
+2. Real-time INSERTs update live `messages` state but never write into `messagesCache`. On reopen, the stale cache hides messages that arrived while away.
+3. Cache key derived from `linkedCustomerIds` is order-sensitive, so different mounts can read different cache slots.
 
-3. Validate the end-to-end flow.
-   - Send a fresh reply from the page inbox to the same thread.
-   - Check whether the diagnostic endpoint shows a delivered echo event.
-   - If delivered, finish the parser/storage fix so it lands in the chat collection.
-   - If not delivered, we’ll know this is a Facebook-side delivery/configuration issue rather than an app storage issue.
+### Changes (frontend only — `src/hooks/useChatMessages.ts`)
+1. **Optimistic previews**: in `sendMedia`, `sendMediaBatch`, and voice send, set `photo_url`/`video_url`/`document_url`/`voice_url` on the optimistic message to `URL.createObjectURL(file/blob)`. Track and `URL.revokeObjectURL` when the temp message is replaced or removed.
+2. **Realtime → cache sync**: in the realtime INSERT handler, after updating live `messages`, mirror the same dedupe + pending-replacement update into `messagesCache[cacheKey]` (and bump `messageMetaCache` offset). Do the same on UPDATE for read-receipt/url changes.
+3. **Resilient cache reads**: sort `linkedCustomerIds` before composing `cacheKey`. When `loadMessages` hits the cache and the newest cached message is older than ~30s, kick off a background refresh and merge. Clear stale entries on `forceRefresh`.
 
-## Technical details
-- Verified via `subscription-status`: `message_echoes` is present for Explorer by SL.
-- Verified via webhook logs: inbound customer message events are arriving for that page, but no matching outbound echo event is visible yet.
-- Most likely missing cases to inspect are `message.is_echo`, alternate event containers, or inbox/handover-specific delivery behavior.
+### Out of scope
+- No webhook / edge function changes — DB confirms inbound, echo, voice, and document media are already stored correctly.
+- No DB schema or RLS changes.
+- No edits to `ChatPanel.tsx` or `MediaGroupBubble.tsx` — rendering already handles all four media types.
+
+### Verification
+- Send a photo from the in-app composer → bubble shows the image instantly, persists after switching conversations and back.
+- Reply with a photo from FB Page Inbox → echo appears in the chatbox without manual refresh and survives reopen.
+- Customer sends a photo / voice / video / document → appears live and after reopen.
