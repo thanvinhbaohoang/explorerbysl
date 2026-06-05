@@ -305,23 +305,29 @@ async function getSystemUserTokenFresh(): Promise<{ token: string | null; source
   return { token: null, source: null };
 }
 
-// Fetch user profile - prefer system user token (fresh from DB), fall back to page token.
+// Fetch user profile - prefer the page's own access token (most reliable for PSIDs
+// belonging to that page), fall back to the System User token only if page token fails.
 async function getUserProfile(psid: string, pageId: string) {
+  const pageToken = await getPageToken(pageId);
+  if (pageToken) {
+    console.log(`[profile-fetch] trying page_token first psid=${psid} page=${pageId}`);
+    const profile = await tryFetchProfile(psid, pageToken, 'page_token', pageId);
+    if (profile) return profile;
+    console.warn(`[profile-fetch] page_token failed, trying system_user_token psid=${psid} page=${pageId}`);
+  } else {
+    console.warn(`[profile-fetch] no page token for page=${pageId}, trying system_user_token psid=${psid}`);
+  }
+
   const { token: sysToken, source: sysSource } = await getSystemUserTokenFresh();
   if (sysToken) {
     const meta = { source: sysSource, length: sysToken.length, prefix: sysToken.slice(0, 8), suffix: sysToken.slice(-4) };
     console.log(`[profile-fetch] using system_user_token psid=${psid} page=${pageId} token=${JSON.stringify(meta)}`);
     const profile = await tryFetchProfile(psid, sysToken, `system_user_token:${sysSource}`, pageId);
     if (profile) return profile;
-  } else {
-    console.warn(`[profile-fetch] no system_user_token available, falling back to page token for psid=${psid} page=${pageId}`);
   }
-  const token = await getPageToken(pageId);
-  if (!token) {
-    console.error(`[profile-fetch] No page token fallback for page=${pageId} psid=${psid}`);
-    return null;
-  }
-  return await tryFetchProfile(psid, token, 'page_token', pageId);
+
+  console.error(`[profile-fetch] both tokens failed page=${pageId} psid=${psid}`);
+  return null;
 }
 
 // Send message via Facebook Send API using page token from DB
