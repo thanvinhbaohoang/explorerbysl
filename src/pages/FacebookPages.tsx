@@ -211,11 +211,16 @@ const FacebookPages = () => {
         { method: 'GET' }
       );
       if (error) throw error;
-      setSubStatus(prev => ({ ...prev, [pageId]: data?.subscribed ? 'subscribed' : 'not_subscribed' }));
+      const isSubscribed = !!data?.subscribed;
+      const hasApp = Array.isArray(data?.apps) && data.apps.length > 0;
+      setSubStatus(prev => ({ ...prev, [pageId]: isSubscribed ? 'subscribed' : 'not_subscribed' }));
+      // Subscription exists but missing message_echoes → prompt re-subscribe
+      setNeedsEchoes(prev => ({ ...prev, [pageId]: hasApp && data?.has_echoes === false }));
     } catch (e) {
       setSubStatus(prev => ({ ...prev, [pageId]: 'error' }));
     }
   };
+
 
   const handleSubscribePage = async (page: DbPage) => {
     setSubscribing(prev => new Set(prev).add(page.page_id));
