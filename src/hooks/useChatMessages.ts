@@ -955,6 +955,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
 
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      revokeBlobUrls(tempId);
       toast.success("Voice message sent");
     } catch (error: any) {
       console.error("Error sending voice clip:", error);
@@ -968,6 +969,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
       
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      revokeBlobUrls(tempId);
     } finally {
       setIsUploadingFile(false);
       URL.revokeObjectURL(recordedAudio.url);
