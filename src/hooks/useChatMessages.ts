@@ -569,6 +569,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
 
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      revokeBlobUrls(tempId);
       toast.success("Media sent successfully");
     } catch (error: any) {
       console.error("Error sending media:", error);
@@ -582,6 +583,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
       
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      revokeBlobUrls(tempId);
     } finally {
       setIsUploadingFile(false);
     }
