@@ -616,6 +616,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       const tempId = `temp-album-${Date.now()}-${index}`;
       tempIds.push(tempId);
       const mediaType = file.type.startsWith('image/') ? 'photo' : 'video';
+      const previewUrl = URL.createObjectURL(file);
+      trackBlobUrl(tempId, previewUrl);
       
       return {
         id: tempId,
@@ -626,13 +628,13 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         timestamp: new Date().toISOString(),
         created_at: new Date().toISOString(),
         photo_file_id: null,
-        photo_url: null,
+        photo_url: mediaType === 'photo' ? previewUrl : null,
         voice_file_id: null,
         voice_duration: null,
         voice_transcription: null,
         voice_url: null,
         video_file_id: null,
-        video_url: null,
+        video_url: mediaType === 'video' ? previewUrl : null,
         video_duration: null,
         video_mime_type: mediaType === 'video' ? file.type : null,
         document_url: null,
