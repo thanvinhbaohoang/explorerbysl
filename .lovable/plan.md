@@ -1,34 +1,41 @@
 ## Goal
-Make sure that when a new Messenger message arrives from any connected page, the webhook calls Graph with **that page's own access token** (which you've now verified works) to populate the customer's name and profile picture — instead of relying on the System User Token first.
+Make the **"Refresh from Facebook"** button on the customer detail page use the **page's own access token** (looked up from `customer.page_id`) — same fix we just applied to the webhook. Right now it only tries the System User Token, which is exactly why you're seeing `(#3) Application does not have the capability to make this API call` for the Cambodia-page PSID `8269901109776991`.
 
-## Current behavior (the bug)
-`getUserProfile(psid, pageId)` in `supabase/functions/messenger-webhook/index.ts` (lines 309–325) tries the **System User Token first**, then falls back to the page token. If the SUT can't read a PSID for a given page (the exact problem we just diagnosed for "Explorer Travel Agency - Cambodia"), the new customer is created with `messenger_name = 'Unknown'` and `messenger_profile_pic = null` — even though the page's own token would have worked.
+## Do we need a new "source page" column?
+**No.** `customer.page_id` already exists and is populated:
+- The webhook sets `page_id: entry.id` whenever it creates a customer (lines 618, 702, 849, 1609 in `messenger-webhook/index.ts`).
+- The same webhook auto-heals `page_id` for any existing customer whose row was missing it (line 596-599).
+- Our previous diagnosis confirmed all 25 Cambodia customers + 104 ExplorerBySL customers already have the correct `page_id` set.
 
-## Fix
-**One small change inside `getUserProfile`** — invert the order so the per-page token is the primary source:
+So we just need to **use** that column when refreshing.
 
-1. Look up `getPageToken(pageId)` from the `facebook_pages` row that matches the webhook's `entry.id`. This is the exact token+page-id pair you just tested in the browser and confirmed works.
-2. Call `tryFetchProfile(psid, pageToken, 'page_token', pageId)`. If it returns a profile → use it.
-3. Only if the page token call fails (missing row, revoked, network error), fall back to `getSystemUserTokenFresh()` as a safety net.
-4. If both fail, log a clear `[profile-fetch] both tokens failed page=… psid=…` line so it surfaces in the edge-function logs.
+## Fix — single edge function change
+File: `supabase/functions/backfill-profile-pics/index.ts`, function `refreshSingleCustomer` (the path hit when the UI passes `customer_id`).
 
-This is the only logic change. All three call sites (`getUserProfile(senderId, pageId)` on lines 559, 607, 838, plus the echo-handler call on line 1692) already pass the correct `pageId` derived from `entry.id`, so they automatically benefit.
+Rewrite the token-selection logic to mirror the webhook order:
 
-## Why this is safe
-- The page token already has `pages_messaging` for its own PSIDs (you verified with the curl). The SUT, by contrast, is only guaranteed to work for pages whose Business Manager actually owns the System User — which is the failure mode we just hit.
-- The existing `backfill-profile-pics` function keeps its current "SUT first, page tokens as fallback" order — that's fine because backfill iterates all pages anyway. Only the realtime webhook path needs the flip.
-- No DB changes, no new secrets, no schema migrations. No UI changes.
+1. Load the customer row (already done) — keep the existing `select` and also rely on `page_id`.
+2. **Primary attempt:** if `customer.page_id` is set, look up the matching row in `facebook_pages` and call Graph with **that page's access_token**. Log `via=page_token page=<id>`. If it returns a profile, use it.
+3. **Fallback:** only if step 2 fails (no page_id, no matching active page row, revoked token, or Graph error), fall back to the **System User Token** via the existing `getSystemUserToken()` helper. Log `via=system_user_token` and the same `request`/`token` debug block we already return.
+4. **Last-resort sweep:** if both fail and the customer has no `page_id`, try each active page's token in turn (cheap — usually 2–3 pages) so a mis-tagged customer can still self-heal. First success wins and we also update `customer.page_id` to the page that resolved it (mirrors the bulk-backfill auto-heal already present on line ~200).
+5. Keep the same response shape (success/error/graph/request) so the existing CustomerDetail console logs and toast still work — just include a new field `token_used: 'page_token' | 'system_user_token' | 'page_sweep'` for clarity in the dev console.
 
-## Verification after the change
-1. Send a brand-new Messenger message to **Explorer Travel Agency - Cambodia** from a test account.
-2. Check the edge-function logs for `[profile-fetch] success via=page_token page=103275792431920 psid=…`.
-3. Open the Chat inbox — the new conversation should appear with the real name and avatar (not "Unknown"), without needing to run the backfill button.
-4. Repeat for **ExplorerBySL** to confirm we didn't regress that page.
+No UI changes, no schema migration, no new secrets, no changes to the bulk backfill code path.
+
+## Why this resolves the current error
+The error `(#3) Application does not have the capability` is Graph's response when the SUT's app cannot read PSIDs for the page that PSID belongs to. The page's own token (which you've curl-tested successfully) does have that capability. By trying it first, the refresh button will succeed for the Cambodia customers without any token reconfiguration.
+
+## Verification
+1. After deploy, open the failing customer `cfc2fe04-1b43-423c-82cb-d021bbfadd7d`, click **Refresh from Facebook**.
+2. Toast shows "Profile refreshed from Facebook"; the avatar and name update.
+3. Edge-function logs show `[refreshSingleCustomer] via=page_token page=103275792431920 psid=8269901109776991 success`.
+4. Repeat for an ExplorerBySL customer to confirm no regression.
+5. (Optional) Trigger the bulk backfill button — the 25 stuck Cambodia rows should fill in via the same logic since the function will deploy together; bulk path will also benefit because it already tries page tokens after SUT.
 
 ## Out of scope
-- Re-running the backfill for the 25 stuck Cambodia customers (separate one-shot — can be triggered from Facebook Pages → "Backfill profile pictures" button after this fix lands).
-- Any changes to send-message paths, attachments, or the SUT itself.
-- The existing `diagnose-page-token` function — still useful for future audits, no changes needed.
+- Schema changes (none needed — `customer.page_id` already exists).
+- Touching the webhook (already fixed in the previous turn).
+- Changing the bulk backfill loop's primary order; only `refreshSingleCustomer` flips, since that's what the UI button hits.
 
 ## File touched
-- `supabase/functions/messenger-webhook/index.ts` — replace the body of `getUserProfile` (lines 309–325) with the page-token-first ordering described above.
+- `supabase/functions/backfill-profile-pics/index.ts` — rewrite `refreshSingleCustomer` per the four-step ordering above.
