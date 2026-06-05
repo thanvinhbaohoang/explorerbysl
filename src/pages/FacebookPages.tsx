@@ -138,6 +138,8 @@ const FacebookPages = () => {
   const [revealedTokens, setRevealedTokens] = useState<Set<string>>(new Set());
   // page_id -> 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'
   const [subStatus, setSubStatus] = useState<Record<string, 'unknown' | 'subscribed' | 'not_subscribed' | 'checking' | 'error'>>({});
+  // page_id -> true when subscription exists but is missing message_echoes
+  const [needsEchoes, setNeedsEchoes] = useState<Record<string, boolean>>({});
   const [subscribing, setSubscribing] = useState<Set<string>>(new Set());
   const [diagnosing, setDiagnosing] = useState<Set<string>>(new Set());
   const [diagnoseResult, setDiagnoseResult] = useState<any | null>(null);
