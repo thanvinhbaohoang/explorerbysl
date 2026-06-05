@@ -1,36 +1,50 @@
-## Goal
-Subscribe pages to the `message_echoes` webhook field directly from our app, so employee replies sent from the Facebook Page Inbox flow into our chat — no need to touch the Facebook App dashboard.
+## Diagnosis
 
-## Current state
-- `supabase/functions/facebook-oauth/index.ts` line 28–29 has the constant `SUBSCRIBED_FIELDS = "messages,messaging_postbacks,messaging_referrals,message_reads,messaging_handovers"` — **missing `message_echoes`**.
-- That constant is used both during OAuth auto-subscribe and by the `POST /subscribe-page` endpoint already wired to the "Subscribe" button on the Facebook Pages tab of `/system` (`src/pages/FacebookPages.tsx`).
-- So the infrastructure to re-subscribe per page already exists; we just need to widen the fields list and let the user click Subscribe again on each page.
+The Messenger replies you sent (page → customer Harold Than) are **echo events**, and your page is still not subscribed to that webhook field. I just checked the live subscription state for "Explorer by SL" (page_id `109469038735899`, which is Harold Than's page):
 
-## Change
-
-### `supabase/functions/facebook-oauth/index.ts`
-Add `message_echoes` to `SUBSCRIBED_FIELDS`:
 ```
-const SUBSCRIBED_FIELDS =
-  "messages,messaging_postbacks,messaging_referrals,message_reads,messaging_handovers,message_echoes";
+subscribed_fields: ["messages", "messaging_postbacks", "messaging_optins", "messaging_referrals"]
+has_echoes: false
+missing: ["message_reads", "messaging_handovers", "message_echoes"]
 ```
-Nothing else changes — both the OAuth flow and the manual Subscribe button will now request echoes too.
 
-### One small UI nudge in `src/pages/FacebookPages.tsx`
-The current status check (`getPageSubscriptionStatus`) only verifies that *some* app is subscribed; it doesn't compare the actual fields. To make this self-service, we'll:
-- In the `/subscription-status` response, include the `subscribed_fields` array Facebook returns for our app.
-- In the frontend, treat a page as "needs resubscribe" (show the Subscribe button) when `message_echoes` is missing from the returned fields — even if the page already shows the green "Webhook ✓" badge for the older field set.
-- Add a small caption under the Subscribe button: "Re-subscribe to enable employee-reply sync" when echoes are missing, so the user knows why.
+Without `message_echoes` in that list, Facebook does not send your outbound Page Inbox messages to our webhook — that's why nothing shows up. The webhook logs confirm: zero incoming POST events in the past several minutes, only the UI's GET calls.
+
+There's also a secondary issue I spotted: when you tried Re-subscribe on **"Explorer Travel Agency - Cambodia"** (`103275792431920`), Facebook returned:
+
+> "The user must be an administrator, editor, or moderator of the page in order to impersonate it."
+
+That means the access_token stored for that page is not a valid page token with admin/editor/moderator role — likely the system user wasn't assigned the right role on that page, or the stored token is stale.
+
+## Plan
+
+### Step 1 — You: click Re-subscribe on "Explorer by SL"
+Open `/system` → Facebook Pages tab → the **Explorer by SL** row → click **Re-subscribe**. Based on the live token check (the page token for this page is valid and has `pages_messaging` + `pages_manage_metadata`), this should succeed and immediately add `message_echoes`. After it succeeds, send a fresh Messenger message to Harold Than from your Page Inbox — it should land in our `/chat` within a couple seconds.
+
+### Step 2 — If Step 1 fails or no echo arrives, I'll add a tiny diagnostic
+Add a one-shot edge endpoint `GET /facebook-oauth/echo-test?page_id=...` that:
+- Reads the stored page token
+- Calls `GET /me/subscribed_apps?fields=subscribed_fields` with that token
+- Calls `GET /debug_token` to confirm the token is a Page token, not a User/System User token
+- Returns a JSON summary so we can see exactly what Facebook thinks our subscription state is
+
+This is purely read-only and helps confirm whether the issue is subscription state vs token type vs webhook routing.
+
+### Step 3 — Fix "Explorer Travel Agency - Cambodia" token (separate page, not blocking Harold)
+The admin/editor/moderator error means the stored token isn't usable for management calls. Two ways to fix, in order of preference:
+
+1. **Reconnect via OAuth** — On the Facebook Pages tab, use the "Connect Facebook" / OAuth button while logged in as a Facebook user who is admin of that page. The OAuth flow will issue a fresh page access token with the right role and store it.
+2. **Grant the system user the role** — In Meta Business Suite → Business Settings → System Users → select your system user → "Add Assets" → add the page with Admin role. Then click Update Token (or Re-subscribe) again.
+
+No code change is needed for Step 3 — it's purely a Facebook-side action.
 
 ## Out of scope
-- No changes to the webhook handler itself (the echo logic from the previous turn already handles incoming events).
-- No changes to the Facebook App dashboard configuration. (Note: `message_echoes` is enabled per-page via Graph API; it does not need a separate App Review approval beyond the existing `pages_messaging` permission you already use.)
+- No changes to the webhook handler — the echo-handling logic from the previous turn is already in place.
 - No schema changes.
+- No changes to other pages or other features.
 
 ## Verification
-1. Deploy the edge function change.
-2. Open `/system` → Facebook Pages.
-3. For each connected page, the badge should now say "Webhook ✕" or the Subscribe button should appear (because the existing subscription lacks `message_echoes`).
-4. Click **Subscribe** for one page → toast "subscribed to webhook".
-5. From Facebook Page Inbox, reply to a customer with text + a photo → both messages appear in our `/chat` for that customer within seconds, on the employee side.
-6. Repeat for the remaining pages.
+After Step 1:
+1. From your phone's Messenger app (logged in as the Page or as Harold to the page), send a fresh message in the Explorer by SL ↔ Harold Than thread.
+2. Within a few seconds, the message should appear in `/chat` on the correct side (employee side if you're replying from the Page, customer side if Harold is messaging the Page).
+3. Tail `messenger-webhook` logs and confirm you see new `Incoming request: POST` entries plus `[echo] saved text` for page→customer messages.
