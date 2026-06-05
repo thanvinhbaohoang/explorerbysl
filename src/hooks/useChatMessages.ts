@@ -103,6 +103,24 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
   // Tracks the most recently requested customer to guard against stale fetches
   const activeCustomerIdRef = useRef<string | null>(selectedCustomer?.id ?? null);
+  // Tracks the cache key for the currently displayed conversation (used by realtime handler)
+  const currentCacheKeyRef = useRef<string | null>(null);
+  // Tracks blob: URLs we created for optimistic previews so we can revoke them
+  const tempBlobUrlsRef = useRef<Map<string, string[]>>(new Map());
+
+  const trackBlobUrl = (tempId: string, url: string) => {
+    const arr = tempBlobUrlsRef.current.get(tempId) || [];
+    arr.push(url);
+    tempBlobUrlsRef.current.set(tempId, arr);
+  };
+
+  const revokeBlobUrls = (tempId: string) => {
+    const arr = tempBlobUrlsRef.current.get(tempId);
+    if (arr) {
+      arr.forEach((u) => { try { URL.revokeObjectURL(u); } catch {} });
+      tempBlobUrlsRef.current.delete(tempId);
+    }
+  };
 
   // Fully reset chat state when customer changes to prevent stale data leaking across conversations
   useEffect(() => {
