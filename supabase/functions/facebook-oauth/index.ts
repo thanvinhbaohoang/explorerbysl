@@ -26,7 +26,8 @@ async function getConfigFromDb(supabaseAdmin: any) {
 const FLB_STATE_PREFIX = "flb:";
 
 const SUBSCRIBED_FIELDS =
-  "messages,messaging_postbacks,messaging_referrals,message_reads,messaging_handovers";
+  "messages,messaging_postbacks,messaging_referrals,message_reads,messaging_handovers,message_echoes";
+const REQUIRED_FIELDS = SUBSCRIBED_FIELDS.split(",");
 
 async function subscribePageToWebhook(pageId: string, pageAccessToken: string) {
   try {
