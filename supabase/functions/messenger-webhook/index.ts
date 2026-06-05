@@ -1556,6 +1556,45 @@ serve(async (req) => {
     if (data.object === 'page') {
       console.log(`Processing ${data.entry.length} page entries`);
 
+      // Diagnostic ring buffer — record raw inbound events so admins can see exactly what Facebook delivers
+      try {
+        for (const entry of data.entry || []) {
+          const events = [
+            ...(entry.messaging || []),
+            ...(entry.standby || []),
+            ...(entry.changes || []),
+          ];
+          const kinds = new Set<string>();
+          let hasEcho = false;
+          for (const ev of events) {
+            if (ev?.message?.is_echo === true) { kinds.add('echo'); hasEcho = true; }
+            else if (ev?.message) kinds.add('message');
+            if (ev?.postback) kinds.add('postback');
+            if (ev?.read) kinds.add('read');
+            if (ev?.delivery) kinds.add('delivery');
+            if (ev?.referral) kinds.add('referral');
+          }
+          if (entry.standby) kinds.add('standby');
+          await supabase.from('messenger_webhook_events').insert({
+            page_id: entry.id || null,
+            has_echo: hasEcho,
+            event_kinds: Array.from(kinds),
+            body: entry,
+          });
+        }
+        // Best-effort trim: keep last 200 rows
+        const { data: oldRows } = await supabase
+          .from('messenger_webhook_events')
+          .select('id')
+          .order('received_at', { ascending: false })
+          .range(200, 999);
+        if (oldRows && oldRows.length) {
+          await supabase.from('messenger_webhook_events').delete().in('id', oldRows.map((r: any) => r.id));
+        }
+      } catch (logErr) {
+        console.error('Failed to record diagnostic webhook event:', logErr);
+      }
+
       // Build active-page lookup so paused pages are ignored entirely
       const entryPageIds = Array.from(new Set((data.entry || []).map((e: any) => e.id).filter(Boolean)));
       const activePageMap = new Map<string, boolean>();
