@@ -468,6 +468,33 @@ export type Database = {
           },
         ]
       }
+      messenger_webhook_events: {
+        Row: {
+          body: Json | null
+          event_kinds: string[] | null
+          has_echo: boolean | null
+          id: string
+          page_id: string | null
+          received_at: string
+        }
+        Insert: {
+          body?: Json | null
+          event_kinds?: string[] | null
+          has_echo?: boolean | null
+          id?: string
+          page_id?: string | null
+          received_at?: string
+        }
+        Update: {
+          body?: Json | null
+          event_kinds?: string[] | null
+          has_echo?: boolean | null
+          id?: string
+          page_id?: string | null
+          received_at?: string
+        }
+        Relationships: []
+      }
       roles: {
         Row: {
           color: string | null
