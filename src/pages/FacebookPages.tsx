@@ -113,6 +113,27 @@ const FacebookPages = () => {
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [selectedPage, setSelectedPage] = useState<DbPage | null>(null);
 
+  // Token diagnostic
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnosis, setDiagnosis] = useState<any>(null);
+
+  const handleDiagnoseTokens = async () => {
+    setDiagnosing(true);
+    setDiagnosis(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("diagnose-page-token", {
+        body: {},
+      });
+      if (error) throw error;
+      setDiagnosis(data);
+      toast.success("Diagnostic complete");
+    } catch (e: any) {
+      toast.error(e.message || "Diagnostic failed");
+    } finally {
+      setDiagnosing(false);
+    }
+  };
+
   // Telegram Bot state
   const [botStatus, setBotStatus] = useState<any>(null);
   const [botStatusLoading, setBotStatusLoading] = useState(false);
