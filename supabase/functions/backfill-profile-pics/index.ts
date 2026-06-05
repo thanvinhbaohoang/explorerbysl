@@ -276,7 +276,28 @@ async function backfillProfilePics(limit: number = 50): Promise<{
   return results;
 }
 
-// Single-customer refresh: one direct call to Graph with the System User token.
+// Try a single Graph PSID lookup with the given token. Returns { ok, graph, status, maskedUrl, tokenMeta }.
+async function tryGraphLookup(psid: string, token: string, tokenSource: string) {
+  const url = `https://graph.facebook.com/v19.0/${psid}?fields=name,first_name,profile_pic&access_token=${token}`;
+  const maskedUrl = url.replace(token, `${token.slice(0, 8)}…${token.slice(-4)}`);
+  const tokenMeta = {
+    source: tokenSource,
+    length: token.length,
+    prefix: token.slice(0, 8),
+    suffix: token.slice(-4),
+  };
+  console.log(`[refreshSingleCustomer] GET ${maskedUrl}`);
+  const r = await fetch(url);
+  const txt = await r.text();
+  console.log(`[refreshSingleCustomer] via=${tokenSource} HTTP ${r.status} body=${txt}`);
+  let graph: any;
+  try { graph = JSON.parse(txt); } catch { graph = { error: { message: `Non-JSON: ${txt}` } }; }
+  const ok = r.ok && !graph?.error;
+  return { ok, graph, status: r.status, maskedUrl, tokenMeta };
+}
+
+// Single-customer refresh: page token first (using customer.page_id), then System User token,
+// then sweep across all active pages as last resort.
 async function refreshSingleCustomer(customerId: string): Promise<any> {
   const { data: customer, error } = await supabase
     .from('customer')
@@ -288,45 +309,70 @@ async function refreshSingleCustomer(customerId: string): Promise<any> {
   if (!customer) return { success: false, error: 'Customer not found' };
   if (!customer.messenger_id) return { success: false, error: 'Customer has no messenger_id' };
 
-  const { token: SYSTEM_USER_TOKEN, source: tokenSource } = await getSystemUserToken();
-  if (!SYSTEM_USER_TOKEN) {
-    return { success: false, error: 'System User Token not configured (checked bot_settings + FACEBOOK_SYSTEM_USER_TOKEN env)' };
+  console.log(`[refreshSingleCustomer] customer=${customerId} psid=${customer.messenger_id} page_id=${customer.page_id || '(none)'}`);
+
+  const attempts: Array<{ via: string; status: number; error?: string }> = [];
+  let successResult: { graph: any; maskedUrl: string; tokenMeta: any; tokenUsed: string; resolvedPageId: string | null } | null = null;
+
+  // Load all active pages once (also used as fallback sweep)
+  const activePages = await getActivePageTokens();
+
+  // 1. Primary: page token matching customer.page_id
+  if (customer.page_id) {
+    const pageRow = activePages.find(p => p.page_id === customer.page_id);
+    if (pageRow?.access_token) {
+      const r = await tryGraphLookup(customer.messenger_id, pageRow.access_token, `page_token:${customer.page_id}`);
+      attempts.push({ via: `page_token:${customer.page_id}`, status: r.status, error: r.graph?.error?.message });
+      if (r.ok) {
+        successResult = { graph: r.graph, maskedUrl: r.maskedUrl, tokenMeta: r.tokenMeta, tokenUsed: 'page_token', resolvedPageId: customer.page_id };
+      }
+    } else {
+      attempts.push({ via: `page_token:${customer.page_id}`, status: 0, error: 'No active page row / token for customer.page_id' });
+    }
   }
 
-  const url = `https://graph.facebook.com/v19.0/${customer.messenger_id}?fields=name,first_name,profile_pic&access_token=${SYSTEM_USER_TOKEN}`;
-  const maskedUrl = url.replace(SYSTEM_USER_TOKEN, `${SYSTEM_USER_TOKEN.slice(0, 8)}…${SYSTEM_USER_TOKEN.slice(-4)}`);
-  const tokenMeta = {
-    source: tokenSource,
-    length: SYSTEM_USER_TOKEN.length,
-    prefix: SYSTEM_USER_TOKEN.slice(0, 8),
-    suffix: SYSTEM_USER_TOKEN.slice(-4),
-  };
-
-  console.log(`[refreshSingleCustomer] customer=${customerId} psid=${customer.messenger_id}`);
-  console.log(`[refreshSingleCustomer] GET ${maskedUrl}`);
-  console.log(`[refreshSingleCustomer] token meta=${JSON.stringify(tokenMeta)}`);
-
-  const r = await fetch(url);
-  const txt = await r.text();
-  console.log(`[refreshSingleCustomer] HTTP ${r.status} body=${txt}`);
-
-  let graph: any;
-  try { graph = JSON.parse(txt); } catch {
-    return { success: false, customer_id: customerId, error: `Non-JSON response: ${txt}`, request: { url: maskedUrl, token: tokenMeta } };
+  // 2. Fallback: System User Token
+  if (!successResult) {
+    const { token: sysToken, source: sysSource } = await getSystemUserToken();
+    if (sysToken) {
+      const r = await tryGraphLookup(customer.messenger_id, sysToken, `system_user_token:${sysSource}`);
+      attempts.push({ via: `system_user_token:${sysSource}`, status: r.status, error: r.graph?.error?.message });
+      if (r.ok) {
+        successResult = { graph: r.graph, maskedUrl: r.maskedUrl, tokenMeta: r.tokenMeta, tokenUsed: 'system_user_token', resolvedPageId: customer.page_id };
+      }
+    } else {
+      attempts.push({ via: 'system_user_token', status: 0, error: 'Not configured' });
+    }
   }
 
-  if (!r.ok || graph?.error) {
+  // 3. Last resort: sweep every other active page token (heals mis-tagged page_id)
+  if (!successResult) {
+    for (const p of activePages) {
+      if (!p.access_token) continue;
+      if (customer.page_id && p.page_id === customer.page_id) continue; // already tried
+      const r = await tryGraphLookup(customer.messenger_id, p.access_token, `page_sweep:${p.page_id}`);
+      attempts.push({ via: `page_sweep:${p.page_id}`, status: r.status, error: r.graph?.error?.message });
+      if (r.ok) {
+        successResult = { graph: r.graph, maskedUrl: r.maskedUrl, tokenMeta: r.tokenMeta, tokenUsed: 'page_sweep', resolvedPageId: p.page_id };
+        break;
+      }
+    }
+  }
+
+  if (!successResult) {
+    const lastErr = attempts[attempts.length - 1];
     return {
       success: false,
       customer_id: customerId,
-      error: graph?.error?.message || `HTTP ${r.status}`,
-      status: r.status,
-      graph,
-      request: { url: maskedUrl, token: tokenMeta },
+      error: lastErr?.error || 'All token attempts failed',
+      status: lastErr?.status || 400,
+      attempts,
     };
   }
 
-  // Normalize name (split `name` if needed)
+  const graph = successResult.graph;
+
+  // Normalize name
   let firstName: string = graph.first_name || '';
   let lastName = '';
   if (!firstName && graph.name) {
@@ -350,6 +396,10 @@ async function refreshSingleCustomer(customerId: string): Promise<any> {
     updated_at: new Date().toISOString(),
   };
   if (photoUrl) updateData.messenger_profile_pic = photoUrl;
+  // Auto-heal page_id if sweep resolved it
+  if (!customer.page_id && successResult.resolvedPageId) {
+    updateData.page_id = successResult.resolvedPageId;
+  }
 
   const { error: updErr } = await supabase.from('customer').update(updateData).eq('id', customer.id);
   if (updErr) return { success: false, error: `DB update failed: ${updErr.message}`, graph };
@@ -360,8 +410,11 @@ async function refreshSingleCustomer(customerId: string): Promise<any> {
     updated: true,
     name: fullName,
     profile_pic: photoUrl,
+    token_used: successResult.tokenUsed,
+    resolved_page_id: successResult.resolvedPageId,
+    attempts,
     graph,
-    request: { url: maskedUrl, token: tokenMeta },
+    request: { url: successResult.maskedUrl, token: successResult.tokenMeta },
   };
 }
 
