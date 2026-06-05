@@ -113,24 +113,24 @@ const FacebookPages = () => {
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [selectedPage, setSelectedPage] = useState<DbPage | null>(null);
 
-  // Token diagnostic
-  const [diagnosing, setDiagnosing] = useState(false);
-  const [diagnosis, setDiagnosis] = useState<any>(null);
+  // Bulk token diagnostic (all pages, side-by-side SUT vs page token)
+  const [bulkDiagnosing, setBulkDiagnosing] = useState(false);
+  const [bulkDiagnosis, setBulkDiagnosis] = useState<any>(null);
 
-  const handleDiagnoseTokens = async () => {
-    setDiagnosing(true);
-    setDiagnosis(null);
+  const handleDiagnoseAllTokens = async () => {
+    setBulkDiagnosing(true);
+    setBulkDiagnosis(null);
     try {
       const { data, error } = await supabase.functions.invoke("diagnose-page-token", {
         body: {},
       });
       if (error) throw error;
-      setDiagnosis(data);
+      setBulkDiagnosis(data);
       toast.success("Diagnostic complete");
     } catch (e: any) {
       toast.error(e.message || "Diagnostic failed");
     } finally {
-      setDiagnosing(false);
+      setBulkDiagnosing(false);
     }
   };
 
