@@ -1005,24 +1005,39 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
           const newMessage = payload.new as Message;
           
           if (linkedCustomerIds.includes(newMessage.customer_id)) {
-            setMessages(prev => {
+            const applyInsert = (list: Message[]): Message[] => {
               // Prevent duplicates - skip if message already exists
-              if (prev.some(msg => msg.id === newMessage.id)) {
-                return prev;
+              if (list.some(msg => msg.id === newMessage.id)) {
+                return list;
               }
-              
               // Replace pending message for sender's UI
               if (newMessage.sender_type === "employee") {
-                const pendingIndex = prev.findIndex(msg => msg.isPending);
+                const pendingIndex = list.findIndex(msg => msg.isPending);
                 if (pendingIndex !== -1) {
-                  const updated = [...prev];
+                  const updated = [...list];
                   updated[pendingIndex] = newMessage;
                   return updated;
                 }
               }
-              
-              return [...prev, newMessage];
-            });
+              return [...list, newMessage];
+            };
+
+            setMessages(prev => applyInsert(prev));
+
+            // Mirror into messagesCache so a re-open doesn't lose this message
+            const cacheKey = currentCacheKeyRef.current;
+            if (cacheKey) {
+              setMessagesCache(prev => {
+                const existing = prev[cacheKey];
+                if (!existing) return prev;
+                return { ...prev, [cacheKey]: applyInsert(existing) };
+              });
+              setMessageMetaCache(prev => {
+                const meta = prev[cacheKey];
+                if (!meta) return prev;
+                return { ...prev, [cacheKey]: { ...meta, offset: meta.offset + 1 } };
+              });
+            }
 
             // Clear expired window flag if customer sends a message (they're back in 24-hour window)
             if (newMessage.sender_type === "customer") {
