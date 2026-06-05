@@ -285,14 +285,16 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     setLinkedCustomerIds(allCustomerIds);
     setLinkedCustomersMap(linkedMap);
     
-    const cacheKey = allCustomerIds.sort().join("-");
+    const cacheKey = allCustomerIds.slice().sort().join("-");
+    if (offset === 0) currentCacheKeyRef.current = cacheKey;
     
     // NOTE: Messages are NOT marked as read here - they are marked when the user explicitly selects a conversation
     
     // Check cache
     if (offset === 0 && !forceRefresh && messagesCache[cacheKey]?.length > 0) {
       if (isStale()) return;
-      setMessages(messagesCache[cacheKey]);
+      const cached = messagesCache[cacheKey];
+      setMessages(cached);
       const meta = messageMetaCache[cacheKey];
       if (meta) {
         setMessageOffset(meta.offset);
@@ -300,6 +302,14 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
       setIsLoadingMessages(false);
       setIsLoadingMoreMessages(false);
+
+      // Self-heal: if newest cached message is older than 30s, kick off a background refresh
+      const newest = cached[cached.length - 1];
+      const newestAge = newest ? Date.now() - new Date(newest.timestamp).getTime() : Infinity;
+      if (newestAge > 30_000) {
+        // fire-and-forget — will overwrite cache + messages when done
+        loadMessages(customer, 0, true).catch(() => {});
+      }
       return;
     }
     
