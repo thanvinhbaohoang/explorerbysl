@@ -872,14 +872,43 @@ async function handleReferral(senderId: string, referral: any, pageId: string) {
   }
   
   if (customer) {
+    // Dedupe: Facebook often delivers the same ad click as BOTH a standalone
+    // `messaging_referrals` event AND a `message` event with `message.referral`
+    // attached, seconds apart. Avoid inserting the same lead twice.
+    const refValue = referral.ref || null;
+    const postId = referral.ads_context_data?.post_id || null;
+
+    let dupQuery = supabase
+      .from('telegram_leads')
+      .select('id')
+      .eq('user_id', customer.id)
+      .eq('platform', 'messenger')
+      .limit(1);
+
+    if (refValue) {
+      dupQuery = dupQuery.eq('messenger_ref', refValue);
+    } else if (postId) {
+      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      dupQuery = dupQuery.eq('post_id', postId).gte('created_at', tenMinAgo);
+    } else {
+      const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+      dupQuery = dupQuery.gte('created_at', twoMinAgo);
+    }
+
+    const { data: existingLead } = await dupQuery.maybeSingle();
+    if (existingLead) {
+      console.log(`[handleReferral] duplicate ad referral, skipping insert (matched lead ${existingLead.id})`);
+      return;
+    }
+
     const { error: leadError } = await supabase
       .from('telegram_leads')
       .insert({
         user_id: customer.id,
         platform: 'messenger',
-        messenger_ref: referral.ref || null,
+        messenger_ref: refValue,
         messenger_ad_context: referral.ads_context_data || null,
-        post_id: referral.ads_context_data?.post_id || null,
+        post_id: postId,
         ad_title: referral.ads_context_data?.ad_title || null,
         referrer: referral.source || null,
       });
