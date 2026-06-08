@@ -83,7 +83,7 @@ interface TrafficQueryParams {
 }
 
 export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?: boolean }) => {
-  const { page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, itemsPerPage, messengerEnabled = true } = params;
+  const { page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, adIdFilter, postIdFilter, startDate, endDate, itemsPerPage, messengerEnabled = true } = params;
   const queryClient = useQueryClient();
 
   useEffect(() => {
