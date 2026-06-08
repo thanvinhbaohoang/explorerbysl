@@ -204,6 +204,7 @@ const Traffic = () => {
     setPlatformFilter("");
     setPostTagFilter("");
     setAdTitleFilter("");
+    setAdIdFilter("");
     setPostIdFilter("");
     setStartDate(undefined);
     setEndDate(undefined);
