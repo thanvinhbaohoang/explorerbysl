@@ -130,9 +130,10 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
       // Apply global search
       if (searchTerm) {
         const searchPattern = `%${searchTerm}%`;
+        const baseSearch = `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern},messenger_ref.ilike.${searchPattern},ad_id.ilike.${searchPattern}`;
         const leadsSearchCondition = userIdsToInclude.length > 0
-          ? `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern},messenger_ref.ilike.${searchPattern},user_id.in.(${userIdsToInclude.join(',')})`
-          : `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern},messenger_ref.ilike.${searchPattern}`;
+          ? `${baseSearch},user_id.in.(${userIdsToInclude.join(',')})`
+          : baseSearch;
         countQuery = countQuery.or(leadsSearchCondition);
         dataQuery = dataQuery.or(leadsSearchCondition);
       }
@@ -157,6 +158,10 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
       if (adTitleFilter && adTitleFilter !== "all") {
         countQuery = countQuery.eq("ad_title", adTitleFilter);
         dataQuery = dataQuery.eq("ad_title", adTitleFilter);
+      }
+      if (adIdFilter && adIdFilter !== "all") {
+        countQuery = countQuery.eq("ad_id", adIdFilter);
+        dataQuery = dataQuery.eq("ad_id", adIdFilter);
       }
       if (postIdFilter && postIdFilter !== "all") {
         countQuery = countQuery.eq("post_id", postIdFilter);
