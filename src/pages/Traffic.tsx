@@ -113,6 +113,7 @@ interface TrafficData {
   messenger_ad_context: MessengerAdContext | null;
   post_id: string | null;
   ad_title: string | null;
+  ad_id: string | null;
   platform: string;
   created_at: string;
   customer: {
@@ -142,6 +143,7 @@ const Traffic = () => {
   const [platformFilter, setPlatformFilter] = useState<string>("");
   const [postTagFilter, setPostTagFilter] = useState<string>("");
   const [adTitleFilter, setAdTitleFilter] = useState<string>("");
+  const [adIdFilter, setAdIdFilter] = useState<string>("");
   const [postIdFilter, setPostIdFilter] = useState<string>("");
 
   // Date range filter
@@ -169,6 +171,7 @@ const Traffic = () => {
   const uniquePostTags = filterOptions?.postTags || [];
   const uniqueAdTitles = filterOptions?.adTitles || [];
   const uniquePostIds = filterOptions?.postIds || [];
+  const uniqueAdIds = filterOptions?.adIds || [];
 
   // Build date strings for query
   const startDateStr = startDate ? format(startDate, 'yyyy-MM-dd') : undefined;
@@ -183,6 +186,7 @@ const Traffic = () => {
     platformFilter,
     postTagFilter,
     adTitleFilter,
+    adIdFilter,
     postIdFilter,
     startDate: startDateStr,
     endDate: endDateStr,
@@ -200,6 +204,7 @@ const Traffic = () => {
     setPlatformFilter("");
     setPostTagFilter("");
     setAdTitleFilter("");
+    setAdIdFilter("");
     setPostIdFilter("");
     setStartDate(undefined);
     setEndDate(undefined);
@@ -211,7 +216,7 @@ const Traffic = () => {
     setSearchParams({ page: page.toString() });
   };
 
-  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
+  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, adIdFilter, postIdFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
 
   const formatDisplayDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
@@ -391,6 +396,7 @@ const Traffic = () => {
                       { key: 'messenger_ref', header: 'Post Tag' },
                       { key: 'post_id', header: 'FB Post ID' },
                       { key: 'ad_title', header: 'FB Ad Title' },
+                      { key: 'ad_id', header: 'FB Ad ID' },
                       { key: 'messenger_ad_context', header: 'Messenger Ad Context (raw)', getValue: (t: any) => t.messenger_ad_context ? JSON.stringify(t.messenger_ad_context) : '' },
                       // Other
                       { key: 'referrer', header: 'Referrer' },
@@ -525,6 +531,20 @@ const Traffic = () => {
                       {uniquePostIds.map((pid) => (
                         <SelectItem key={pid} value={pid}>
                           <span className="font-mono text-xs">{pid}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={adIdFilter} onValueChange={setAdIdFilter} disabled={isLoadingTraffic}>
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                      <SelectValue placeholder="FB Ad ID" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Ad IDs</SelectItem>
+                      {uniqueAdIds.map((aid) => (
+                        <SelectItem key={aid} value={aid}>
+                          <span className="font-mono text-xs">{aid}</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -790,10 +810,10 @@ const Traffic = () => {
                                           <span className="ml-2 text-muted-foreground">{traffic.messenger_ad_context.ad_title}</span>
                                         </div>
                                       )}
-                                      {traffic.messenger_ad_context.ad_id && (
+                                      {(traffic.ad_id || traffic.messenger_ad_context.ad_id) && (
                                         <div>
                                           <span className="font-semibold">Ad ID:</span>
-                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.messenger_ad_context.ad_id}</span>
+                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.ad_id || traffic.messenger_ad_context.ad_id}</span>
                                         </div>
                                       )}
                                       {traffic.messenger_ad_context.post_id && (

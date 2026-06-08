@@ -876,6 +876,7 @@ async function handleReferral(senderId: string, referral: any, pageId: string) {
     // `messaging_referrals` event AND a `message` event with `message.referral`
     // attached, seconds apart. Avoid inserting the same lead twice.
     const refValue = referral.ref || null;
+    const adId = referral.ad_id || null;
     const postId = referral.ads_context_data?.post_id || null;
 
     let dupQuery = supabase
@@ -885,7 +886,10 @@ async function handleReferral(senderId: string, referral: any, pageId: string) {
       .eq('platform', 'messenger')
       .limit(1);
 
-    if (refValue) {
+    if (adId) {
+      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      dupQuery = dupQuery.eq('ad_id', adId).gte('created_at', tenMinAgo);
+    } else if (refValue) {
       dupQuery = dupQuery.eq('messenger_ref', refValue);
     } else if (postId) {
       const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
@@ -908,6 +912,7 @@ async function handleReferral(senderId: string, referral: any, pageId: string) {
         platform: 'messenger',
         messenger_ref: refValue,
         messenger_ad_context: referral.ads_context_data || null,
+        ad_id: adId,
         post_id: postId,
         ad_title: referral.ads_context_data?.ad_title || null,
         referrer: referral.source || null,

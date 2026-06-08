@@ -1,36 +1,65 @@
+# Capture Facebook `ad_id` as a first-class column
+
 ## Root cause
-Facebook delivers two webhook events for the same ad click:
-1. A standalone `messaging_referrals` event.
-2. The first `message` event, which carries `message.referral` with the same ad context.
+Facebook's referral webhook puts `ad_id` at the **top level of `referral`**, not inside `ads_context_data`:
 
-`supabase/functions/messenger-webhook/index.ts` calls `handleReferral` for both (lines 1860 and 1868), and `handleReferral` (lines 875–885) does an unconditional `INSERT` into `telegram_leads`. Result: two near-identical rows in the Traffic table, a few seconds apart, both with the same `messenger_ref` / `ad_title` / `post_id`.
+```json
+"referral": {
+  "type": "OPEN_THREAD",
+  "ad_id": "120245457533310078",
+  "source": "ADS",
+  "ads_context_data": { "post_id": "...", "ad_title": "...", "video_url": "..." }
+}
+```
 
-The `isNewCustomer && !hasReferral` check in `handleMessage` (line 661) already prevents an extra `direct_message` row, so no change is needed there.
+`supabase/functions/messenger-webhook/index.ts` (line 910) only persists `ads_context_data`, so `ad_id` is dropped. The client wants `ad_id` as a dedicated column so they can filter/sort/export it in the Traffic CSV.
 
-## Fix — single edge-function change
-File: `supabase/functions/messenger-webhook/index.ts`, function `handleReferral`.
+## Changes
 
-Before the `INSERT` at line 875, look up any existing `telegram_leads` row for this customer that represents the same ad click and skip the insert if found.
+### 1. DB migration — add column
+`telegram_leads.ad_id text` (nullable), plus an index for filtering:
 
-Dedupe key (in order of preference, whichever is present on the incoming referral):
-1. `user_id = customer.id` AND `messenger_ref = referral.ref` (when `referral.ref` exists — m.me ?ref= and CTM ads almost always have it).
-2. Fallback when no `ref`: `user_id = customer.id` AND `post_id = referral.ads_context_data?.post_id` AND `created_at >= now() - interval '10 minutes'` (covers CTM variants with only ad_context).
-3. Final fallback: `user_id = customer.id` AND `platform = 'messenger'` AND `created_at >= now() - interval '2 minutes'` (catches rare cases where both events arrive without a stable key — still bounds duplicates to a short window).
+```sql
+ALTER TABLE public.telegram_leads ADD COLUMN ad_id text;
+CREATE INDEX telegram_leads_ad_id_idx ON public.telegram_leads (ad_id) WHERE ad_id IS NOT NULL;
+```
 
-If a matching row exists, log `[handleReferral] duplicate ad referral, skipping insert (matched lead <id>)` and return without inserting. Otherwise insert as today.
+### 2. Edge function — `supabase/functions/messenger-webhook/index.ts` (`handleReferral`)
+Persist `referral.ad_id` into the new column on insert:
 
-No schema change, no UI change, no other code paths touched. Bulk backfill and direct-message lead creation are unaffected.
+```ts
+ad_id: referral.ad_id || null,
+```
+
+Also include `ad_id` in the dedupe lookup as the strongest key (preferred over `messenger_ref` when both ad_id and ref are absent/duplicated): if `referral.ad_id` is present, dedupe by `user_id + ad_id` within 10 min in addition to existing `messenger_ref` check.
+
+### 3. Frontend — `src/hooks/useTrafficData.ts`
+- Add `ad_id: string | null` to the `TrafficData` interface.
+- Add `ad_id` to the `select(...)` projection on `telegram_leads`.
+- Add a new filter param `adIdFilter` and an `ad_id` value lookup in `useTrafficFilterOptions` (distinct ad_ids).
+- Apply `.eq("ad_id", adIdFilter)` when set, and add `ad_id.ilike.%term%` to the global search OR clause.
+
+### 4. Frontend — `src/pages/Traffic.tsx`
+- Add an "Ad ID" filter dropdown next to Ad Title / Post ID, fed by the new filter options.
+- In the expanded "Facebook Ad Context" block, read `traffic.ad_id` directly (column) instead of `messenger_ad_context.ad_id`, so historical rows that only have the column will still display.
+- CSV export columns: add an "Ad ID" column mapping to `traffic.ad_id`.
+
+### 5. CSV export
+Confirm `src/lib/csv-export.ts` is used by Traffic; add `{ key: "ad_id", header: "Ad ID" }` to the column list passed to `exportToCSV` from the Traffic page so clients can filter the file by Ad ID in Excel.
 
 ## Verification
-1. After deploy, click an ad → land in Messenger → send first message.
-2. Open `/traffic` and confirm exactly one row for that user with the ad's `ad_title` / `messenger_ref` / `post_id`.
-3. Edge-function logs should show `Handling referral event` followed by `duplicate ad referral, skipping insert` for the second arrival (or vice-versa depending on delivery order).
-4. Confirm direct (non-ad) Messenger users still get a single `direct_message` lead.
-5. Confirm Telegram traffic capture is unchanged.
+1. Apply migration → column appears.
+2. After deploy, click a click-to-Messenger ad → send a message → confirm new `telegram_leads` row has `ad_id` populated.
+3. `/traffic` shows new "Ad ID" filter; expanded row shows Ad ID.
+4. Export CSV → "Ad ID" column present and populated for ad-sourced rows, empty for direct messages.
+5. Direct (non-ad) Messenger users are unaffected (ad_id stays null).
 
 ## Out of scope
-- No DB unique constraint (referral events without `ref` make a clean unique index awkward; the in-handler check is sufficient and easy to tune).
-- No backfill/cleanup of existing duplicates. If you'd like, a follow-up can delete older duplicate rows where `(user_id, messenger_ref, post_id)` match within a small window.
+- No backfill of historical rows (cannot recover `ad_id` from `ads_context_data` alone). New leads from deploy onward carry `ad_id`. A follow-up can re-derive `ad_id` from `post_id` via the Marketing API if needed.
+- Telegram traffic unchanged.
 
-## File touched
-- `supabase/functions/messenger-webhook/index.ts` — add the pre-insert dedupe lookup in `handleReferral`.
+## Files touched
+- migration: add `telegram_leads.ad_id` column + index
+- `supabase/functions/messenger-webhook/index.ts`
+- `src/hooks/useTrafficData.ts`
+- `src/pages/Traffic.tsx`

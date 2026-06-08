@@ -24,6 +24,7 @@ interface TrafficData {
   messenger_ad_context: MessengerAdContext | null;
   post_id: string | null;
   ad_title: string | null;
+  ad_id: string | null;
   platform: string;
   created_at: string;
   customer: {
@@ -43,12 +44,13 @@ export const useTrafficFilterOptions = () => {
   return useQuery({
     queryKey: ["traffic-filter-options"],
     queryFn: async () => {
-      const [sourcesRes, campaignsRes, postTagsRes, adTitlesRes, postIdsRes] = await Promise.all([
+      const [sourcesRes, campaignsRes, postTagsRes, adTitlesRes, postIdsRes, adIdsRes] = await Promise.all([
         supabase.from("telegram_leads").select("utm_source").not("utm_source", "is", null),
         supabase.from("telegram_leads").select("utm_campaign").not("utm_campaign", "is", null),
         supabase.from("telegram_leads").select("messenger_ref").not("messenger_ref", "is", null).neq("messenger_ref", "direct_message"),
         supabase.from("telegram_leads").select("ad_title").not("ad_title", "is", null),
         supabase.from("telegram_leads").select("post_id").not("post_id", "is", null),
+        supabase.from("telegram_leads").select("ad_id").not("ad_id", "is", null),
       ]);
 
       return {
@@ -57,6 +59,7 @@ export const useTrafficFilterOptions = () => {
         postTags: [...new Set(postTagsRes.data?.map(p => p.messenger_ref).filter(Boolean))] as string[],
         adTitles: [...new Set(adTitlesRes.data?.map(a => a.ad_title).filter(Boolean))] as string[],
         postIds: [...new Set(postIdsRes.data?.map(p => p.post_id).filter(Boolean))] as string[],
+        adIds: [...new Set(adIdsRes.data?.map(a => (a as any).ad_id).filter(Boolean))] as string[],
       };
     },
     staleTime: 5 * 60 * 1000,
@@ -72,6 +75,7 @@ interface TrafficQueryParams {
   platformFilter: string;
   postTagFilter: string;
   adTitleFilter?: string;
+  adIdFilter?: string;
   postIdFilter?: string;
   startDate?: string;
   endDate?: string;
@@ -79,7 +83,7 @@ interface TrafficQueryParams {
 }
 
 export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?: boolean }) => {
-  const { page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, itemsPerPage, messengerEnabled = true } = params;
+  const { page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, adIdFilter, postIdFilter, startDate, endDate, itemsPerPage, messengerEnabled = true } = params;
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -100,7 +104,7 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
   }, [queryClient]);
 
   return useQuery({
-    queryKey: ["traffic", page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, messengerEnabled],
+    queryKey: ["traffic", page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, adIdFilter, postIdFilter, startDate, endDate, messengerEnabled],
     queryFn: async () => {
       let userIdsToInclude: string[] = [];
 
@@ -115,7 +119,7 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
 
       // Build query with filters
       let countQuery = supabase.from("telegram_leads").select("*", { count: "exact", head: true }).not("user_id", "is", null);
-      let dataQuery = supabase.from("telegram_leads").select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, referrer, messenger_ref, messenger_ad_context, post_id, ad_title, platform, created_at, user_id").not("user_id", "is", null);
+      let dataQuery = supabase.from("telegram_leads").select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, referrer, messenger_ref, messenger_ad_context, post_id, ad_title, ad_id, platform, created_at, user_id").not("user_id", "is", null);
 
       // Hide messenger platform leads when integration is disabled
       if (!messengerEnabled) {
@@ -126,9 +130,10 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
       // Apply global search
       if (searchTerm) {
         const searchPattern = `%${searchTerm}%`;
+        const baseSearch = `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern},messenger_ref.ilike.${searchPattern},ad_id.ilike.${searchPattern}`;
         const leadsSearchCondition = userIdsToInclude.length > 0
-          ? `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern},messenger_ref.ilike.${searchPattern},user_id.in.(${userIdsToInclude.join(',')})`
-          : `utm_source.ilike.${searchPattern},utm_campaign.ilike.${searchPattern},utm_medium.ilike.${searchPattern},utm_content.ilike.${searchPattern},facebook_click_id.ilike.${searchPattern},messenger_ref.ilike.${searchPattern}`;
+          ? `${baseSearch},user_id.in.(${userIdsToInclude.join(',')})`
+          : baseSearch;
         countQuery = countQuery.or(leadsSearchCondition);
         dataQuery = dataQuery.or(leadsSearchCondition);
       }
@@ -153,6 +158,10 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
       if (adTitleFilter && adTitleFilter !== "all") {
         countQuery = countQuery.eq("ad_title", adTitleFilter);
         dataQuery = dataQuery.eq("ad_title", adTitleFilter);
+      }
+      if (adIdFilter && adIdFilter !== "all") {
+        countQuery = countQuery.eq("ad_id", adIdFilter);
+        dataQuery = dataQuery.eq("ad_id", adIdFilter);
       }
       if (postIdFilter && postIdFilter !== "all") {
         countQuery = countQuery.eq("post_id", postIdFilter);
