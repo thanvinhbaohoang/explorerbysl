@@ -216,7 +216,7 @@ const Traffic = () => {
     setSearchParams({ page: page.toString() });
   };
 
-  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
+  const activeFilterCount = [searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, adIdFilter, postIdFilter, startDate, endDate, customerStatusFilter].filter(Boolean).length;
 
   const formatDisplayDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
