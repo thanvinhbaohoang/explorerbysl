@@ -809,10 +809,10 @@ const Traffic = () => {
                                           <span className="ml-2 text-muted-foreground">{traffic.messenger_ad_context.ad_title}</span>
                                         </div>
                                       )}
-                                      {traffic.messenger_ad_context.ad_id && (
+                                      {(traffic.ad_id || traffic.messenger_ad_context.ad_id) && (
                                         <div>
                                           <span className="font-semibold">Ad ID:</span>
-                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.messenger_ad_context.ad_id}</span>
+                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.ad_id || traffic.messenger_ad_context.ad_id}</span>
                                         </div>
                                       )}
                                       {traffic.messenger_ad_context.post_id && (
