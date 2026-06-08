@@ -44,12 +44,13 @@ export const useTrafficFilterOptions = () => {
   return useQuery({
     queryKey: ["traffic-filter-options"],
     queryFn: async () => {
-      const [sourcesRes, campaignsRes, postTagsRes, adTitlesRes, postIdsRes] = await Promise.all([
+      const [sourcesRes, campaignsRes, postTagsRes, adTitlesRes, postIdsRes, adIdsRes] = await Promise.all([
         supabase.from("telegram_leads").select("utm_source").not("utm_source", "is", null),
         supabase.from("telegram_leads").select("utm_campaign").not("utm_campaign", "is", null),
         supabase.from("telegram_leads").select("messenger_ref").not("messenger_ref", "is", null).neq("messenger_ref", "direct_message"),
         supabase.from("telegram_leads").select("ad_title").not("ad_title", "is", null),
         supabase.from("telegram_leads").select("post_id").not("post_id", "is", null),
+        supabase.from("telegram_leads").select("ad_id").not("ad_id", "is", null),
       ]);
 
       return {
@@ -58,6 +59,7 @@ export const useTrafficFilterOptions = () => {
         postTags: [...new Set(postTagsRes.data?.map(p => p.messenger_ref).filter(Boolean))] as string[],
         adTitles: [...new Set(adTitlesRes.data?.map(a => a.ad_title).filter(Boolean))] as string[],
         postIds: [...new Set(postIdsRes.data?.map(p => p.post_id).filter(Boolean))] as string[],
+        adIds: [...new Set(adIdsRes.data?.map(a => (a as any).ad_id).filter(Boolean))] as string[],
       };
     },
     staleTime: 5 * 60 * 1000,
