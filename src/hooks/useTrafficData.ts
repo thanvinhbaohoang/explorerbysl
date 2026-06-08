@@ -24,6 +24,7 @@ interface TrafficData {
   messenger_ad_context: MessengerAdContext | null;
   post_id: string | null;
   ad_title: string | null;
+  ad_id: string | null;
   platform: string;
   created_at: string;
   customer: {
