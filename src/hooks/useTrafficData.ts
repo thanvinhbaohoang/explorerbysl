@@ -104,7 +104,7 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
   }, [queryClient]);
 
   return useQuery({
-    queryKey: ["traffic", page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, postIdFilter, startDate, endDate, messengerEnabled],
+    queryKey: ["traffic", page, searchTerm, sourceFilter, campaignFilter, platformFilter, postTagFilter, adTitleFilter, adIdFilter, postIdFilter, startDate, endDate, messengerEnabled],
     queryFn: async () => {
       let userIdsToInclude: string[] = [];
 
