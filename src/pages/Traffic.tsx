@@ -143,6 +143,7 @@ const Traffic = () => {
   const [platformFilter, setPlatformFilter] = useState<string>("");
   const [postTagFilter, setPostTagFilter] = useState<string>("");
   const [adTitleFilter, setAdTitleFilter] = useState<string>("");
+  const [adIdFilter, setAdIdFilter] = useState<string>("");
   const [postIdFilter, setPostIdFilter] = useState<string>("");
 
   // Date range filter
