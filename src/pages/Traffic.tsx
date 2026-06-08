@@ -396,6 +396,7 @@ const Traffic = () => {
                       { key: 'messenger_ref', header: 'Post Tag' },
                       { key: 'post_id', header: 'FB Post ID' },
                       { key: 'ad_title', header: 'FB Ad Title' },
+                      { key: 'ad_id', header: 'FB Ad ID' },
                       { key: 'messenger_ad_context', header: 'Messenger Ad Context (raw)', getValue: (t: any) => t.messenger_ad_context ? JSON.stringify(t.messenger_ad_context) : '' },
                       // Other
                       { key: 'referrer', header: 'Referrer' },
