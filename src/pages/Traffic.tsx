@@ -535,6 +535,20 @@ const Traffic = () => {
                     </SelectContent>
                   </Select>
 
+                  <Select value={adIdFilter} onValueChange={setAdIdFilter} disabled={isLoadingTraffic}>
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                      <SelectValue placeholder="FB Ad ID" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Ad IDs</SelectItem>
+                      {uniqueAdIds.map((aid) => (
+                        <SelectItem key={aid} value={aid}>
+                          <span className="font-mono text-xs">{aid}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
                   <Select value={sourceFilter} onValueChange={setSourceFilter} disabled={isLoadingTraffic}>
                     <SelectTrigger className="w-full sm:w-[150px]">
                       <SelectValue placeholder="UTM Source" />
