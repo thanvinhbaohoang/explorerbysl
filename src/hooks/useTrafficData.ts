@@ -75,6 +75,7 @@ interface TrafficQueryParams {
   platformFilter: string;
   postTagFilter: string;
   adTitleFilter?: string;
+  adIdFilter?: string;
   postIdFilter?: string;
   startDate?: string;
   endDate?: string;
