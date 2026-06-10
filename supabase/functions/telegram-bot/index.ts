@@ -466,15 +466,79 @@ async function downloadAndStoreDocument(fileId: string, fileName: string): Promi
   }
 }
 
+// Ensure a customer row exists for a Telegram user, creating one if necessary.
+// Returns { id, messenger_profile_pic } or null on failure.
+async function ensureCustomerFromTelegramUser(message: any): Promise<{ id: string; messenger_profile_pic: string | null } | null> {
+  const u = message.from;
+  if (!u?.id) return null;
+
+  const { data: existing } = await supabase
+    .from('customer')
+    .select('id, messenger_profile_pic')
+    .eq('telegram_id', u.id)
+    .maybeSingle();
+
+  if (existing) return existing as { id: string; messenger_profile_pic: string | null };
+
+  // Create new customer from Telegram user payload (mirrors handleStart)
+  const firstMessageAt = message.date
+    ? new Date(message.date * 1000).toISOString()
+    : new Date().toISOString();
+
+  const { data: created, error: insertError } = await supabase
+    .from('customer')
+    .insert({
+      telegram_id: u.id,
+      username: u.username || null,
+      first_name: u.first_name || null,
+      last_name: u.last_name || null,
+      language_code: u.language_code || null,
+      is_premium: u.is_premium || false,
+      first_message_at: firstMessageAt,
+    })
+    .select('id, messenger_profile_pic')
+    .single();
+
+  if (insertError || !created) {
+    console.error("Error auto-creating customer from message:", insertError);
+    return null;
+  }
+
+  console.log("Auto-created customer from non-/start message:", created.id);
+
+  // Log a direct-message lead so Traffic reflects the entry point
+  try {
+    await supabase.from('telegram_leads').insert({
+      platform: 'telegram',
+      user_id: created.id,
+      messenger_ref: 'direct_message',
+    });
+  } catch (leadErr) {
+    console.error("Error inserting direct_message telegram_lead:", leadErr);
+  }
+
+  // Fetch profile photo
+  try {
+    const profilePhotoUrl = await getUserProfilePhoto(u.id, created.id);
+    if (profilePhotoUrl) {
+      await supabase
+        .from('customer')
+        .update({ messenger_profile_pic: profilePhotoUrl })
+        .eq('id', created.id);
+      return { id: created.id, messenger_profile_pic: profilePhotoUrl };
+    }
+  } catch (photoErr) {
+    console.error("Error fetching profile photo for auto-created customer:", photoErr);
+  }
+
+  return { id: created.id, messenger_profile_pic: null };
+}
+
 // Save message to database
 async function saveMessage(message: any) {
   try {
-    // First, ensure customer exists (include messenger_profile_pic for backfill check)
-    const { data: customer } = await supabase
-      .from('customer')
-      .select('id, messenger_profile_pic')
-      .eq('telegram_id', message.from.id)
-      .single();
+    // Ensure customer exists (auto-create if user messaged without /start)
+    const customer = await ensureCustomerFromTelegramUser(message);
 
     if (customer) {
       // Fetch and store profile photo if missing (backfill for existing customers)
@@ -489,6 +553,7 @@ async function saveMessage(message: any) {
           console.log("Profile photo backfilled for customer:", customer.id);
         }
       }
+
       let messageType = 'text';
       let messageText = message.text || message.caption || null;
       
