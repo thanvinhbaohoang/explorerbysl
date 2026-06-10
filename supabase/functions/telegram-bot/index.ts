@@ -905,6 +905,40 @@ serve(async (req) => {
     if (req.method === "POST") {
       // Parse the body once
       const body = await req.json();
+
+      // Any client-initiated action (non-webhook) requires an authenticated user.
+      // Telegram webhook posts do not include an `action` field — they contain `update_id`/`message`.
+      if (body && typeof body.action === "string") {
+        const authHeader = req.headers.get("Authorization") || "";
+        const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+        if (!token) {
+          return new Response(
+            JSON.stringify({ error: "Unauthorized" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+          );
+        }
+        const { data: userData, error: authErr } = await supabase.auth.getUser(token);
+        if (authErr || !userData?.user) {
+          return new Response(
+            JSON.stringify({ error: "Invalid or expired token" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 401 }
+          );
+        }
+        // Require the caller to have an approved role (admin/moderator/user)
+        const { data: roleRow } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", userData.user.id)
+          .limit(1)
+          .maybeSingle();
+        if (!roleRow) {
+          return new Response(
+            JSON.stringify({ error: "Forbidden" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 }
+          );
+        }
+      }
+      
       
       // Handle get_status action - returns bot info and webhook status
       if (body.action === "get_status") {
@@ -997,6 +1031,19 @@ serve(async (req) => {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
               status: 400,
             }
+          );
+        }
+
+        if (typeof message_text !== "string" || message_text.length > 4096) {
+          return new Response(
+            JSON.stringify({ error: "message_text must be a string up to 4096 chars" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+          );
+        }
+        if (typeof telegram_id !== "number" || !Number.isFinite(telegram_id)) {
+          return new Response(
+            JSON.stringify({ error: "telegram_id must be a number" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
           );
         }
 
