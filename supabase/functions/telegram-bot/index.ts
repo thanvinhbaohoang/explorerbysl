@@ -1034,6 +1034,19 @@ serve(async (req) => {
           );
         }
 
+        if (typeof message_text !== "string" || message_text.length > 4096) {
+          return new Response(
+            JSON.stringify({ error: "message_text must be a string up to 4096 chars" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+          );
+        }
+        if (typeof telegram_id !== "number" || !Number.isFinite(telegram_id)) {
+          return new Response(
+            JSON.stringify({ error: "telegram_id must be a number" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+          );
+        }
+
         try {
           console.log("Sending message to:", telegram_id, "Text:", message_text);
           
