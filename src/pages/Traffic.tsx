@@ -108,6 +108,9 @@ interface TrafficData {
   utm_campaign: string | null;
   utm_content: string | null;
   utm_term: string | null;
+  utm_campaign_id: string | null;
+  utm_adset_id: string | null;
+  utm_ad_id: string | null;
   referrer: string | null;
   messenger_ref: string | null;
   messenger_ad_context: MessengerAdContext | null;
