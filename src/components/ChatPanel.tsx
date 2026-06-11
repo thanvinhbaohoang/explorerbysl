@@ -62,7 +62,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
   const isPrependingRef = useRef(false);
   const prevLastMessageIdRef = useRef<string | null>(null);
   const prevCustomerIdRef = useRef<string | null>(null);
-  const prevPlatformFilterRef = useRef<typeof platformFilter | undefined>(undefined);
+  const prevPlatformFilterRef = useRef<'telegram' | 'messenger' | null | undefined>(undefined);
   const [replyText, setReplyText] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
