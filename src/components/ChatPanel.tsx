@@ -449,6 +449,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
 
       {/* Messages */}
       <div 
+        ref={scrollContainerRef}
         className="flex-1 overflow-y-auto min-h-0 p-4"
         onScroll={handleScroll}
       >
@@ -473,7 +474,13 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
             {hasMoreMessages && !isLoadingMoreMessages && (
               <div className="text-center py-2">
                 <button
-                  onClick={() => loadMessages(customer, messageOffset)}
+                  onClick={() => {
+                    if (scrollContainerRef.current) {
+                      prevScrollHeightRef.current = scrollContainerRef.current.scrollHeight;
+                      isPrependingRef.current = true;
+                    }
+                    loadMessages(customer, messageOffset);
+                  }}
                   className="text-xs text-primary hover:underline"
                 >
                   Load older messages
