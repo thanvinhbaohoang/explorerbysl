@@ -886,26 +886,6 @@ const Traffic = () => {
                             </Tooltip>
                           </TooltipProvider>
                         </TableCell>
-                        <TableCell>
-                          {(traffic.utm_campaign_id || traffic.utm_adset_id || traffic.utm_ad_id) ? (
-                            <div className="flex flex-col gap-0.5 text-xs font-mono">
-                              <div className="flex gap-1">
-                                <span className="text-muted-foreground">C:</span>
-                                <span className="truncate max-w-[140px]" title={traffic.utm_campaign_id || ''}>{traffic.utm_campaign_id || '-'}</span>
-                              </div>
-                              <div className="flex gap-1">
-                                <span className="text-muted-foreground">AS:</span>
-                                <span className="truncate max-w-[140px]" title={traffic.utm_adset_id || ''}>{traffic.utm_adset_id || '-'}</span>
-                              </div>
-                              <div className="flex gap-1">
-                                <span className="text-muted-foreground">A:</span>
-                                <span className="truncate max-w-[140px]" title={traffic.utm_ad_id || ''}>{traffic.utm_ad_id || '-'}</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">-</span>
-                          )}
-                        </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
                           {formatDisplayDate(traffic.created_at)}
                         </TableCell>
