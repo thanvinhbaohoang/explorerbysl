@@ -798,24 +798,6 @@ const Traffic = () => {
                                       <span className="ml-2 text-muted-foreground">{traffic.utm_term}</span>
                                     </div>
                                   )}
-                                  {traffic.utm_campaign_id && (
-                                    <div>
-                                      <span className="font-semibold">Campaign ID:</span>
-                                      <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_campaign_id}</span>
-                                    </div>
-                                  )}
-                                  {traffic.utm_adset_id && (
-                                    <div>
-                                      <span className="font-semibold">Ad Set ID:</span>
-                                      <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_adset_id}</span>
-                                    </div>
-                                  )}
-                                  {traffic.utm_ad_id && (
-                                    <div>
-                                      <span className="font-semibold">Ad ID (UTM):</span>
-                                      <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_ad_id}</span>
-                                    </div>
-                                  )}
                                   {traffic.referrer && (
                                     <div>
                                       <span className="font-semibold">Referrer:</span>
