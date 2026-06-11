@@ -676,7 +676,7 @@ const Traffic = () => {
                       <TableHead>Customer</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Traffic Source</TableHead>
-                      <TableHead>Campaign / Ad Set / Ad</TableHead>
+                      
                       <TableHead>Created At</TableHead>
                     </TableRow>
                   </TableHeader>
