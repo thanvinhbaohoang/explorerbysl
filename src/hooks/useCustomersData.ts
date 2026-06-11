@@ -51,11 +51,10 @@ export const fetchCustomersPage = async (
   platformFilter: string,
   messengerEnabled: boolean,
 ): Promise<CustomersData> => {
-  // Build base query for count
+  // Build base query for count - each platform account is its own conversation
   let countQuery = supabase
     .from("customer")
-    .select("*", { count: "exact", head: true })
-    .is("linked_customer_id", null);
+    .select("*", { count: "exact", head: true });
 
   if (!messengerEnabled) {
     countQuery = countQuery.or("messenger_id.is.null,messenger_name.neq.Unknown");
@@ -79,8 +78,7 @@ export const fetchCustomersPage = async (
 
   let dataQuery = supabase
     .from("customer")
-    .select("*")
-    .is("linked_customer_id", null);
+    .select("*");
 
   if (!messengerEnabled) {
     dataQuery = dataQuery.or("messenger_id.is.null,messenger_name.neq.Unknown");
@@ -102,29 +100,10 @@ export const fetchCustomersPage = async (
 
   if (error) throw error;
 
-  let linkedPlatformsMap: LinkedPlatformsMap = {};
   let customersWithLeads = (customersData || []) as Customer[];
 
   if (customersData && customersData.length > 0) {
     const customerIds = customersData.map(c => c.id);
-
-    const { data: linkedCustomers } = await supabase
-      .from("customer")
-      .select("id, linked_customer_id, telegram_id, messenger_id")
-      .in("linked_customer_id", customerIds);
-
-    customersData.forEach(customer => {
-      const linkedToThis = linkedCustomers?.filter(lc => lc.linked_customer_id === customer.id) || [];
-      const linkedIds = linkedToThis.map(lc => lc.id);
-      const hasTelegram = customer.telegram_id !== null || linkedToThis.some(lc => lc.telegram_id !== null);
-      const hasMessenger = customer.messenger_id !== null || linkedToThis.some(lc => lc.messenger_id !== null);
-
-      linkedPlatformsMap[customer.id] = {
-        telegram: hasTelegram,
-        messenger: hasMessenger,
-        linkedIds: linkedIds,
-      };
-    });
 
     const { data: leadsData } = await supabase
       .from("telegram_leads")
@@ -140,9 +119,10 @@ export const fetchCustomersPage = async (
   return {
     customers: customersWithLeads,
     total: count || 0,
-    linkedPlatformsMap,
+    linkedPlatformsMap: {},
   };
 };
+
 
 export const useCustomersData = (page: number, itemsPerPage: number = 10, searchTerm: string = "", platformFilter: string = "all", messengerEnabled: boolean = true) => {
   return useQuery({

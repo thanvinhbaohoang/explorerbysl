@@ -230,7 +230,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
     const allCustomerIds = [customer.id];
     const linkedMap: Record<string, LinkedCustomerInfo> = {};
-    
+
     linkedMap[customer.id] = {
       name: customer.messenger_name || `${customer.first_name || ""} ${customer.last_name || ""}`.trim() || "Unknown",
       platform: customer.messenger_id ? "messenger" : "telegram",
@@ -238,47 +238,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       messenger_id: customer.messenger_id,
       page_id: customer.page_id
     };
-    
-    try {
-      if (customer.linked_customer_id) {
-        allCustomerIds.push(customer.linked_customer_id);
-        const { data: primary } = await supabase
-          .from("customer")
-          .select("id, first_name, last_name, messenger_name, messenger_id, telegram_id, page_id")
-          .eq("id", customer.linked_customer_id)
-          .maybeSingle();
-        
-        if (primary) {
-          linkedMap[primary.id] = {
-            name: primary.messenger_name || `${primary.first_name || ""} ${primary.last_name || ""}`.trim() || "Unknown",
-            platform: primary.messenger_id ? "messenger" : "telegram",
-            telegram_id: primary.telegram_id,
-            messenger_id: primary.messenger_id,
-            page_id: primary.page_id
-          };
-        }
-      }
-      
-      const { data: linkedToThis } = await supabase
-        .from("customer")
-        .select("id, first_name, last_name, messenger_name, messenger_id, telegram_id, page_id")
-        .eq("linked_customer_id", customer.id);
-      
-      if (linkedToThis) {
-        linkedToThis.forEach(linked => {
-          allCustomerIds.push(linked.id);
-          linkedMap[linked.id] = {
-            name: linked.messenger_name || `${linked.first_name || ""} ${linked.last_name || ""}`.trim() || "Unknown",
-            platform: linked.messenger_id ? "messenger" : "telegram",
-            telegram_id: linked.telegram_id,
-            messenger_id: linked.messenger_id,
-            page_id: linked.page_id
-          };
-        });
-      }
-    } catch (err) {
-      console.error("Error fetching linked customers:", err);
-    }
+
 
     if (isStale()) return;
 
