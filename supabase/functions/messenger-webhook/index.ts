@@ -1624,7 +1624,17 @@ serve(async (req) => {
           else if (item.type === 'video') insertData.video_url = item.url;
           
           await supabase.from('messages').insert(insertData);
+      }
+      
+      // Messenger doesn't support album captions; send caption once after all media.
+      if (caption && typeof caption === 'string' && caption.trim().length > 0) {
+        try {
+          await sendMessage(psid, caption, page_id);
+        } catch (e) {
+          console.error('Failed to send batch caption follow-up text:', e);
         }
+      }
+      
       }
       
       return new Response(JSON.stringify({ success: true, media_group_id }), {
