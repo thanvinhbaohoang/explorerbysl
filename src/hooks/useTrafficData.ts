@@ -25,6 +25,9 @@ interface TrafficData {
   post_id: string | null;
   ad_title: string | null;
   ad_id: string | null;
+  utm_campaign_id: string | null;
+  utm_adset_id: string | null;
+  utm_ad_id: string | null;
   platform: string;
   created_at: string;
   customer: {
@@ -119,7 +122,7 @@ export const useTrafficData = (params: TrafficQueryParams & { messengerEnabled?:
 
       // Build query with filters
       let countQuery = supabase.from("telegram_leads").select("*", { count: "exact", head: true }).not("user_id", "is", null);
-      let dataQuery = supabase.from("telegram_leads").select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, referrer, messenger_ref, messenger_ad_context, post_id, ad_title, ad_id, platform, created_at, user_id").not("user_id", "is", null);
+      let dataQuery = supabase.from("telegram_leads").select("id, facebook_click_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term, utm_campaign_id, utm_adset_id, utm_ad_id, referrer, messenger_ref, messenger_ad_context, post_id, ad_title, ad_id, platform, created_at, user_id").not("user_id", "is", null);
 
       // Hide messenger platform leads when integration is disabled
       if (!messengerEnabled) {

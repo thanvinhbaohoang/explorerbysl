@@ -108,6 +108,9 @@ interface TrafficData {
   utm_campaign: string | null;
   utm_content: string | null;
   utm_term: string | null;
+  utm_campaign_id: string | null;
+  utm_adset_id: string | null;
+  utm_ad_id: string | null;
   referrer: string | null;
   messenger_ref: string | null;
   messenger_ad_context: MessengerAdContext | null;
@@ -390,6 +393,9 @@ const Traffic = () => {
                       { key: 'utm_campaign', header: 'UTM Campaign' },
                       { key: 'utm_content', header: 'UTM Content' },
                       { key: 'utm_term', header: 'UTM Term' },
+                      { key: 'utm_campaign_id', header: 'UTM Campaign ID' },
+                      { key: 'utm_adset_id', header: 'UTM Ad Set ID' },
+                      { key: 'utm_ad_id', header: 'UTM Ad ID' },
                       // Facebook/Meta tracking
                       { key: 'facebook_click_id', header: 'FB Click ID' },
                       // Messenger specific
@@ -670,6 +676,7 @@ const Traffic = () => {
                       <TableHead>Customer</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Traffic Source</TableHead>
+                      <TableHead>Campaign / Ad Set / Ad</TableHead>
                       <TableHead>Created At</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -791,6 +798,24 @@ const Traffic = () => {
                                       <span className="ml-2 text-muted-foreground">{traffic.utm_term}</span>
                                     </div>
                                   )}
+                                  {traffic.utm_campaign_id && (
+                                    <div>
+                                      <span className="font-semibold">Campaign ID:</span>
+                                      <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_campaign_id}</span>
+                                    </div>
+                                  )}
+                                  {traffic.utm_adset_id && (
+                                    <div>
+                                      <span className="font-semibold">Ad Set ID:</span>
+                                      <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_adset_id}</span>
+                                    </div>
+                                  )}
+                                  {traffic.utm_ad_id && (
+                                    <div>
+                                      <span className="font-semibold">Ad ID (UTM):</span>
+                                      <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_ad_id}</span>
+                                    </div>
+                                  )}
                                   {traffic.referrer && (
                                     <div>
                                       <span className="font-semibold">Referrer:</span>
@@ -863,6 +888,26 @@ const Traffic = () => {
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
+                        </TableCell>
+                        <TableCell>
+                          {(traffic.utm_campaign_id || traffic.utm_adset_id || traffic.utm_ad_id) ? (
+                            <div className="flex flex-col gap-0.5 text-xs font-mono">
+                              <div className="flex gap-1">
+                                <span className="text-muted-foreground">C:</span>
+                                <span className="truncate max-w-[140px]" title={traffic.utm_campaign_id || ''}>{traffic.utm_campaign_id || '-'}</span>
+                              </div>
+                              <div className="flex gap-1">
+                                <span className="text-muted-foreground">AS:</span>
+                                <span className="truncate max-w-[140px]" title={traffic.utm_adset_id || ''}>{traffic.utm_adset_id || '-'}</span>
+                              </div>
+                              <div className="flex gap-1">
+                                <span className="text-muted-foreground">A:</span>
+                                <span className="truncate max-w-[140px]" title={traffic.utm_ad_id || ''}>{traffic.utm_ad_id || '-'}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">-</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
                           {formatDisplayDate(traffic.created_at)}

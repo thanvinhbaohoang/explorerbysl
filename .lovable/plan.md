@@ -1,29 +1,30 @@
-# Send Messenger captions alongside media
+# Surface Campaign/Ad Set/Ad IDs on Traffic Page
 
-## Problem
-When an employee sends a photo/video with a caption to a Messenger customer, the webapp stores the caption on the media message row (rendered as a caption under the picture), but the Send API call only delivers the attachment. Messenger's Send API does not support captions on attachments, so the recipient sees only the image — the caption text is never delivered.
+The IDs are already captured into `telegram_leads` (`utm_campaign_id`, `utm_adset_id`, `utm_ad_id`) by `Redirect.tsx` + `capture-traffic` edge function. They just aren't exposed in the Traffic page UI. This plan surfaces them.
 
-This affects both single-media sends and the batch (album) send path.
+## Changes
 
-## Fix
-In `supabase/functions/messenger-webhook/index.ts`, after a successful `sendAttachment` call, if a non-empty `caption` was provided, also call the existing `sendMessage(psid, caption, page_id)` helper so the caption is delivered as a follow-up text message in Messenger.
+### 1. `src/hooks/useTrafficData.ts`
+- Add `utm_campaign_id`, `utm_adset_id`, `utm_ad_id` to the `select(...)` string for the main traffic query so the values reach the page.
+- (If filter-options query exists for these — only add if client wants dropdowns; for now just data fetch.)
 
-### Single send (`send_media` branch, around lines 1460–1516)
-- After `sendAttachment` succeeds and before/around the DB insert, if `caption` is a non-empty string, call `await sendMessage(psid, caption, page_id)`.
-- Keep the existing DB insert unchanged so the webapp UI continues to show the caption attached to the media bubble (no duplicate text row in our UI).
-- If the follow-up text send fails, log it but do not fail the whole request — the media already delivered.
+### 2. `src/pages/Traffic.tsx`
+- Extend the `TrafficData` interface with the three new fields (`utm_campaign_id`, `utm_adset_id`, `utm_ad_id`).
+- **Tooltip (tracking info popover)**: add three new rows under the UTM section showing Campaign ID, Ad Set ID, and Ad ID when present (mono font, like the existing Ad ID row).
+- **Table column**: add a new "Campaign / Ad Set / Ad" column (between Traffic Source and Created At) that renders the three IDs stacked compactly, each with a small label (e.g. `C: …  AS: …  A: …`) and truncated to keep the row tight. Empty values render as `-`.
+- **CSV export**: add three new column definitions (`UTM Campaign ID`, `UTM Ad Set ID`, `UTM Ad ID`) to the `exportToCSV` columns array, alongside the existing UTM fields.
 
-### Batch send (`send_media_batch` branch, around lines 1574–1618)
-- After the loop finishes sending all media items, if `caption` is non-empty, call `await sendMessage(psid, caption, page_id)` once so the recipient sees the caption after the album.
-- Keep the existing behavior of storing the caption on the first item's row for our UI.
+### 3. No backend / DB changes
+- Schema already has the columns.
+- `capture-traffic` already inserts them.
+- `Redirect.tsx` already reads them from the URL.
 
 ## Out of scope
-- No DB schema changes.
-- No changes to the webapp UI, message rendering, or how captions are stored.
-- No changes to Telegram, document, or voice send paths (Telegram already supports native captions; only Messenger needs the follow-up text).
+- No new filter dropdowns for these IDs (can add later if client wants).
+- No Facebook API lookups — UTM-only as confirmed.
+- No changes to Customer detail / Chat views.
 
 ## Verification
-- Send a photo + caption to a Messenger customer from the webapp.
-- Confirm in Messenger that both the image and the caption text arrive.
-- Confirm the webapp chat still shows the caption under the photo bubble (single message row, no duplicate).
-- Repeat with an album (multiple photos + caption) and confirm the caption arrives once after the album.
+- Open `/redirect?utm_campaign_id=123&utm_adset_id=456&utm_ad_id=789&...` then complete the Telegram flow.
+- Confirm new row appears on `/traffic` with the three IDs in the new column and tooltip.
+- Export CSV and confirm the three new columns are populated.
