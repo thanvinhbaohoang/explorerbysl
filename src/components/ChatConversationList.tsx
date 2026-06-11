@@ -292,8 +292,9 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
             Object.values(currentLinkedMap).some(linkedInfo => linkedInfo.linkedIds.includes(messageCustomerId));
 
           if (!isKnownConversation) {
-            void ensureConversationLoaded(messageCustomerId, messageTimestamp);
+            jumpToTopAndRefresh();
           }
+
           
           setAllCustomers(prev => {
             // Find if this is a direct customer or linked
