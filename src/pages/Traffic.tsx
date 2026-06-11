@@ -806,36 +806,48 @@ const Traffic = () => {
                                       </div>
                                     </div>
                                   )}
-                                  {traffic.messenger_ad_context && (
+                                  {(traffic.messenger_ad_context || traffic.utm_campaign_id || traffic.utm_adset_id || traffic.utm_ad_id) && (
                                     <div className="border-t pt-2 mt-2">
                                       <div className="font-semibold text-foreground mb-2">
                                         Facebook Ad Context
                                       </div>
-                                      {traffic.messenger_ad_context.ad_title && (
+                                      {traffic.messenger_ad_context?.ad_title && (
                                         <div>
                                           <span className="font-semibold">Ad Title:</span>
                                           <span className="ml-2 text-muted-foreground">{traffic.messenger_ad_context.ad_title}</span>
                                         </div>
                                       )}
-                                      {(traffic.ad_id || traffic.messenger_ad_context.ad_id) && (
+                                      {traffic.utm_campaign_id && (
                                         <div>
-                                          <span className="font-semibold">Ad ID:</span>
-                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.ad_id || traffic.messenger_ad_context.ad_id}</span>
+                                          <span className="font-semibold">Campaign ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_campaign_id}</span>
                                         </div>
                                       )}
-                                      {traffic.messenger_ad_context.post_id && (
+                                      {traffic.utm_adset_id && (
+                                        <div>
+                                          <span className="font-semibold">Ad Set ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_adset_id}</span>
+                                        </div>
+                                      )}
+                                      {(traffic.utm_ad_id || traffic.ad_id || traffic.messenger_ad_context?.ad_id) && (
+                                        <div>
+                                          <span className="font-semibold">Ad ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_ad_id || traffic.ad_id || traffic.messenger_ad_context?.ad_id}</span>
+                                        </div>
+                                      )}
+                                      {traffic.messenger_ad_context?.post_id && (
                                         <div>
                                           <span className="font-semibold">Post ID:</span>
                                           <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.messenger_ad_context.post_id}</span>
                                         </div>
                                       )}
-                                      {traffic.messenger_ad_context.product_id && (
+                                      {traffic.messenger_ad_context?.product_id && (
                                         <div>
                                           <span className="font-semibold">Product ID:</span>
                                           <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.messenger_ad_context.product_id}</span>
                                         </div>
                                       )}
-                                      {traffic.messenger_ad_context.photo_url && (
+                                      {traffic.messenger_ad_context?.photo_url && (
                                         <div className="mt-2">
                                           <span className="font-semibold block mb-1">Ad Image:</span>
                                           <img 
@@ -845,7 +857,7 @@ const Traffic = () => {
                                           />
                                         </div>
                                       )}
-                                      {traffic.messenger_ad_context.video_url && (
+                                      {traffic.messenger_ad_context?.video_url && (
                                         <div>
                                           <span className="font-semibold">Video URL:</span>
                                           <div className="text-xs text-muted-foreground break-all mt-1">
@@ -860,6 +872,9 @@ const Traffic = () => {
                                    !traffic.utm_source && 
                                    !traffic.utm_medium && 
                                    !traffic.utm_campaign && 
+                                   !traffic.utm_campaign_id &&
+                                   !traffic.utm_adset_id &&
+                                   !traffic.utm_ad_id &&
                                    !traffic.referrer &&
                                    !traffic.messenger_ad_context && (
                                     <div className="text-muted-foreground italic">
