@@ -393,6 +393,9 @@ const Traffic = () => {
                       { key: 'utm_campaign', header: 'UTM Campaign' },
                       { key: 'utm_content', header: 'UTM Content' },
                       { key: 'utm_term', header: 'UTM Term' },
+                      { key: 'utm_campaign_id', header: 'UTM Campaign ID' },
+                      { key: 'utm_adset_id', header: 'UTM Ad Set ID' },
+                      { key: 'utm_ad_id', header: 'UTM Ad ID' },
                       // Facebook/Meta tracking
                       { key: 'facebook_click_id', header: 'FB Click ID' },
                       // Messenger specific
