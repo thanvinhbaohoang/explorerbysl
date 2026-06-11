@@ -1483,6 +1483,16 @@ serve(async (req) => {
         });
       }
       
+      // Messenger Send API does not support captions on attachments.
+      // Deliver the caption as a follow-up text message so the recipient sees it.
+      if (caption && typeof caption === 'string' && caption.trim().length > 0) {
+        try {
+          await sendMessage(psid, caption, page_id);
+        } catch (e) {
+          console.error('Failed to send caption follow-up text:', e);
+        }
+      }
+      
       const { data: customer } = await supabase
         .from('customer')
         .select('id')
@@ -1616,6 +1626,16 @@ serve(async (req) => {
           await supabase.from('messages').insert(insertData);
         }
       }
+      
+      // Messenger doesn't support album captions; send caption once after all media.
+      if (caption && typeof caption === 'string' && caption.trim().length > 0) {
+        try {
+          await sendMessage(psid, caption, page_id);
+        } catch (e) {
+          console.error('Failed to send batch caption follow-up text:', e);
+        }
+      }
+
       
       return new Response(JSON.stringify({ success: true, media_group_id }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
