@@ -676,7 +676,7 @@ const Traffic = () => {
                       <TableHead>Customer</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Traffic Source</TableHead>
-                      <TableHead>Campaign / Ad Set / Ad</TableHead>
+                      
                       <TableHead>Created At</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -798,24 +798,6 @@ const Traffic = () => {
                                       <span className="ml-2 text-muted-foreground">{traffic.utm_term}</span>
                                     </div>
                                   )}
-                                  {traffic.utm_campaign_id && (
-                                    <div>
-                                      <span className="font-semibold">Campaign ID:</span>
-                                      <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_campaign_id}</span>
-                                    </div>
-                                  )}
-                                  {traffic.utm_adset_id && (
-                                    <div>
-                                      <span className="font-semibold">Ad Set ID:</span>
-                                      <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_adset_id}</span>
-                                    </div>
-                                  )}
-                                  {traffic.utm_ad_id && (
-                                    <div>
-                                      <span className="font-semibold">Ad ID (UTM):</span>
-                                      <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_ad_id}</span>
-                                    </div>
-                                  )}
                                   {traffic.referrer && (
                                     <div>
                                       <span className="font-semibold">Referrer:</span>
@@ -824,36 +806,48 @@ const Traffic = () => {
                                       </div>
                                     </div>
                                   )}
-                                  {traffic.messenger_ad_context && (
+                                  {(traffic.messenger_ad_context || traffic.utm_campaign_id || traffic.utm_adset_id || traffic.utm_ad_id) && (
                                     <div className="border-t pt-2 mt-2">
                                       <div className="font-semibold text-foreground mb-2">
                                         Facebook Ad Context
                                       </div>
-                                      {traffic.messenger_ad_context.ad_title && (
+                                      {traffic.messenger_ad_context?.ad_title && (
                                         <div>
                                           <span className="font-semibold">Ad Title:</span>
                                           <span className="ml-2 text-muted-foreground">{traffic.messenger_ad_context.ad_title}</span>
                                         </div>
                                       )}
-                                      {(traffic.ad_id || traffic.messenger_ad_context.ad_id) && (
+                                      {traffic.utm_campaign_id && (
                                         <div>
-                                          <span className="font-semibold">Ad ID:</span>
-                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.ad_id || traffic.messenger_ad_context.ad_id}</span>
+                                          <span className="font-semibold">Campaign ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_campaign_id}</span>
                                         </div>
                                       )}
-                                      {traffic.messenger_ad_context.post_id && (
+                                      {traffic.utm_adset_id && (
+                                        <div>
+                                          <span className="font-semibold">Ad Set ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_adset_id}</span>
+                                        </div>
+                                      )}
+                                      {(traffic.utm_ad_id || traffic.ad_id || traffic.messenger_ad_context?.ad_id) && (
+                                        <div>
+                                          <span className="font-semibold">Ad ID:</span>
+                                          <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.utm_ad_id || traffic.ad_id || traffic.messenger_ad_context?.ad_id}</span>
+                                        </div>
+                                      )}
+                                      {traffic.messenger_ad_context?.post_id && (
                                         <div>
                                           <span className="font-semibold">Post ID:</span>
                                           <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.messenger_ad_context.post_id}</span>
                                         </div>
                                       )}
-                                      {traffic.messenger_ad_context.product_id && (
+                                      {traffic.messenger_ad_context?.product_id && (
                                         <div>
                                           <span className="font-semibold">Product ID:</span>
                                           <span className="ml-2 text-muted-foreground font-mono text-xs">{traffic.messenger_ad_context.product_id}</span>
                                         </div>
                                       )}
-                                      {traffic.messenger_ad_context.photo_url && (
+                                      {traffic.messenger_ad_context?.photo_url && (
                                         <div className="mt-2">
                                           <span className="font-semibold block mb-1">Ad Image:</span>
                                           <img 
@@ -863,7 +857,7 @@ const Traffic = () => {
                                           />
                                         </div>
                                       )}
-                                      {traffic.messenger_ad_context.video_url && (
+                                      {traffic.messenger_ad_context?.video_url && (
                                         <div>
                                           <span className="font-semibold">Video URL:</span>
                                           <div className="text-xs text-muted-foreground break-all mt-1">
@@ -878,6 +872,9 @@ const Traffic = () => {
                                    !traffic.utm_source && 
                                    !traffic.utm_medium && 
                                    !traffic.utm_campaign && 
+                                   !traffic.utm_campaign_id &&
+                                   !traffic.utm_adset_id &&
+                                   !traffic.utm_ad_id &&
                                    !traffic.referrer &&
                                    !traffic.messenger_ad_context && (
                                     <div className="text-muted-foreground italic">
@@ -888,26 +885,6 @@ const Traffic = () => {
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
-                        </TableCell>
-                        <TableCell>
-                          {(traffic.utm_campaign_id || traffic.utm_adset_id || traffic.utm_ad_id) ? (
-                            <div className="flex flex-col gap-0.5 text-xs font-mono">
-                              <div className="flex gap-1">
-                                <span className="text-muted-foreground">C:</span>
-                                <span className="truncate max-w-[140px]" title={traffic.utm_campaign_id || ''}>{traffic.utm_campaign_id || '-'}</span>
-                              </div>
-                              <div className="flex gap-1">
-                                <span className="text-muted-foreground">AS:</span>
-                                <span className="truncate max-w-[140px]" title={traffic.utm_adset_id || ''}>{traffic.utm_adset_id || '-'}</span>
-                              </div>
-                              <div className="flex gap-1">
-                                <span className="text-muted-foreground">A:</span>
-                                <span className="truncate max-w-[140px]" title={traffic.utm_ad_id || ''}>{traffic.utm_ad_id || '-'}</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">-</span>
-                          )}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
                           {formatDisplayDate(traffic.created_at)}
