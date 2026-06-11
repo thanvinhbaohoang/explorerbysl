@@ -176,14 +176,42 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
     }
   }, [customer.id]);
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    if (filteredMessages.length > 0 && !isLoadingMessages) {
+  // Scroll behavior:
+  // - Initial load / customer switch / platform switch -> jump to bottom
+  // - Prepend (older messages loaded) -> anchor scroll position
+  // - New message appended -> only scroll to bottom if user was already near bottom
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || isLoadingMessages) return;
+
+    const customerChanged = prevCustomerIdRef.current !== customer.id;
+    const platformChanged = prevPlatformFilterRef.current !== platformFilter;
+    const lastMsg = filteredMessages[filteredMessages.length - 1];
+    const lastMsgId = lastMsg?.id ?? null;
+
+    if (isPrependingRef.current && prevScrollHeightRef.current != null) {
+      // Restore scroll position so the user stays anchored on the message they were reading
+      const delta = container.scrollHeight - prevScrollHeightRef.current;
+      container.scrollTop = Math.max(delta, 1);
+      isPrependingRef.current = false;
+      prevScrollHeightRef.current = null;
+    } else if (customerChanged || platformChanged) {
+      // Jump to bottom on conversation/platform switch
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-      }, 100);
+      }, 50);
+    } else if (lastMsgId && lastMsgId !== prevLastMessageIdRef.current) {
+      // New message at the bottom — only auto-scroll if user is near the bottom
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distanceFromBottom < 150) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      }
     }
-  }, [filteredMessages.length, isLoadingMessages, platformFilter]);
+
+    prevCustomerIdRef.current = customer.id;
+    prevPlatformFilterRef.current = platformFilter;
+    prevLastMessageIdRef.current = lastMsgId;
+  }, [filteredMessages, isLoadingMessages, platformFilter, customer.id]);
 
   // Shared file processing function
   const processFiles = (files: File[]) => {
@@ -319,7 +347,9 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
-    if (container.scrollTop === 0 && hasMoreMessages && !isLoadingMoreMessages) {
+    if (container.scrollTop < 50 && hasMoreMessages && !isLoadingMoreMessages) {
+      prevScrollHeightRef.current = container.scrollHeight;
+      isPrependingRef.current = true;
       loadMessages(customer, messageOffset);
     }
   };
