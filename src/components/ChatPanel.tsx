@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useChatMessages, Customer, Message } from "@/hooks/useChatMessages";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +57,12 @@ const getInitials = (name: string): string => {
 export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const prevScrollHeightRef = useRef<number | null>(null);
+  const isPrependingRef = useRef(false);
+  const prevLastMessageIdRef = useRef<string | null>(null);
+  const prevCustomerIdRef = useRef<string | null>(null);
+  const prevPlatformFilterRef = useRef<typeof platformFilter | undefined>(undefined);
   const [replyText, setReplyText] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);

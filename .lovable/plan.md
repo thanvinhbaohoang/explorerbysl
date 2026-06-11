@@ -1,49 +1,47 @@
-## Goal
+## Problem
 
-In the Chat surface, every platform account is its own conversation. A customer who exists on both Telegram and Messenger appears as two rows in the list, and opening one shows only that account's messages. No more merged transcripts, no more platform-toggle inside the chat window.
+In `ChatPanel.tsx`, scrolling up to load older messages snaps the viewport back to the bottom. Two bugs cause this:
 
-CRM linking (`linked_customer_id` on `customer`, `LinkCustomerDialog`, the linked-platform badges on the CRM page) stays intact — this change is scoped to the chat inbox UI.
+1. **Auto-scroll effect (lines 174–180)** runs on every `filteredMessages.length` change. When older messages are prepended via pagination, length grows and the effect scrolls to `messagesEndRef` — yanking the user back down.
+2. **No scroll anchoring on prepend.** When the page-2 query resolves and prepends ~50 items, the scrollTop stays at `0`, which both (a) re-triggers `handleScroll` (line 314) firing another `loadMessages` call, and (b) means the user has no visual anchor to the message they were reading.
 
-## Changes
+## Fix (frontend-only, `src/components/ChatPanel.tsx`)
 
-### 1. `src/hooks/useCustomersData.ts` — list every account separately
+### 1. Track whether the next render is a prepend vs. a new-message append
 
-- Remove the `.is("linked_customer_id", null)` filter from both the count query and the data query so linked child rows are returned alongside parents.
-- Stop computing `linkedPlatformsMap` (or return it empty). Each row now represents exactly one account/platform, so the merged-platform badges no longer apply on the chat list.
-- Keep the `last_message_at desc` ordering — each row sorts by its own latest message timestamp, which is exactly what the user asked for.
+- Add `prevMessageCountRef = useRef(0)` and `firstVisibleMessageIdRef = useRef<string | null>(null)`.
+- Add `isPrependingRef = useRef(false)` set to `true` inside `handleScroll` right before calling `loadMessages(customer, messageOffset)`.
 
-### 2. `src/components/ChatConversationList.tsx` — render one row per account
+### 2. Replace the unconditional auto-scroll effect
 
-- Drop `allLinkedPlatformsMap` state, refs, and the linked-customer realtime cross-bumping logic. Each customer row's `last_message_at` already moves it on its own.
-- Render a single platform badge per row (Messenger if `messenger_id`, else Telegram) instead of the dual-platform badge derived from `linkedPlatformsMap`.
-- Selection key stays `customer.id`. Realtime INSERT handler keeps the existing "unknown customer → jump to page 1 + refetch" behavior.
+Current behavior: scroll to bottom whenever `filteredMessages.length` or `platformFilter` changes.
 
-### 3. `src/hooks/useChatMessages.ts` — scope messages to the selected account only
+New behavior:
+- **Initial load / customer switch / platform switch:** scroll to bottom (keep existing UX).
+- **New message appended at bottom** (length grew and last message id changed): scroll to bottom only if user was already near bottom (within ~100px) — otherwise leave them where they are so they can keep reading history while new replies arrive.
+- **Prepend (older messages loaded):** do NOT scroll to bottom. Instead, after the DOM updates, restore scroll position so the previously-first-visible message stays under the user's eye:
+  - Before the fetch, capture `firstVisibleMessageIdRef.current = filteredMessages[0]?.id` and capture `scrollContainerRef.current.scrollHeight` as `prevScrollHeight`.
+  - After messages update, in a `useLayoutEffect`, set `scrollContainer.scrollTop = scrollContainer.scrollHeight - prevScrollHeight`. This is the standard "scroll anchor on prepend" pattern and avoids the snap.
 
-- In `loadMessages`, set `allCustomerIds = [customer.id]` and `linkedMap = { [customer.id]: ... }`. Remove the two follow-up queries that fetch `customer.linked_customer_id` and `linked_customer_id = customer.id` siblings.
-- `setPlatformFilter` is still set to the row's own platform (`messenger` or `telegram`), but since only one platform's messages are loaded, the in-panel filter has nothing to switch between.
+### 3. Guard `handleScroll` against rapid retriggers
 
-### 4. `src/components/ChatPanel.tsx` — remove the platform switcher
+- Change the trigger from `scrollTop === 0` to `scrollTop < 50` so the user doesn't sit exactly at 0 after prepend.
+- Bail out early when `isLoadingMoreMessages` is already true (already partially guarded, keep it).
+- After a successful prepend, nudge `scrollTop` to a small positive value (handled implicitly by the anchor restore above, since `scrollHeight - prevScrollHeight` is > 0).
 
-- Remove the Telegram/Messenger toggle UI (and the "switch platform" affordances built on `linkedCustomersMap` / `linkedCustomerIds`).
-- Header shows the single account's name + platform badge. Sending a reply uses that account's platform — no branching on linked siblings.
+### 4. Add a `scrollContainerRef`
 
-### 5. Notifications & unread counts
-
-- `fetchUnreadCounts` (RPC `get_unread_counts`) keys by `customer_id` already, so per-account unread badges work without change.
-- Notification sound + toast logic in `ChatConversationList` keeps firing per inserted message; it no longer needs to resolve "which linked parent owns this child."
+The messages scroller (`<div className="flex-1 overflow-y-auto ...">` at line 415) currently has no ref — add `ref={scrollContainerRef}` so we can read/write `scrollTop` and `scrollHeight` for the anchor logic.
 
 ## Out of scope
 
-- No database migrations. `linked_customer_id`, `LinkCustomerDialog`, and CRM-side linked badges remain so the link metadata is preserved if we want to revisit it later.
-- No edge-function changes.
-- No changes to search, pagination, or sort order beyond removing the parent-only filter.
-- CRM page (`/customers`) keeps its current merged display.
+- No changes to `useChatMessages.ts`, pagination size, realtime handlers, or DB queries.
+- No changes to the conversation list, header, input area, or mobile layout.
+- No changes to platform-switch behavior (we're past that — each row is single-platform now).
 
 ## Verification
 
-1. A customer with both Telegram and Messenger accounts appears as two rows in `/chat`, each with its own `last_message_at`.
-2. Opening the Telegram row shows only Telegram messages; opening the Messenger row shows only Messenger messages. No platform-switch toggle is visible inside the panel.
-3. A new Telegram message bumps only the Telegram row to the top; the Messenger row stays where its own timestamp puts it.
-4. Unread badges, notification sound, and "jump to page 1 on new message from off-page customer" still work.
-5. CRM `/customers` page is unchanged: linked accounts still show with combined platform badges and the Link dialog still functions.
+1. Open a conversation with >50 messages. Scroll to top — older messages load, scroll position stays anchored on the message you were viewing (no snap to bottom).
+2. While scrolled up reading history, a new incoming message must NOT yank you to the bottom. A small "new messages" indicator is out of scope; the message simply appears at the bottom and you scroll down when ready.
+3. On opening a conversation or switching platforms, view still lands at the bottom (latest message).
+4. Sending a reply still scrolls to bottom (because the user is at the bottom when sending).
