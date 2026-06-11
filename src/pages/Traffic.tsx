@@ -857,14 +857,6 @@ const Traffic = () => {
                                           />
                                         </div>
                                       )}
-                                      {traffic.messenger_ad_context?.video_url && (
-                                        <div>
-                                          <span className="font-semibold">Video URL:</span>
-                                          <div className="text-xs text-muted-foreground break-all mt-1">
-                                            {traffic.messenger_ad_context.video_url}
-                                          </div>
-                                        </div>
-                                      )}
                                     </div>
                                   )}
                                   {!traffic.messenger_ref &&
