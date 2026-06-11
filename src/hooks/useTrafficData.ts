@@ -25,6 +25,9 @@ interface TrafficData {
   post_id: string | null;
   ad_title: string | null;
   ad_id: string | null;
+  utm_campaign_id: string | null;
+  utm_adset_id: string | null;
+  utm_ad_id: string | null;
   platform: string;
   created_at: string;
   customer: {
