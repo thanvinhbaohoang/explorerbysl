@@ -399,27 +399,6 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
               Media{mediaItems.length > 0 ? ` · ${mediaItems.length}` : ''}
             </Button>
 
-            {/* Platform switcher */}
-          {linkedCustomerIds.length > 1 ? (
-            <div className="flex items-center gap-1">
-              {Object.entries(linkedCustomersMap).map(([customerId, info]) => (
-                <Button
-                  key={customerId}
-                  variant={platformFilter === info.platform ? 'default' : 'outline'}
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setPlatformFilter(info.platform as 'telegram' | 'messenger')}
-                >
-                  {info.platform === 'messenger' ? (
-                    <Facebook className="h-3 w-3 mr-1" />
-                  ) : (
-                    <Send className="h-3 w-3 mr-1" />
-                  )}
-                  {info.platform === 'messenger' ? 'Messenger' : 'Telegram'}
-                </Button>
-              ))}
-            </div>
-          ) : (
             <Badge variant={customer.messenger_id ? 'default' : 'secondary'}>
               {customer.messenger_id ? (
                 <><Facebook className="h-3 w-3 mr-1" /> Messenger</>
@@ -427,7 +406,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
                 <><Send className="h-3 w-3 mr-1" /> Telegram</>
               )}
             </Badge>
-          )}
+
           </div>
         </div>
       </div>

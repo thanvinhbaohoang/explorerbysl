@@ -409,8 +409,8 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
         let searchQ = supabase
           .from("customer")
           .select("*")
-          .is("linked_customer_id", null)
           .or(orParts.join(","));
+
 
 
         // Hide broken messenger customers when integration is disabled
