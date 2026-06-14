@@ -474,7 +474,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   // Send media file
   const sendMedia = async (file: File, caption?: string) => {
     const customerToReply = replyCustomer || selectedCustomer;
-    if (!file || !customerToReply || isUploadingFile) return;
+    if (!file || !customerToReply) return;
 
     const getMediaType = (f: File): 'photo' | 'video' | 'document' => {
       if (f.type.startsWith('image/')) return 'photo';
