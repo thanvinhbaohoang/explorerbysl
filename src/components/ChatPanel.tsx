@@ -611,8 +611,8 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
               <Button variant="outline" size="icon" onClick={discardRecording}>
                 <Trash2 className="h-4 w-4" />
               </Button>
-              <Button size="icon" onClick={sendVoiceClip} disabled={isUploadingFile}>
-                {isUploadingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              <Button size="icon" onClick={sendVoiceClip}>
+                <Send className="h-4 w-4" />
               </Button>
             </>
           ) : (
