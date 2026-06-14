@@ -932,6 +932,9 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         }
       }
       const mediaUrl = await uploadFileToStorage(fileToUpload);
+      if (platform === 'messenger' && !mediaUrl.toLowerCase().endsWith('.mp3')) {
+        console.warn('[voice] Messenger upload is not .mp3 — recipient may see 0:00 duration:', mediaUrl);
+      }
 
       let response;
       if (platform === 'messenger') {

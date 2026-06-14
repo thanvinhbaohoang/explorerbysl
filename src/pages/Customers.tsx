@@ -1164,9 +1164,22 @@ const Customers = () => {
     }, 50);
 
     try {
-      // Upload to storage first
-      const mediaUrl = await uploadFileToStorage(audioFile);
+      // Messenger only reliably renders MP3 voice attachments — webm/opus shows 0:00.
+      // Convert client-side before upload. Telegram handles original format fine.
+      let fileToUpload = audioFile;
+      if (platform === 'messenger') {
+        try {
+          const { convertBlobToMp3 } = await import('@/lib/audio-conversion');
+          fileToUpload = await convertBlobToMp3(audioFile);
+        } catch (convErr) {
+          console.warn('MP3 conversion failed, sending original:', convErr);
+        }
+      }
+      const mediaUrl = await uploadFileToStorage(fileToUpload);
       console.log("Voice clip uploaded to storage:", mediaUrl);
+      if (platform === 'messenger' && !mediaUrl.toLowerCase().endsWith('.mp3')) {
+        console.warn('[voice] Messenger upload is not .mp3 — recipient may see 0:00 duration:', mediaUrl);
+      }
 
       let response;
       const employeeName = currentUserName;
