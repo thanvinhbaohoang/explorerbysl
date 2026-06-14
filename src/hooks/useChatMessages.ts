@@ -692,9 +692,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         throw new Error(response.data.error);
       }
 
-      // Remove optimistic messages - real-time subscription will add the real ones
-      setMessages(prev => prev.filter(msg => !tempIds.includes(msg.id)));
-      tempIds.forEach(revokeBlobUrls);
+      // Finalize the optimistic album bubbles; realtime INSERTs will dedupe-replace them.
+      markOptimisticBatchSent(tempIds);
       toast.success(`Album sent (${albumFiles.length} items)`);
     } catch (error: any) {
       console.error("Error sending media batch:", error);
