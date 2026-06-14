@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { detectLanguage } from "@/lib/language-detection";
 import { useQueryClient } from "@tanstack/react-query";
 import { processFileForUpload } from "@/lib/image-conversion";
-import { convertToWav, isMessengerFriendlyAudio } from "@/lib/audio-conversion";
 
 export interface Message {
   id: string;
@@ -884,20 +883,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     setIsUploadingFile(true);
 
     try {
-      // Messenger's audio player can't decode WebM/Opus (the default on desktop
-      // Chrome/Firefox) — bubble shows 0:00 and won't play. Transcode to WAV
-      // for messenger sends if we don't already have a Messenger-friendly format.
-      // WAV embeds duration in its RIFF header so Messenger shows the correct length.
-      let fileToUpload = recordedAudio.file;
-      if (platform === 'messenger' && !isMessengerFriendlyAudio(fileToUpload)) {
-        try {
-          const wavBlob = await convertToWav(fileToUpload);
-          fileToUpload = new File([wavBlob], `voice_${Date.now()}.wav`, { type: 'audio/wav' });
-        } catch (convErr) {
-          console.warn('WAV conversion failed, uploading original:', convErr);
-        }
-      }
-      const mediaUrl = await uploadFileToStorage(fileToUpload);
+      const mediaUrl = await uploadFileToStorage(recordedAudio.file);
 
       let response;
       if (platform === 'messenger') {
@@ -928,16 +914,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         throw new Error(response.data.error);
       }
 
-      // Don't delete the optimistic bubble — flip it to non-pending and point
-      // at the uploaded media URL. The realtime INSERT handler dedupes by
-      // messenger_mid (or replaces the pending entry) so the row from the DB
-      // takes over seamlessly without a visible gap.
-      const realMid = (response.data as any)?.message_id ?? null;
-      setMessages(prev => prev.map(msg =>
-        msg.id === tempId
-          ? { ...msg, isPending: false, voice_url: mediaUrl, messenger_mid: realMid }
-          : msg
-      ));
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      revokeBlobUrls(tempId);
       toast.success("Voice message sent");
     } catch (error: any) {
       console.error("Error sending voice clip:", error);
@@ -988,24 +966,12 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
           
           if (linkedCustomerIds.includes(newMessage.customer_id)) {
             const applyInsert = (list: Message[]): Message[] => {
-              // Prevent duplicates - skip if message already exists (by id or messenger_mid)
+              // Prevent duplicates - skip if message already exists
               if (list.some(msg => msg.id === newMessage.id)) {
                 return list;
               }
+              // Replace pending message for sender's UI
               if (newMessage.sender_type === "employee") {
-                // Dedupe against an already-confirmed optimistic (non-pending)
-                // that we mutated in place after the send succeeded.
-                if (newMessage.messenger_mid) {
-                  const midIdx = list.findIndex(
-                    msg => msg.messenger_mid && msg.messenger_mid === newMessage.messenger_mid
-                  );
-                  if (midIdx !== -1) {
-                    const updated = [...list];
-                    updated[midIdx] = { ...newMessage };
-                    return updated;
-                  }
-                }
-                // Fall back to replacing the first still-pending entry.
                 const pendingIndex = list.findIndex(msg => msg.isPending);
                 if (pendingIndex !== -1) {
                   const updated = [...list];
