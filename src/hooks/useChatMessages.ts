@@ -644,7 +644,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     });
 
     setMessages(prev => [...prev, ...optimisticMessages]);
-    setIsUploadingFile(true);
+
+
 
     try {
       // Upload all files to storage first
