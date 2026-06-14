@@ -951,8 +951,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         throw new Error(response.data.error);
       }
 
-      setMessages(prev => prev.filter(msg => msg.id !== tempId));
-      revokeBlobUrls(tempId);
+      markOptimisticSent(tempId);
       toast.success("Voice message sent");
     } catch (error: any) {
       console.error("Error sending voice clip:", error);
