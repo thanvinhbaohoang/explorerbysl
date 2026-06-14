@@ -754,6 +754,7 @@ const MessageBubble = ({
           </div>
           {message.voice_url && (
             <audio controls className="w-full h-10" preload="metadata">
+              <source src={message.voice_url} type="audio/wav" />
               <source src={message.voice_url} type="audio/mpeg" />
               <source src={message.voice_url} type="audio/mp4" />
               <source src={message.voice_url} type="audio/webm" />
