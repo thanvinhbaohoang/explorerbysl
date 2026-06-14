@@ -327,16 +327,18 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       });
 
     return () => { supabase.removeChannel(channel); };
-  }, [jumpToTopAndRefresh, navigate, onSelect]);
+  }, [refreshPageOneInBackground, navigate, onSelect]);
 
 
-  // Polling fallback: refetch page 1 every 30 seconds
+  // Polling fallback: refetch only when user is on page 1 (avoid disrupting
+  // older pages while the user is reading them).
   useEffect(() => {
+    if (page !== 1) return;
     const interval = setInterval(() => {
       refetch();
     }, 30000);
     return () => clearInterval(interval);
-  }, [refetch]);
+  }, [refetch, page]);
 
   // Real-time subscription for new customers
   useEffect(() => {
