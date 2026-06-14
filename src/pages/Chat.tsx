@@ -32,6 +32,7 @@ interface Customer {
 const Chat = () => {
   const isMobile = useIsMobile();
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [chatListPage, setChatListPage] = useState(1);
   const [searchParams, setSearchParams] = useSearchParams();
   const customerId = searchParams.get('customer');
   
@@ -65,6 +66,8 @@ const Chat = () => {
           <ChatConversationList 
             selectedId={null}
             onSelect={setSelectedCustomer}
+            page={chatListPage}
+            onPageChange={setChatListPage}
           />
         )}
       </div>
@@ -79,6 +82,8 @@ const Chat = () => {
           <ChatConversationList 
             selectedId={selectedCustomer?.id || null}
             onSelect={setSelectedCustomer}
+            page={chatListPage}
+            onPageChange={setChatListPage}
           />
         </ResizablePanel>
         
