@@ -593,7 +593,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     // If only documents or single media, use individual sends
     if (albumFiles.length <= 1) {
       for (let i = 0; i < files.length; i++) {
-        await sendMedia(files[i], i === 0 ? caption : undefined);
+        // Fire-and-forget so concurrent sends do not block the input.
+        void sendMedia(files[i], i === 0 ? caption : undefined);
       }
       return;
     }
