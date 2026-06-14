@@ -911,16 +911,24 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     };
 
     setMessages(prev => [...prev, optimisticMessage]);
-    setIsUploadingFile(true);
+
+    // Snapshot the recording, then immediately reset the input UI so the user
+    // can record/type the next message while this one uploads in the background.
+    const audioFile = recordedAudio.file;
+    const audioUrl = recordedAudio.url;
+    setRecordedAudio(null);
+    setRecordingDuration(0);
+    setIsPlayingPreview(false);
+    setPlaybackProgress(0);
 
     try {
       // Messenger only reliably renders MP3 voice attachments — webm/opus shows 0:00.
       // Convert client-side before upload. Telegram handles original format fine.
-      let fileToUpload = recordedAudio.file;
+      let fileToUpload = audioFile;
       if (platform === 'messenger') {
         try {
           const { convertBlobToMp3 } = await import('@/lib/audio-conversion');
-          fileToUpload = await convertBlobToMp3(recordedAudio.file);
+          fileToUpload = await convertBlobToMp3(audioFile);
         } catch (convErr) {
           console.warn('MP3 conversion failed, sending original:', convErr);
         }
@@ -963,7 +971,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       toast.success("Voice message sent");
     } catch (error: any) {
       console.error("Error sending voice clip:", error);
-      
+
       const isWindowExpired = error.message?.includes('24-hour messaging window');
       if (isWindowExpired && customerToReply) {
         setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
@@ -971,16 +979,11 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       } else {
         toast.error("Failed to send voice message: " + error.message);
       }
-      
+
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
       revokeBlobUrls(tempId);
     } finally {
-      setIsUploadingFile(false);
-      URL.revokeObjectURL(recordedAudio.url);
-      setRecordedAudio(null);
-      setRecordingDuration(0);
-      setIsPlayingPreview(false);
-      setPlaybackProgress(0);
+      URL.revokeObjectURL(audioUrl);
     }
   };
 
