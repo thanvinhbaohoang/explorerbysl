@@ -448,6 +448,11 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       if (response.data?.error) {
         throw new Error(response.data.error);
       }
+
+      // Finalize the optimistic bubble immediately on success, so it never sticks on
+      // "Sending..." if the realtime INSERT is delayed or missed. The realtime handler
+      // dedupes the eventual real row against this finalized optimistic message.
+      markOptimisticSent(tempId);
     } catch (error: any) {
       console.error("Error sending message:", error);
       
