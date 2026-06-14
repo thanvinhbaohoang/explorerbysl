@@ -122,6 +122,38 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     }
   };
 
+  // Mark an optimistic message as no longer pending in both messages state and cache.
+  // Used right after the edge function returns success, so the UI finalizes immediately
+  // even if the realtime INSERT is delayed or missed.
+  const markOptimisticSent = (tempId: string) => {
+    const flip = (list: Message[]): Message[] =>
+      list.map((msg) => (msg.id === tempId ? { ...msg, isPending: false } : msg));
+    setMessages((prev) => flip(prev));
+    const cacheKey = currentCacheKeyRef.current;
+    if (cacheKey) {
+      setMessagesCache((prev) => {
+        const existing = prev[cacheKey];
+        if (!existing) return prev;
+        return { ...prev, [cacheKey]: flip(existing) };
+      });
+    }
+  };
+
+  const markOptimisticBatchSent = (tempIds: string[]) => {
+    const set = new Set(tempIds);
+    const flip = (list: Message[]): Message[] =>
+      list.map((msg) => (set.has(msg.id) ? { ...msg, isPending: false } : msg));
+    setMessages((prev) => flip(prev));
+    const cacheKey = currentCacheKeyRef.current;
+    if (cacheKey) {
+      setMessagesCache((prev) => {
+        const existing = prev[cacheKey];
+        if (!existing) return prev;
+        return { ...prev, [cacheKey]: flip(existing) };
+      });
+    }
+  };
+
   // Fully reset chat state when customer changes to prevent stale data leaking across conversations
   useEffect(() => {
     if (selectedCustomer?.id) {
@@ -416,6 +448,11 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       if (response.data?.error) {
         throw new Error(response.data.error);
       }
+
+      // Finalize the optimistic bubble immediately on success, so it never sticks on
+      // "Sending..." if the realtime INSERT is delayed or missed. The realtime handler
+      // dedupes the eventual real row against this finalized optimistic message.
+      markOptimisticSent(tempId);
     } catch (error: any) {
       console.error("Error sending message:", error);
       
@@ -528,8 +565,9 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         throw new Error(response.data.error);
       }
 
-      setMessages(prev => prev.filter(msg => msg.id !== tempId));
-      revokeBlobUrls(tempId);
+      // Keep the optimistic bubble visible and mark it as sent. The realtime INSERT
+      // (when it arrives) will replace it with the real DB row via content+recency dedupe.
+      markOptimisticSent(tempId);
       toast.success("Media sent successfully");
     } catch (error: any) {
       console.error("Error sending media:", error);
@@ -654,9 +692,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         throw new Error(response.data.error);
       }
 
-      // Remove optimistic messages - real-time subscription will add the real ones
-      setMessages(prev => prev.filter(msg => !tempIds.includes(msg.id)));
-      tempIds.forEach(revokeBlobUrls);
+      // Finalize the optimistic album bubbles; realtime INSERTs will dedupe-replace them.
+      markOptimisticBatchSent(tempIds);
       toast.success(`Album sent (${albumFiles.length} items)`);
     } catch (error: any) {
       console.error("Error sending media batch:", error);
@@ -914,8 +951,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         throw new Error(response.data.error);
       }
 
-      setMessages(prev => prev.filter(msg => msg.id !== tempId));
-      revokeBlobUrls(tempId);
+      markOptimisticSent(tempId);
       toast.success("Voice message sent");
     } catch (error: any) {
       console.error("Error sending voice clip:", error);
@@ -970,12 +1006,34 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
               if (list.some(msg => msg.id === newMessage.id)) {
                 return list;
               }
-              // Replace pending message for sender's UI
+              // Replace the matching optimistic employee message (pending OR recently
+              // finalized via markOptimisticSent) so we don't end up with duplicates.
               if (newMessage.sender_type === "employee") {
-                const pendingIndex = list.findIndex(msg => msg.isPending);
-                if (pendingIndex !== -1) {
+                const newTs = new Date(newMessage.timestamp).getTime();
+                const matchIndex = list.findIndex((msg) => {
+                  if (!msg.id.startsWith("temp-")) return false;
+                  if (msg.customer_id !== newMessage.customer_id) return false;
+                  if (msg.sender_type !== "employee") return false;
+                  if (msg.message_type !== newMessage.message_type) return false;
+                  // Match text/caption when present; tolerate empty/null
+                  const a = (msg.message_text || "").trim();
+                  const b = (newMessage.message_text || "").trim();
+                  const textOk = msg.message_type === "text"
+                    ? a === b
+                    : (!a || !b || a === b || a.startsWith("[") || b.startsWith("["));
+                  if (!textOk) return false;
+                  // Same media group when both have one
+                  if (msg.media_group_id && newMessage.media_group_id &&
+                      msg.media_group_id !== newMessage.media_group_id) return false;
+                  // Within a 2-minute window
+                  const tsDiff = Math.abs(newTs - new Date(msg.timestamp).getTime());
+                  return tsDiff < 2 * 60 * 1000;
+                });
+                if (matchIndex !== -1) {
+                  const matched = list[matchIndex];
+                  revokeBlobUrls(matched.id);
                   const updated = [...list];
-                  updated[pendingIndex] = newMessage;
+                  updated[matchIndex] = newMessage;
                   return updated;
                 }
               }

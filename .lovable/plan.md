@@ -1,28 +1,67 @@
-## Root cause
-On mobile, `src/pages/Chat.tsx` renders either `ChatPanel` OR `ChatConversationList` (not both). Every time the user opens a conversation — including tapping "View" on a new-message toast — the conversation list unmounts. When they return, it remounts and its internal `useState(1)` resets the page back to 1. That is what is throwing the user off pages 4–5.
+## Goal
+Make sent chats finalize in the UI immediately after a successful send, instead of staying stuck on "Sending..." even though the message was delivered.
 
-The earlier fix only stopped explicit `setPage(1)` calls; it did not protect against the remount, so the issue still happens.
+## What’s happening
+The backend is working:
+- Telegram logs show `Message sent and saved successfully`.
+- Messenger logs show the sent message is saved and the echo webhook is intentionally skipped as a duplicate.
 
-## Fix
-Persist the chat list page so it survives remounts.
+The bug is in the frontend optimistic-send flow in `src/hooks/useChatMessages.ts`:
+- Text sends add a temporary message with `isPending: true`.
+- On success, that temp message is left in place and waits for realtime to replace it.
+- If the realtime insert arrives late or is missed, the temp row never gets reconciled and stays stuck as `Sending...`.
+- Media/voice/album paths remove the temp row and also rely on realtime to add the final row, so they can disappear briefly or fail to finalize cleanly for the same reason.
 
-1. Lift pagination state into `src/pages/Chat.tsx`
-   - Add `const [chatListPage, setChatListPage] = useState(1)` in `Chat.tsx`.
-   - Pass `page` and `onPageChange` props into `ChatConversationList` (both mobile and desktop usages).
+## Plan
 
-2. Update `src/components/ChatConversationList.tsx`
-   - Accept optional `page` and `onPageChange` props; fall back to local state only if not provided (keeps the component reusable).
-   - Replace internal `setPage` calls in the prev/next buttons and clamp effect with the prop setter when provided.
-   - Keep all the existing background-refresh behavior unchanged.
+### 1. Add a shared optimistic reconciliation helper
+In `src/hooks/useChatMessages.ts`, add a small helper that can:
+- insert optimistic messages,
+- mark them as no longer pending after a successful send,
+- replace them when the real DB row arrives,
+- and safely revoke preview blob URLs only when the optimistic row is actually removed or replaced.
 
-3. Do not touch `?customer=` handling, realtime subscriptions, polling, prefetch, or sorting — those are already correct.
+### 2. Finalize text messages on successful edge-function response
+Update `sendReply` so that when the edge function returns success:
+- the optimistic message is immediately changed from `isPending: true` to `isPending: false`,
+- it stays visible in the conversation instead of waiting entirely on realtime.
+
+This removes the permanent stuck state even if realtime is delayed.
+
+### 3. Make realtime replace the matching optimistic row instead of only pending rows
+Improve the realtime `INSERT` handler so it matches and replaces the corresponding optimistic employee message using stable heuristics such as:
+- same customer,
+- same sender type,
+- same message type,
+- same text/caption where applicable,
+- close timestamp window,
+- optional media-group match for albums.
+
+This avoids duplicates once the real DB message arrives after the optimistic one has already been marked as sent.
+
+### 4. Apply the same logic to media, album, and voice sends
+Update the other send paths so they no longer depend on realtime as the only way to finalize the UI:
+- single media,
+- media batch/album,
+- voice clip.
+
+They should either remain visible as finalized optimistic rows until replaced, or be reconciled with the real row without flicker or duplication.
+
+### 5. Keep failure behavior unchanged
+If the send fails:
+- remove the optimistic row,
+- preserve the current error toasts,
+- keep 24-hour window handling unchanged.
 
 ## Technical details
-- Only two files change: `src/pages/Chat.tsx` and `src/components/ChatConversationList.tsx`.
-- No schema, RLS, hook signature, or routing changes.
-- Desktop is unaffected functionally (the list never unmounts there), but it benefits from the same lifted state for consistency.
+- Primary file: `src/hooks/useChatMessages.ts`
+- No backend, schema, auth, or routing changes needed.
+- `src/components/ChatPanel.tsx` can keep using `message.isPending` as-is.
 
 ## Validation
-- Mobile: open `/chat`, paginate to page 4, open a conversation, tap back → list is still on page 4.
-- Mobile: while on page 4, trigger a new message from another account → toast appears, list stays on page 4; tap "View" → conversation opens; tap back → list returns to page 4.
-- Desktop: paginate to page 4, send a new message from another account → list stays on page 4, page-1 cache silently refreshes in the background.
+After implementation, verify these cases:
+1. Send a text message: it briefly shows `Sending...` then becomes a normal sent bubble.
+2. Send a Messenger message: same result, no duplicate from the echo/save flow.
+3. Send media, album, and voice: no stuck pending state, no disappearing bubble, no duplicate.
+4. If realtime is slow, the message still finalizes in the UI.
+5. If sending fails, the bubble is removed and the existing error toast still appears.
