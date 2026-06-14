@@ -99,12 +99,15 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     allLinkedPlatformsMapRef.current = allLinkedPlatformsMap;
   }, [allLinkedPlatformsMap]);
 
-  // When a message arrives for a customer not in the loaded list, jump back
-  // to page 1 and refetch so the bumped conversation appears at the very top.
-  const jumpToTopAndRefresh = useCallback(() => {
-    if (page !== 1) setPage(1);
-    void refetch();
-  }, [page, refetch]);
+  // When a message arrives for a customer not on the currently loaded page,
+  // refresh page 1 in the background so it's fresh when the user navigates
+  // back — but never yank the user off their current page.
+  const queryClient = useQueryClient();
+  const refreshPageOneInBackground = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: customersQueryKey(1, itemsPerPage, "", "all", messengerEnabled),
+    });
+  }, [queryClient, itemsPerPage, messengerEnabled]);
 
 
   // Sync current page data into local state (replace, don't accumulate)
@@ -123,7 +126,6 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   }, [totalCustomers, totalPages, page]);
 
   // Prefetch the next 4 pages so paginating forward feels instant
-  const queryClient = useQueryClient();
   useEffect(() => {
     if (totalPages <= 1) return;
     const maxPrefetch = Math.min(totalPages, page + 4);
@@ -292,7 +294,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
             Object.values(currentLinkedMap).some(linkedInfo => linkedInfo.linkedIds.includes(messageCustomerId));
 
           if (!isKnownConversation) {
-            jumpToTopAndRefresh();
+            refreshPageOneInBackground();
           }
 
           
@@ -325,16 +327,18 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
       });
 
     return () => { supabase.removeChannel(channel); };
-  }, [jumpToTopAndRefresh, navigate, onSelect]);
+  }, [refreshPageOneInBackground, navigate, onSelect]);
 
 
-  // Polling fallback: refetch page 1 every 30 seconds
+  // Polling fallback: refetch only when user is on page 1 (avoid disrupting
+  // older pages while the user is reading them).
   useEffect(() => {
+    if (page !== 1) return;
     const interval = setInterval(() => {
       refetch();
     }, 30000);
     return () => clearInterval(interval);
-  }, [refetch]);
+  }, [refetch, page]);
 
   // Real-time subscription for new customers
   useEffect(() => {
@@ -357,23 +361,27 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
             action: {
               label: "Chat Now",
               onClick: () => {
-                refetch().then(() => {
-                  if (isOnChatPage) {
-                    onSelect(newCustomer);
-                  } else {
-                    navigate(`/chat?customer=${newCustomer.id}`);
-                  }
-                });
+                if (isOnChatPage) {
+                  onSelect(newCustomer);
+                } else {
+                  navigate(`/chat?customer=${newCustomer.id}`);
+                }
               },
             },
           });
-          refetch();
+          // Only refetch the current page if user is on page 1, otherwise
+          // refresh page 1 in the background so the user keeps their place.
+          if (page === 1) {
+            refetch();
+          } else {
+            refreshPageOneInBackground();
+          }
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [refetch, isOnChatPage, navigate, onSelect]);
+  }, [refetch, isOnChatPage, navigate, onSelect, page, refreshPageOneInBackground]);
 
   // Search results from database (searches ALL customers, not just loaded ones)
   const [searchResults, setSearchResults] = useState<Customer[]>([]);
