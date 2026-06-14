@@ -584,7 +584,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   // Send multiple media files as a batch (album)
   const sendMediaBatch = async (files: File[], caption?: string) => {
     const customerToReply = replyCustomer || selectedCustomer;
-    if (!files.length || !customerToReply || isUploadingFile) return;
+    if (!files.length || !customerToReply) return;
 
     // Filter to only photos and videos for album (documents sent individually)
     const albumFiles = files.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
