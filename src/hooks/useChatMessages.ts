@@ -565,8 +565,9 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         throw new Error(response.data.error);
       }
 
-      setMessages(prev => prev.filter(msg => msg.id !== tempId));
-      revokeBlobUrls(tempId);
+      // Keep the optimistic bubble visible and mark it as sent. The realtime INSERT
+      // (when it arrives) will replace it with the real DB row via content+recency dedupe.
+      markOptimisticSent(tempId);
       toast.success("Media sent successfully");
     } catch (error: any) {
       console.error("Error sending media:", error);
