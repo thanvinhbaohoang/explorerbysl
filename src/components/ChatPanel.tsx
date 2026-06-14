@@ -660,10 +660,10 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
               
               <Button 
                 onClick={handleSend} 
-                disabled={(!replyText.trim() && selectedFiles.length === 0) || isSending || isUploadingFile || isMessengerOutsideWindow}
+                disabled={(!replyText.trim() && selectedFiles.length === 0) || isMessengerOutsideWindow}
                 size="icon"
               >
-                {isUploadingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                <Send className="h-4 w-4" />
               </Button>
             </>
           )}
