@@ -126,7 +126,6 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   }, [totalCustomers, totalPages, page]);
 
   // Prefetch the next 4 pages so paginating forward feels instant
-  const queryClient = useQueryClient();
   useEffect(() => {
     if (totalPages <= 1) return;
     const maxPrefetch = Math.min(totalPages, page + 4);
