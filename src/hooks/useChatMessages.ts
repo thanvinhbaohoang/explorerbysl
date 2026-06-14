@@ -468,8 +468,6 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
       
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
-    } finally {
-      setIsSending(false);
     }
   };
 
