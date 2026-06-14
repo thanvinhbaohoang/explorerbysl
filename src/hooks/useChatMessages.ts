@@ -381,7 +381,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   // Send text reply
   const sendReply = async (replyText: string) => {
     const customerToReply = replyCustomer || selectedCustomer;
-    if (!replyText.trim() || !customerToReply) return;
+    if (!replyText.trim() || !customerToReply || isSending) return;
 
     const tempId = `temp-${Date.now()}`;
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
@@ -418,7 +418,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     };
 
     setMessages(prev => [...prev, optimisticMessage]);
-
+    setIsSending(true);
 
     try {
       let response;
@@ -469,13 +469,15 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       }
       
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
+    } finally {
+      setIsSending(false);
     }
   };
 
   // Send media file
   const sendMedia = async (file: File, caption?: string) => {
     const customerToReply = replyCustomer || selectedCustomer;
-    if (!file || !customerToReply) return;
+    if (!file || !customerToReply || isUploadingFile) return;
 
     const getMediaType = (f: File): 'photo' | 'video' | 'document' => {
       if (f.type.startsWith('image/')) return 'photo';
@@ -588,7 +590,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   // Send multiple media files as a batch (album)
   const sendMediaBatch = async (files: File[], caption?: string) => {
     const customerToReply = replyCustomer || selectedCustomer;
-    if (!files.length || !customerToReply) return;
+    if (!files.length || !customerToReply || isUploadingFile) return;
 
     // Filter to only photos and videos for album (documents sent individually)
     const albumFiles = files.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
@@ -880,15 +882,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     const employeeName = currentUserName;
     const duration = recordingDuration;
 
-    // Snapshot then immediately release the composer so the user can record/type more
-    const snapshot = recordedAudio;
-    setRecordedAudio(null);
-    setRecordingDuration(0);
-    setIsPlayingPreview(false);
-    setPlaybackProgress(0);
-
     // Local preview URL so the bubble plays immediately
-    const previewUrl = URL.createObjectURL(snapshot.file);
+    const previewUrl = URL.createObjectURL(recordedAudio.file);
     trackBlobUrl(tempId, previewUrl);
 
     const optimisticMessage: Message = {
@@ -922,15 +917,16 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     };
 
     setMessages(prev => [...prev, optimisticMessage]);
+    setIsUploadingFile(true);
 
     try {
       // Messenger only reliably renders MP3 voice attachments — webm/opus shows 0:00.
       // Convert client-side before upload. Telegram handles original format fine.
-      let fileToUpload = snapshot.file;
+      let fileToUpload = recordedAudio.file;
       if (platform === 'messenger') {
         try {
           const { convertBlobToMp3 } = await import('@/lib/audio-conversion');
-          fileToUpload = await convertBlobToMp3(snapshot.file);
+          fileToUpload = await convertBlobToMp3(recordedAudio.file);
         } catch (convErr) {
           console.warn('MP3 conversion failed, sending original:', convErr);
         }
@@ -985,10 +981,14 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
       revokeBlobUrls(tempId);
     } finally {
-      URL.revokeObjectURL(snapshot.url);
+      setIsUploadingFile(false);
+      URL.revokeObjectURL(recordedAudio.url);
+      setRecordedAudio(null);
+      setRecordingDuration(0);
+      setIsPlayingPreview(false);
+      setPlaybackProgress(0);
     }
   };
-
 
   const togglePreviewPlayback = () => {
     if (!audioPreviewRef.current) return;

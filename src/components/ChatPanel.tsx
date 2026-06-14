@@ -321,23 +321,19 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
     setFilePreviews([]);
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (isMessengerOutsideWindow) {
       toast.error("Cannot send message: The 24-hour messaging window has expired.");
       return;
     }
     if (selectedFiles.length > 0) {
-      // Snapshot then clear synchronously so the composer is immediately ready for the next message.
-      const filesToSend = selectedFiles;
-      const captionToSend = replyText.trim() || undefined;
+      // Use batch send for multiple media files
+      await sendMediaBatch(selectedFiles, replyText.trim() || undefined);
       clearAllFiles();
       setReplyText("");
-      // Fire-and-forget — optimistic bubble tracks pending state per message.
-      void sendMediaBatch(filesToSend, captionToSend);
     } else if (replyText.trim()) {
-      const textToSend = replyText;
+      sendReply(replyText);
       setReplyText("");
-      void sendReply(textToSend);
     }
   };
 
@@ -621,7 +617,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
             <>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" disabled={isMessengerOutsideWindow}>
+                  <Button variant="outline" size="icon" disabled={isMessengerOutsideWindow || isUploadingFile}>
                     <Paperclip className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -642,7 +638,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
                   variant="outline" 
                   size="icon"
                   onClick={startRecording}
-                  disabled={isMessengerOutsideWindow || selectedFiles.length > 0}
+                  disabled={isMessengerOutsideWindow || isUploadingFile || selectedFiles.length > 0}
                 >
                 <Mic className="h-4 w-4" />
               </Button>
@@ -661,7 +657,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
               
               <Button 
                 onClick={handleSend} 
-                disabled={(!replyText.trim() && selectedFiles.length === 0) || isMessengerOutsideWindow}
+                disabled={(!replyText.trim() && selectedFiles.length === 0) || isSending || isUploadingFile || isMessengerOutsideWindow}
                 size="icon"
               >
                 {isUploadingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
