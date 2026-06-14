@@ -578,8 +578,6 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
       revokeBlobUrls(tempId);
-    } finally {
-      setIsUploadingFile(false);
     }
   };
 
