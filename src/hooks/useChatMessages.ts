@@ -418,7 +418,6 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     };
 
     setMessages(prev => [...prev, optimisticMessage]);
-    setIsSending(true);
 
     try {
       let response;
