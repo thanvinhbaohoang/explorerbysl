@@ -1006,12 +1006,34 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
               if (list.some(msg => msg.id === newMessage.id)) {
                 return list;
               }
-              // Replace pending message for sender's UI
+              // Replace the matching optimistic employee message (pending OR recently
+              // finalized via markOptimisticSent) so we don't end up with duplicates.
               if (newMessage.sender_type === "employee") {
-                const pendingIndex = list.findIndex(msg => msg.isPending);
-                if (pendingIndex !== -1) {
+                const newTs = new Date(newMessage.timestamp).getTime();
+                const matchIndex = list.findIndex((msg) => {
+                  if (!msg.id.startsWith("temp-")) return false;
+                  if (msg.customer_id !== newMessage.customer_id) return false;
+                  if (msg.sender_type !== "employee") return false;
+                  if (msg.message_type !== newMessage.message_type) return false;
+                  // Match text/caption when present; tolerate empty/null
+                  const a = (msg.message_text || "").trim();
+                  const b = (newMessage.message_text || "").trim();
+                  const textOk = msg.message_type === "text"
+                    ? a === b
+                    : (!a || !b || a === b || a.startsWith("[") || b.startsWith("["));
+                  if (!textOk) return false;
+                  // Same media group when both have one
+                  if (msg.media_group_id && newMessage.media_group_id &&
+                      msg.media_group_id !== newMessage.media_group_id) return false;
+                  // Within a 2-minute window
+                  const tsDiff = Math.abs(newTs - new Date(msg.timestamp).getTime());
+                  return tsDiff < 2 * 60 * 1000;
+                });
+                if (matchIndex !== -1) {
+                  const matched = list[matchIndex];
+                  revokeBlobUrls(matched.id);
                   const updated = [...list];
-                  updated[pendingIndex] = newMessage;
+                  updated[matchIndex] = newMessage;
                   return updated;
                 }
               }
