@@ -294,7 +294,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
             Object.values(currentLinkedMap).some(linkedInfo => linkedInfo.linkedIds.includes(messageCustomerId));
 
           if (!isKnownConversation) {
-            jumpToTopAndRefresh();
+            refreshPageOneInBackground();
           }
 
           
