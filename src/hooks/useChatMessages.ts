@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { detectLanguage } from "@/lib/language-detection";
 import { useQueryClient } from "@tanstack/react-query";
 import { processFileForUpload } from "@/lib/image-conversion";
+import { convertToMp3, isMessengerFriendlyAudio } from "@/lib/audio-conversion";
 
 export interface Message {
   id: string;
@@ -883,7 +884,19 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     setIsUploadingFile(true);
 
     try {
-      const mediaUrl = await uploadFileToStorage(recordedAudio.file);
+      // Messenger's audio player can't decode WebM/Opus (the default on desktop
+      // Chrome/Firefox) — bubble shows 0:00 and won't play. Transcode to MP3
+      // for messenger sends if we don't already have a Messenger-friendly format.
+      let fileToUpload = recordedAudio.file;
+      if (platform === 'messenger' && !isMessengerFriendlyAudio(fileToUpload)) {
+        try {
+          const mp3Blob = await convertToMp3(fileToUpload);
+          fileToUpload = new File([mp3Blob], `voice_${Date.now()}.mp3`, { type: 'audio/mpeg' });
+        } catch (convErr) {
+          console.warn('MP3 conversion failed, uploading original:', convErr);
+        }
+      }
+      const mediaUrl = await uploadFileToStorage(fileToUpload);
 
       let response;
       if (platform === 'messenger') {

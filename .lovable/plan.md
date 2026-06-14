@@ -1,28 +1,37 @@
+# Fix: PC voice messages show 0 duration / won't play on Messenger
+
 ## Root cause
-On mobile, `src/pages/Chat.tsx` renders either `ChatPanel` OR `ChatConversationList` (not both). Every time the user opens a conversation — including tapping "View" on a new-message toast — the conversation list unmounts. When they return, it remounts and its internal `useState(1)` resets the page back to 1. That is what is throwing the user off pages 4–5.
 
-The earlier fix only stopped explicit `setPage(1)` calls; it did not protect against the remount, so the issue still happens.
+On PC (Chrome/Edge/Firefox), `MediaRecorder` records `audio/webm;codecs=opus`. Facebook's Send API accepts the upload, but Messenger's audio player cannot decode WebM/Opus — the bubble appears with **0:00 duration and no playback**. iOS Safari (and many Android Chrome builds) record `audio/mp4` (AAC), which Messenger plays correctly — that's why mobile works.
 
-## Fix
-Persist the chat list page so it survives remounts.
+Messenger's audio attachment reliably plays MP3, M4A/AAC, and WAV. The fix is to re-encode the recorded blob to MP3 on the client before upload, but only when the captured format isn't already Messenger-friendly.
 
-1. Lift pagination state into `src/pages/Chat.tsx`
-   - Add `const [chatListPage, setChatListPage] = useState(1)` in `Chat.tsx`.
-   - Pass `page` and `onPageChange` props into `ChatConversationList` (both mobile and desktop usages).
+## Changes
 
-2. Update `src/components/ChatConversationList.tsx`
-   - Accept optional `page` and `onPageChange` props; fall back to local state only if not provided (keeps the component reusable).
-   - Replace internal `setPage` calls in the prev/next buttons and clamp effect with the prop setter when provided.
-   - Keep all the existing background-refresh behavior unchanged.
+### 1. `src/hooks/useChatMessages.ts`
+- Add a helper `convertToMp3(blob: Blob): Promise<Blob>` that:
+  - Decodes the blob via `new AudioContext().decodeAudioData(arrayBuffer)`.
+  - Encodes to MP3 (mono, 64 kbps) with `lamejs` in 1152-sample frames inside a yielding loop so long clips don't block the UI.
+  - Returns a `Blob` of type `audio/mpeg`.
+- In `recorder.onstop`: keep the current preview blob as-is (for in-app playback). Store the original blob/extension on `recordedAudio` so we can decide later.
+- In `sendVoiceClip` for the `messenger` branch only: if the file isn't already MP3/M4A/WAV, run `convertToMp3` and upload that file as `voice_<ts>.mp3` with `Content-Type: audio/mpeg`. Telegram path is unchanged (Telegram handles Opus voice fine via the existing `media_type: 'voice'` flow, but we'll still send MP3 if we already converted — simpler).
+- Keep `audioBitsPerSecond: 64000` and existing codec preference order (no change to capture).
 
-3. Do not touch `?customer=` handling, realtime subscriptions, polling, prefetch, or sorting — those are already correct.
+### 2. `src/components/ChatPanel.tsx`
+- In the voice bubble `<audio>` element add `<source src={message.voice_url} type="audio/mpeg" />` as the **first** source so new MP3 clips play in-app. Keep the existing `audio/webm` and `audio/ogg` sources as fallbacks for historical messages.
 
-## Technical details
-- Only two files change: `src/pages/Chat.tsx` and `src/components/ChatConversationList.tsx`.
-- No schema, RLS, hook signature, or routing changes.
-- Desktop is unaffected functionally (the list never unmounts there), but it benefits from the same lifted state for consistency.
+### 3. `package.json`
+- Add dependency `lamejs` (small, pure-JS, browser-safe MP3 encoder; no native bindings).
+
+## Out of scope
+- No edge function changes — `messenger-webhook` `sendAttachment` already forwards whatever URL we upload.
+- No DB / RLS / schema changes.
+- No mobile capture change (mobile already produces a Messenger-compatible format).
 
 ## Validation
-- Mobile: open `/chat`, paginate to page 4, open a conversation, tap back → list is still on page 4.
-- Mobile: while on page 4, trigger a new message from another account → toast appears, list stays on page 4; tap "View" → conversation opens; tap back → list returns to page 4.
-- Desktop: paginate to page 4, send a new message from another account → list stays on page 4, page-1 cache silently refreshes in the background.
+1. Desktop Chrome: record 5s voice → send to a Messenger customer → bubble on the customer side shows correct duration (~0:05) and plays audio.
+2. Desktop Firefox: same test.
+3. iOS Safari: record + send → still works (no regression; either skips conversion because already m4a, or converts cleanly).
+4. Android Chrome: record + send → plays on the customer end.
+5. In-app: own voice bubble and history bubbles still play (mp3 source preferred, webm/ogg fallback for older messages).
+6. Telegram voice send: still works end-to-end.
