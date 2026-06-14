@@ -104,7 +104,7 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
   // back — but never yank the user off their current page.
   const queryClient = useQueryClient();
   const refreshPageOneInBackground = useCallback(() => {
-    void queryClient.refetchQuery({
+    void queryClient.invalidateQueries({
       queryKey: customersQueryKey(1, itemsPerPage, "", "all", messengerEnabled),
     });
   }, [queryClient, itemsPerPage, messengerEnabled]);
