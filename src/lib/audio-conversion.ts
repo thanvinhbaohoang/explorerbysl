@@ -3,7 +3,7 @@
 // so it plays reliably as a Facebook Messenger audio attachment.
 //
 // lamejs is a pure-JS MP3 encoder (no native deps), safe for the browser.
-import lamejs from "lamejs";
+import { Mp3Encoder } from "@breezystack/lamejs";
 
 const MESSENGER_FRIENDLY = /^(audio\/(mpeg|mp3|mp4|m4a|aac|wav|wave|x-wav))/i;
 
