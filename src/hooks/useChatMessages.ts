@@ -920,7 +920,18 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     setIsUploadingFile(true);
 
     try {
-      const mediaUrl = await uploadFileToStorage(recordedAudio.file);
+      // Messenger only reliably renders MP3 voice attachments — webm/opus shows 0:00.
+      // Convert client-side before upload. Telegram handles original format fine.
+      let fileToUpload = recordedAudio.file;
+      if (platform === 'messenger') {
+        try {
+          const { convertBlobToMp3 } = await import('@/lib/audio-conversion');
+          fileToUpload = await convertBlobToMp3(recordedAudio.file);
+        } catch (convErr) {
+          console.warn('MP3 conversion failed, sending original:', convErr);
+        }
+      }
+      const mediaUrl = await uploadFileToStorage(fileToUpload);
 
       let response;
       if (platform === 'messenger') {
