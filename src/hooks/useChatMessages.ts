@@ -122,6 +122,38 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     }
   };
 
+  // Mark an optimistic message as no longer pending in both messages state and cache.
+  // Used right after the edge function returns success, so the UI finalizes immediately
+  // even if the realtime INSERT is delayed or missed.
+  const markOptimisticSent = (tempId: string) => {
+    const flip = (list: Message[]): Message[] =>
+      list.map((msg) => (msg.id === tempId ? { ...msg, isPending: false } : msg));
+    setMessages((prev) => flip(prev));
+    const cacheKey = currentCacheKeyRef.current;
+    if (cacheKey) {
+      setMessagesCache((prev) => {
+        const existing = prev[cacheKey];
+        if (!existing) return prev;
+        return { ...prev, [cacheKey]: flip(existing) };
+      });
+    }
+  };
+
+  const markOptimisticBatchSent = (tempIds: string[]) => {
+    const set = new Set(tempIds);
+    const flip = (list: Message[]): Message[] =>
+      list.map((msg) => (set.has(msg.id) ? { ...msg, isPending: false } : msg));
+    setMessages((prev) => flip(prev));
+    const cacheKey = currentCacheKeyRef.current;
+    if (cacheKey) {
+      setMessagesCache((prev) => {
+        const existing = prev[cacheKey];
+        if (!existing) return prev;
+        return { ...prev, [cacheKey]: flip(existing) };
+      });
+    }
+  };
+
   // Fully reset chat state when customer changes to prevent stale data leaking across conversations
   useEffect(() => {
     if (selectedCustomer?.id) {
