@@ -42,6 +42,8 @@ interface Customer {
 interface ChatConversationListProps {
   selectedId: string | null;
   onSelect: (customer: Customer) => void;
+  page?: number;
+  onPageChange?: (page: number) => void;
 }
 
 // Helper function to get initials from name
@@ -54,14 +56,20 @@ const getInitials = (name: string): string => {
     .join('') || '?';
 };
 
-export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationListProps) => {
+export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onPageChange }: ChatConversationListProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const isOnChatPage = location.pathname === '/chat';
   
   const { isEnabled: messengerEnabled } = useMessengerIntegration();
   
-  const [page, setPage] = useState(1);
+  const [localPage, setLocalPage] = useState(1);
+  const page = pageProp ?? localPage;
+  const setPage = useCallback((updater: number | ((prev: number) => number)) => {
+    const next = typeof updater === 'function' ? (updater as (p: number) => number)(page) : updater;
+    if (onPageChange) onPageChange(next);
+    else setLocalPage(next);
+  }, [onPageChange, page]);
   const itemsPerPage = 20;
   const { data: customersData, isLoading, isPlaceholderData, refetch } = useCustomersData(page, itemsPerPage, "", "all", messengerEnabled);
   
