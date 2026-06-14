@@ -641,7 +641,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
                   variant="outline" 
                   size="icon"
                   onClick={startRecording}
-                  disabled={isMessengerOutsideWindow || isUploadingFile || selectedFiles.length > 0}
+                  disabled={isMessengerOutsideWindow || selectedFiles.length > 0}
                 >
                 <Mic className="h-4 w-4" />
               </Button>
