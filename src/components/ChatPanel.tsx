@@ -620,7 +620,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
             <>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" disabled={isMessengerOutsideWindow || isUploadingFile}>
+                  <Button variant="outline" size="icon" disabled={isMessengerOutsideWindow}>
                     <Paperclip className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
