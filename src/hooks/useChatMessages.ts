@@ -988,12 +988,24 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
           
           if (linkedCustomerIds.includes(newMessage.customer_id)) {
             const applyInsert = (list: Message[]): Message[] => {
-              // Prevent duplicates - skip if message already exists
+              // Prevent duplicates - skip if message already exists (by id or messenger_mid)
               if (list.some(msg => msg.id === newMessage.id)) {
                 return list;
               }
-              // Replace pending message for sender's UI
               if (newMessage.sender_type === "employee") {
+                // Dedupe against an already-confirmed optimistic (non-pending)
+                // that we mutated in place after the send succeeded.
+                if (newMessage.messenger_mid) {
+                  const midIdx = list.findIndex(
+                    msg => msg.messenger_mid && msg.messenger_mid === newMessage.messenger_mid
+                  );
+                  if (midIdx !== -1) {
+                    const updated = [...list];
+                    updated[midIdx] = { ...newMessage };
+                    return updated;
+                  }
+                }
+                // Fall back to replacing the first still-pending entry.
                 const pendingIndex = list.findIndex(msg => msg.isPending);
                 if (pendingIndex !== -1) {
                   const updated = [...list];
