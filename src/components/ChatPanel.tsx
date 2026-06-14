@@ -321,19 +321,22 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
     setFilePreviews([]);
   };
 
-  const handleSend = async () => {
+  const handleSend = () => {
     if (isMessengerOutsideWindow) {
       toast.error("Cannot send message: The 24-hour messaging window has expired.");
       return;
     }
     if (selectedFiles.length > 0) {
-      // Use batch send for multiple media files
-      await sendMediaBatch(selectedFiles, replyText.trim() || undefined);
+      const files = selectedFiles;
+      const caption = replyText.trim() || undefined;
+      // Clear input immediately so the user can keep typing while upload runs.
       clearAllFiles();
       setReplyText("");
+      void sendMediaBatch(files, caption);
     } else if (replyText.trim()) {
-      sendReply(replyText);
+      const text = replyText;
       setReplyText("");
+      void sendReply(text);
     }
   };
 
