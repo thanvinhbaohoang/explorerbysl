@@ -381,7 +381,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   // Send text reply
   const sendReply = async (replyText: string) => {
     const customerToReply = replyCustomer || selectedCustomer;
-    if (!replyText.trim() || !customerToReply || isSending) return;
+    if (!replyText.trim() || !customerToReply) return;
 
     const tempId = `temp-${Date.now()}`;
     const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
