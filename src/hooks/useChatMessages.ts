@@ -522,7 +522,6 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     };
 
     setMessages(prev => [...prev, optimisticMessage]);
-    setIsUploadingFile(true);
 
     try {
       const mediaUrl = await uploadFileToStorage(file);
