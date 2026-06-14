@@ -704,13 +704,11 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       
       setMessages(prev => prev.filter(msg => !tempIds.includes(msg.id)));
       tempIds.forEach(revokeBlobUrls);
-    } finally {
-      setIsUploadingFile(false);
     }
 
-    // Send documents individually (not part of album)
+    // Send documents individually (not part of album) — non-blocking.
     for (const doc of documentFiles) {
-      await sendMedia(doc);
+      void sendMedia(doc);
     }
   };
 
