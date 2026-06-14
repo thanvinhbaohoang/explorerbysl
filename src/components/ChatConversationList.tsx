@@ -99,12 +99,15 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
     allLinkedPlatformsMapRef.current = allLinkedPlatformsMap;
   }, [allLinkedPlatformsMap]);
 
-  // When a message arrives for a customer not in the loaded list, jump back
-  // to page 1 and refetch so the bumped conversation appears at the very top.
-  const jumpToTopAndRefresh = useCallback(() => {
-    if (page !== 1) setPage(1);
-    void refetch();
-  }, [page, refetch]);
+  // When a message arrives for a customer not on the currently loaded page,
+  // refresh page 1 in the background so it's fresh when the user navigates
+  // back — but never yank the user off their current page.
+  const queryClient = useQueryClient();
+  const refreshPageOneInBackground = useCallback(() => {
+    void queryClient.refetchQuery({
+      queryKey: customersQueryKey(1, itemsPerPage, "", "all", messengerEnabled),
+    });
+  }, [queryClient, itemsPerPage, messengerEnabled]);
 
 
   // Sync current page data into local state (replace, don't accumulate)
