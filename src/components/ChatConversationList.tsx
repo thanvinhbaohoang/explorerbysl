@@ -361,23 +361,27 @@ export const ChatConversationList = ({ selectedId, onSelect }: ChatConversationL
             action: {
               label: "Chat Now",
               onClick: () => {
-                refetch().then(() => {
-                  if (isOnChatPage) {
-                    onSelect(newCustomer);
-                  } else {
-                    navigate(`/chat?customer=${newCustomer.id}`);
-                  }
-                });
+                if (isOnChatPage) {
+                  onSelect(newCustomer);
+                } else {
+                  navigate(`/chat?customer=${newCustomer.id}`);
+                }
               },
             },
           });
-          refetch();
+          // Only refetch the current page if user is on page 1, otherwise
+          // refresh page 1 in the background so the user keeps their place.
+          if (page === 1) {
+            refetch();
+          } else {
+            refreshPageOneInBackground();
+          }
         }
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [refetch, isOnChatPage, navigate, onSelect]);
+  }, [refetch, isOnChatPage, navigate, onSelect, page, refreshPageOneInBackground]);
 
   // Search results from database (searches ALL customers, not just loaded ones)
   const [searchResults, setSearchResults] = useState<Customer[]>([]);
