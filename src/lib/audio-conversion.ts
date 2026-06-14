@@ -1,9 +1,8 @@
 // Client-side audio transcoder: decodes any browser-recorded audio blob
-// (typically WebM/Opus on desktop Chrome/Firefox) and re-encodes it to MP3
-// so it plays reliably as a Facebook Messenger audio attachment.
-//
-// lamejs is a pure-JS MP3 encoder (no native deps), safe for the browser.
-import { Mp3Encoder } from "@breezystack/lamejs";
+// (typically WebM/Opus on desktop Chrome/Firefox) and re-encodes it to a
+// PCM-16 WAV blob. WAV is on Messenger's supported audio attachment list,
+// requires no external library, and embeds duration directly via the RIFF
+// header so the Messenger player shows the real length and plays back.
 
 const MESSENGER_FRIENDLY = /^(audio\/(mpeg|mp3|mp4|m4a|aac|wav|wave|x-wav))/i;
 
@@ -12,13 +11,11 @@ export function isMessengerFriendlyAudio(file: File | Blob): boolean {
 }
 
 /**
- * Convert an arbitrary audio Blob to a mono 64 kbps MP3 Blob.
- * Yields to the event loop between frames so long clips don't freeze the UI.
+ * Convert an arbitrary audio Blob to a mono 16-bit PCM WAV Blob.
  */
-export async function convertToMp3(blob: Blob): Promise<Blob> {
+export async function convertToWav(blob: Blob): Promise<Blob> {
   const arrayBuffer = await blob.arrayBuffer();
 
-  // Safari uses webkitAudioContext.
   const Ctx: typeof AudioContext =
     (window as any).AudioContext || (window as any).webkitAudioContext;
   const ctx = new Ctx();
@@ -42,29 +39,45 @@ export async function convertToMp3(blob: Blob): Promise<Blob> {
     for (let i = 0; i < length; i++) mono[i] = (left[i] + right[i]) * 0.5;
   }
 
-  // Float32 [-1,1] -> Int16 PCM.
-  const pcm = new Int16Array(length);
-  for (let i = 0; i < length; i++) {
-    const s = Math.max(-1, Math.min(1, mono[i]));
-    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-  }
-
   const sampleRate = audioBuffer.sampleRate;
-  const encoder = new Mp3Encoder(1, sampleRate, 64);
-  const mp3Chunks: Uint8Array[] = [];
-  const frameSize = 1152;
+  const bytesPerSample = 2;
+  const blockAlign = 1 * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = length * bytesPerSample;
+  const bufferSize = 44 + dataSize;
 
-  for (let i = 0; i < pcm.length; i += frameSize) {
-    const slice = pcm.subarray(i, i + frameSize);
-    const enc = encoder.encodeBuffer(slice);
-    if (enc.length > 0) mp3Chunks.push(enc);
-    // Yield every ~50 frames (~1.3s of audio) to keep UI responsive.
-    if ((i / frameSize) % 50 === 0) {
-      await new Promise<void>((r) => setTimeout(r, 0));
-    }
+  const out = new ArrayBuffer(bufferSize);
+  const view = new DataView(out);
+
+  // RIFF header
+  writeString(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(view, 8, "WAVE");
+  // fmt chunk
+  writeString(view, 12, "fmt ");
+  view.setUint32(16, 16, true); // PCM chunk size
+  view.setUint16(20, 1, true);  // PCM format
+  view.setUint16(22, 1, true);  // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true); // bits per sample
+  // data chunk
+  writeString(view, 36, "data");
+  view.setUint32(40, dataSize, true);
+
+  // PCM samples
+  let offset = 44;
+  for (let i = 0; i < length; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, mono[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
   }
-  const tail = encoder.flush();
-  if (tail.length > 0) mp3Chunks.push(tail);
 
-  return new Blob(mp3Chunks as BlobPart[], { type: "audio/mpeg" });
+  return new Blob([out], { type: "audio/wav" });
+}
+
+function writeString(view: DataView, offset: number, str: string) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
 }

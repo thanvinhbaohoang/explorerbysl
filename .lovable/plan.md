@@ -1,37 +1,51 @@
-# Fix: PC voice messages show 0 duration / won't play on Messenger
+## Two bugs to fix in PC voice messages
 
-## Root cause
+### Bug 1 — Voice bubble disappears from our chat box after "Voice message sent"
 
-On PC (Chrome/Edge/Firefox), `MediaRecorder` records `audio/webm;codecs=opus`. Facebook's Send API accepts the upload, but Messenger's audio player cannot decode WebM/Opus — the bubble appears with **0:00 duration and no playback**. iOS Safari (and many Android Chrome builds) record `audio/mp4` (AAC), which Messenger plays correctly — that's why mobile works.
+**Root cause.** In `sendVoiceClip` (`src/hooks/useChatMessages.ts` ~line 930) the optimistic bubble is removed by `tempId` as soon as the edge function returns, expecting the Realtime `INSERT` to add the persisted row. For voice this race fails frequently:
 
-Messenger's audio attachment reliably plays MP3, M4A/AAC, and WAV. The fix is to re-encode the recorded blob to MP3 on the client before upload, but only when the captured format isn't already Messenger-friendly.
+- MP3 conversion + upload + Facebook send takes several seconds, during which `selectedCustomer` / `linkedCustomerIds` can change identity and resubscribe the Realtime channel (effect deps at line 1032 use object identity), causing the `INSERT` event to be dropped.
+- The edge function inserts the row without `messenger_mid` reliably matched to anything client-side, so even if Realtime arrives late we can't dedupe; and if it arrives before line 930 the pending-replace path runs, then line 930 still no-ops (good), but if it arrives after, the bubble is briefly gone.
 
-## Changes
+Net effect: the bubble vanishes until a refetch.
 
-### 1. `src/hooks/useChatMessages.ts`
-- Add a helper `convertToMp3(blob: Blob): Promise<Blob>` that:
-  - Decodes the blob via `new AudioContext().decodeAudioData(arrayBuffer)`.
-  - Encodes to MP3 (mono, 64 kbps) with `lamejs` in 1152-sample frames inside a yielding loop so long clips don't block the UI.
-  - Returns a `Blob` of type `audio/mpeg`.
-- In `recorder.onstop`: keep the current preview blob as-is (for in-app playback). Store the original blob/extension on `recordedAudio` so we can decide later.
-- In `sendVoiceClip` for the `messenger` branch only: if the file isn't already MP3/M4A/WAV, run `convertToMp3` and upload that file as `voice_<ts>.mp3` with `Content-Type: audio/mpeg`. Telegram path is unchanged (Telegram handles Opus voice fine via the existing `media_type: 'voice'` flow, but we'll still send MP3 if we already converted — simpler).
-- Keep `audioBitsPerSecond: 64000` and existing codec preference order (no change to capture).
+**Fix.** Stop deleting the optimistic message on success. Instead, mutate it in place into a non-pending message that points at the uploaded `mediaUrl`, and let Realtime dedupe by tempId vs real id.
 
-### 2. `src/components/ChatPanel.tsx`
-- In the voice bubble `<audio>` element add `<source src={message.voice_url} type="audio/mpeg" />` as the **first** source so new MP3 clips play in-app. Keep the existing `audio/webm` and `audio/ogg` sources as fallbacks for historical messages.
+- In `sendVoiceClip` success path: replace the `setMessages(prev => prev.filter(msg => msg.id !== tempId))` with a `setMessages(prev => prev.map(...))` that, for the message with `id === tempId`, sets `isPending: false`, `voice_url: mediaUrl`, and stores a new field `messenger_mid: response.data?.message_id ?? null`.
+- In the Realtime `INSERT` handler (around lines 980–998), when `newMessage.sender_type === 'employee'`, prefer to dedupe by `messenger_mid` first (if both sides have one), then fall back to the existing "replace first pending" path. If a non-pending optimistic with matching `messenger_mid` already exists, drop the incoming insert instead of appending.
+- Keep the blob URL alive until the row is replaced by the real Realtime row (don't `revokeBlobUrls(tempId)` on success; revoke it when the Realtime row replaces it, or on unmount via the existing tracker).
+- Apply the same shape change to `messagesCache` mirror so re-open keeps the bubble.
 
-### 3. `package.json`
-- Add dependency `lamejs` (small, pure-JS, browser-safe MP3 encoder; no native bindings).
+This mirrors how text/photo behave reliably and removes the visible gap.
 
-## Out of scope
-- No edge function changes — `messenger-webhook` `sendAttachment` already forwards whatever URL we upload.
-- No DB / RLS / schema changes.
-- No mobile capture change (mobile already produces a Messenger-compatible format).
+### Bug 2 — Messenger still shows 0:00 for PC voice
 
-## Validation
-1. Desktop Chrome: record 5s voice → send to a Messenger customer → bubble on the customer side shows correct duration (~0:05) and plays audio.
-2. Desktop Firefox: same test.
-3. iOS Safari: record + send → still works (no regression; either skips conversion because already m4a, or converts cleanly).
-4. Android Chrome: record + send → plays on the customer end.
-5. In-app: own voice bubble and history bubbles still play (mp3 source preferred, webm/ogg fallback for older messages).
-6. Telegram voice send: still works end-to-end.
+The previous attempt switched to `@breezystack/lamejs`. The "lamejs is not defined" runtime error in the console is from the pre-fix bundle (timestamp before the dev server reload) — but even with a clean lamejs build, Messenger's audio player frequently reports 0:00 for CBR MP3 produced by lamejs because the stream has no Xing/Info VBR header and no ID3 `TLEN` tag; some Messenger surfaces use that header for the duration label.
+
+**Fix.** Drop MP3 entirely and encode a **WAV (PCM 16-bit)** blob instead. WAV is on Messenger's supported audio attachment list, requires no external library, and embeds duration directly via the RIFF/`fmt ` chunk so Messenger's player shows the real length and plays back.
+
+- Rewrite `src/lib/audio-conversion.ts`:
+  - Keep `isMessengerFriendlyAudio` regex.
+  - Replace `convertToMp3` with `convertToWav(blob): Promise<Blob>` that:
+    1. Decodes via `AudioContext.decodeAudioData`.
+    2. Downmixes to mono Float32.
+    3. Writes a standard 44-byte RIFF/WAVE PCM-16 header followed by Int16 PCM samples at the source sample rate (no resampling needed; Messenger accepts common rates).
+    4. Returns a `Blob` of type `audio/wav`.
+  - Remove the `@breezystack/lamejs` import. Remove the package from `package.json`.
+- In `useChatMessages.ts` `sendVoiceClip`: rename import to `convertToWav`, upload as `voice_<ts>.wav` with `Content-Type: audio/wav`.
+- In `ChatPanel.tsx` voice `<audio>` element: add `<source ... type="audio/wav" />` as the first source; keep mp4/webm/ogg fallbacks for historical messages (mp3 source can stay too — harmless).
+
+### Out of scope
+
+- No edge-function, DB, RLS, or schema changes.
+- No change to mobile capture path (mobile already produces a Messenger-friendly format and skips conversion via `isMessengerFriendlyAudio`).
+- No change to Telegram voice send.
+
+### Validation
+
+1. Desktop Chrome record 5s → send to Messenger → bubble in our app stays visible the whole time, never disappears; toast "Voice message sent" appears; refresh and the same bubble is still there exactly once (no duplicate).
+2. Same clip on customer's Messenger shows ~0:05 duration and plays.
+3. Desktop Firefox: same.
+4. iOS Safari: still works, no double-send, no duplicate bubble.
+5. Telegram voice send: still works end-to-end.
+6. Console: no `lamejs is not defined`, no Realtime resubscribe warnings during a send.
