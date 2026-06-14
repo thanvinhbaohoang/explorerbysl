@@ -50,7 +50,7 @@ export async function convertToMp3(blob: Blob): Promise<Blob> {
   }
 
   const sampleRate = audioBuffer.sampleRate;
-  const encoder = new lamejs.Mp3Encoder(1, sampleRate, 64);
+  const encoder = new Mp3Encoder(1, sampleRate, 64);
   const mp3Chunks: Uint8Array[] = [];
   const frameSize = 1152;
 
