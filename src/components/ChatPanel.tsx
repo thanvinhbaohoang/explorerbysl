@@ -321,19 +321,23 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
     setFilePreviews([]);
   };
 
-  const handleSend = async () => {
+  const handleSend = () => {
     if (isMessengerOutsideWindow) {
       toast.error("Cannot send message: The 24-hour messaging window has expired.");
       return;
     }
     if (selectedFiles.length > 0) {
-      // Use batch send for multiple media files
-      await sendMediaBatch(selectedFiles, replyText.trim() || undefined);
+      // Snapshot then clear synchronously so the composer is immediately ready for the next message.
+      const filesToSend = selectedFiles;
+      const captionToSend = replyText.trim() || undefined;
       clearAllFiles();
       setReplyText("");
+      // Fire-and-forget — optimistic bubble tracks pending state per message.
+      void sendMediaBatch(filesToSend, captionToSend);
     } else if (replyText.trim()) {
-      sendReply(replyText);
+      const textToSend = replyText;
       setReplyText("");
+      void sendReply(textToSend);
     }
   };
 
@@ -657,7 +661,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
               
               <Button 
                 onClick={handleSend} 
-                disabled={(!replyText.trim() && selectedFiles.length === 0) || isSending || isUploadingFile || isMessengerOutsideWindow}
+                disabled={(!replyText.trim() && selectedFiles.length === 0) || isMessengerOutsideWindow}
                 size="icon"
               >
                 {isUploadingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
