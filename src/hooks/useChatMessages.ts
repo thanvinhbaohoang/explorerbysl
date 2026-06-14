@@ -475,7 +475,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   // Send media file
   const sendMedia = async (file: File, caption?: string) => {
     const customerToReply = replyCustomer || selectedCustomer;
-    if (!file || !customerToReply || isUploadingFile) return;
+    if (!file || !customerToReply) return;
 
     const getMediaType = (f: File): 'photo' | 'video' | 'document' => {
       if (f.type.startsWith('image/')) return 'photo';
@@ -588,7 +588,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   // Send multiple media files as a batch (album)
   const sendMediaBatch = async (files: File[], caption?: string) => {
     const customerToReply = replyCustomer || selectedCustomer;
-    if (!files.length || !customerToReply || isUploadingFile) return;
+    if (!files.length || !customerToReply) return;
 
     // Filter to only photos and videos for album (documents sent individually)
     const albumFiles = files.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
@@ -880,8 +880,15 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     const employeeName = currentUserName;
     const duration = recordingDuration;
 
+    // Snapshot then immediately release the composer so the user can record/type more
+    const snapshot = recordedAudio;
+    setRecordedAudio(null);
+    setRecordingDuration(0);
+    setIsPlayingPreview(false);
+    setPlaybackProgress(0);
+
     // Local preview URL so the bubble plays immediately
-    const previewUrl = URL.createObjectURL(recordedAudio.file);
+    const previewUrl = URL.createObjectURL(snapshot.file);
     trackBlobUrl(tempId, previewUrl);
 
     const optimisticMessage: Message = {
@@ -915,16 +922,15 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     };
 
     setMessages(prev => [...prev, optimisticMessage]);
-    setIsUploadingFile(true);
 
     try {
       // Messenger only reliably renders MP3 voice attachments — webm/opus shows 0:00.
       // Convert client-side before upload. Telegram handles original format fine.
-      let fileToUpload = recordedAudio.file;
+      let fileToUpload = snapshot.file;
       if (platform === 'messenger') {
         try {
           const { convertBlobToMp3 } = await import('@/lib/audio-conversion');
-          fileToUpload = await convertBlobToMp3(recordedAudio.file);
+          fileToUpload = await convertBlobToMp3(snapshot.file);
         } catch (convErr) {
           console.warn('MP3 conversion failed, sending original:', convErr);
         }
@@ -979,14 +985,10 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
       revokeBlobUrls(tempId);
     } finally {
-      setIsUploadingFile(false);
-      URL.revokeObjectURL(recordedAudio.url);
-      setRecordedAudio(null);
-      setRecordingDuration(0);
-      setIsPlayingPreview(false);
-      setPlaybackProgress(0);
+      URL.revokeObjectURL(snapshot.url);
     }
   };
+
 
   const togglePreviewPlayback = () => {
     if (!audioPreviewRef.current) return;
