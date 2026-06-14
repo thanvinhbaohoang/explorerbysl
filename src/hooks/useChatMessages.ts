@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { detectLanguage } from "@/lib/language-detection";
 import { useQueryClient } from "@tanstack/react-query";
 import { processFileForUpload } from "@/lib/image-conversion";
+import { convertToMp3, isMessengerFriendlyAudio } from "@/lib/audio-conversion";
 
 export interface Message {
   id: string;
