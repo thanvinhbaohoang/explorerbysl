@@ -610,15 +610,30 @@ async function ensureCustomerFromTelegramUser(message: any): Promise<{ id: strin
 }
 
 // Save message to database
-async function saveMessage(message: any) {
+async function saveMessage(message: any, update?: any) {
+  const dlCtx = { update, message };
+  let customerForLog: { id: string } | null = null;
   try {
     // Ensure customer exists (auto-create if user messaged without /start)
-    const customer = await ensureCustomerFromTelegramUser(message);
+    let customer: { id: string; messenger_profile_pic: string | null } | null = null;
+    try {
+      customer = await ensureCustomerFromTelegramUser(message);
+    } catch (custErr) {
+      await logFailure('customer_lookup', { update, message, error: custErr });
+      return;
+    }
 
-    if (customer) {
-      // Fetch and store profile photo if missing (backfill for existing customers)
-      if (!customer.messenger_profile_pic) {
-        console.log("Profile photo missing for customer during message, fetching...");
+    if (!customer) {
+      await logFailure('customer_lookup', { update, message, error: 'ensureCustomerFromTelegramUser returned null' });
+      return;
+    }
+
+    customerForLog = customer;
+
+    // Fetch and store profile photo if missing (backfill for existing customers)
+    if (!customer.messenger_profile_pic) {
+      console.log("Profile photo missing for customer during message, fetching...");
+      try {
         const profilePhotoUrl = await getUserProfilePhoto(message.from.id, customer.id);
         if (profilePhotoUrl) {
           await supabase
@@ -627,207 +642,167 @@ async function saveMessage(message: any) {
             .eq('id', customer.id);
           console.log("Profile photo backfilled for customer:", customer.id);
         }
-      }
-
-      let messageType = 'text';
-      let messageText = message.text || message.caption || null;
-      
-      // Capture media_group_id for album grouping (Telegram sends this for multi-photo/video albums)
-      const mediaGroupId = message.media_group_id || null;
-      let photoFileId = null;
-      let photoUrl = null;
-      let voiceFileId = null;
-      let voiceDuration = null;
-
-      // Handle photo messages
-      if (message.photo && message.photo.length > 0) {
-        messageType = 'photo';
-        // Get the largest photo
-        const largestPhoto = message.photo[message.photo.length - 1];
-        photoFileId = largestPhoto.file_id;
-        // Download and store permanently instead of using temporary URL
-        photoUrl = await downloadAndStoreFile(photoFileId, 'photo');
-        messageText = message.caption || '[Photo]';
-        console.log("Photo captured and stored:", { photoFileId, photoUrl, caption: message.caption });
-      }
-
-      // Handle voice messages
-      if (message.voice) {
-        messageType = 'voice';
-        voiceFileId = message.voice.file_id;
-        voiceDuration = message.voice.duration;
-        // Download and store permanently
-        const voiceUrl = await downloadAndStoreFile(voiceFileId, 'voice');
-        messageText = '[Voice message]';
-        
-        // Save with voice URL
-        const { error } = await supabase
-          .from('messages')
-          .insert({
-            customer_id: customer.id,
-            telegram_id: message.from.id,
-            message_text: messageText,
-            message_type: messageType,
-            photo_file_id: photoFileId,
-            photo_url: photoUrl,
-            voice_file_id: voiceFileId,
-            voice_duration: voiceDuration,
-            voice_url: voiceUrl,
-            sender_type: 'customer',
-            timestamp: new Date(message.date * 1000).toISOString(),
-          });
-
-        if (error) {
-          console.error("Error saving voice message:", error);
-        } else {
-          console.log("Voice message saved successfully");
-        }
-        return; // Early return for voice messages
-      }
-
-      // Handle video messages (regular videos)
-      if (message.video) {
-        messageType = 'video';
-        const videoFileId = message.video.file_id;
-        const videoDuration = message.video.duration;
-        // Download and store permanently
-        const videoUrl = await downloadAndStoreFile(videoFileId, 'video');
-        const videoMimeType = message.video.mime_type || 'video/mp4';
-        messageText = message.caption || '[Video]';
-        
-        console.log("Video captured and stored:", { videoFileId, videoUrl, duration: videoDuration, mediaGroupId });
-        
-        // Save with video URL
-        const { error } = await supabase
-          .from('messages')
-          .insert({
-            customer_id: customer.id,
-            telegram_id: message.from.id,
-            message_text: messageText,
-            message_type: messageType,
-            video_file_id: videoFileId,
-            video_url: videoUrl,
-            video_duration: videoDuration,
-            video_mime_type: videoMimeType,
-            media_group_id: mediaGroupId,
-            sender_type: 'customer',
-            timestamp: new Date(message.date * 1000).toISOString(),
-          });
-
-        if (error) {
-          console.error("Error saving video message:", error);
-        } else {
-          console.log("Video message saved successfully");
-        }
-        return; // Early return for video messages
-      }
-
-      // Handle video note messages (circular videos)
-      if (message.video_note) {
-        messageType = 'video';
-        const videoFileId = message.video_note.file_id;
-        const videoDuration = message.video_note.duration;
-        // Download and store permanently
-        const videoUrl = await downloadAndStoreFile(videoFileId, 'video');
-        messageText = '[Video Note]';
-        
-        console.log("Video note captured and stored:", { videoFileId, videoUrl, duration: videoDuration, mediaGroupId });
-        
-        // Save with video URL
-        const { error } = await supabase
-          .from('messages')
-          .insert({
-            customer_id: customer.id,
-            telegram_id: message.from.id,
-            message_text: messageText,
-            message_type: messageType,
-            video_file_id: videoFileId,
-            video_url: videoUrl,
-            video_duration: videoDuration,
-            video_mime_type: 'video/mp4',
-            media_group_id: mediaGroupId,
-            sender_type: 'customer',
-            timestamp: new Date(message.date * 1000).toISOString(),
-          });
-
-        if (error) {
-          console.error("Error saving video note:", error);
-        } else {
-          console.log("Video note saved successfully");
-        }
-        return; // Early return for video note messages
-      }
-
-      // Handle audio messages
-      if (message.audio) {
-        messageType = 'audio';
-        messageText = '[Audio]';
-      }
-
-      // Handle document messages
-      if (message.document) {
-        messageType = 'document';
-        const docFileId = message.document.file_id;
-        const docFileName = message.document.file_name || 'document';
-        const docMimeType = message.document.mime_type || 'application/octet-stream';
-        const docFileSize = message.document.file_size ?? null;
-        
-        // Download and store the document
-        const docUrl = await downloadAndStoreDocument(docFileId, docFileName);
-        messageText = message.caption || `[Document: ${docFileName}]`;
-        
-        console.log("Document captured and stored:", { docFileId, docUrl, fileName: docFileName, mimeType: docMimeType, size: docFileSize });
-        
-        // Save with document fields
-        const { error } = await supabase
-          .from('messages')
-          .insert({
-            customer_id: customer.id,
-            telegram_id: message.from.id,
-            message_text: messageText,
-            message_type: messageType,
-            document_url: docUrl,
-            document_name: docFileName,
-            document_mime_type: docMimeType,
-            document_size: docFileSize,
-            sender_type: 'customer',
-            timestamp: new Date(message.date * 1000).toISOString(),
-          });
-
-        if (error) {
-          console.error("Error saving document message:", error);
-        } else {
-          console.log("Document message saved successfully");
-        }
-        return; // Early return for document messages
-      }
-
-      // Save the message (for photos and text)
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          customer_id: customer.id,
-          telegram_id: message.from.id,
-          message_text: messageText,
-          message_type: messageType,
-          photo_file_id: photoFileId,
-          photo_url: photoUrl,
-          voice_file_id: voiceFileId,
-          voice_duration: voiceDuration,
-          voice_url: null, // Will be null for non-voice messages
-          media_group_id: mediaGroupId,
-          sender_type: 'customer',
-          timestamp: new Date(message.date * 1000).toISOString(),
-        });
-
-      if (error) {
-        console.error("Error saving message:", error);
-      } else {
-        console.log("Message saved successfully:", { messageType, photoUrl, messageText, mediaGroupId });
+      } catch (photoErr) {
+        // Non-fatal — log but continue saving the message.
+        console.error("Profile photo backfill failed (non-fatal):", photoErr);
       }
     }
+
+    let messageType = 'text';
+    let messageText = message.text || message.caption || null;
+
+    const mediaGroupId = message.media_group_id || null;
+    let photoFileId = null;
+    let photoUrl = null;
+    let voiceFileId = null;
+    let voiceDuration = null;
+
+    const ts = new Date(message.date * 1000).toISOString();
+
+    // Handle photo messages
+    if (message.photo && message.photo.length > 0) {
+      messageType = 'photo';
+      const largestPhoto = message.photo[message.photo.length - 1];
+      photoFileId = largestPhoto.file_id;
+      photoUrl = await downloadAndStoreFile(photoFileId, 'photo', largestPhoto.file_unique_id, dlCtx);
+      messageText = message.caption || '[Photo]';
+      console.log("Photo captured and stored:", { photoFileId, photoUrl, caption: message.caption });
+    }
+
+    // Handle voice messages
+    if (message.voice) {
+      messageType = 'voice';
+      voiceFileId = message.voice.file_id;
+      voiceDuration = message.voice.duration;
+      const voiceUrl = await downloadAndStoreFile(voiceFileId, 'voice', message.voice.file_unique_id, dlCtx);
+      messageText = '[Voice message]';
+
+      await upsertMessage({
+        customer_id: customer.id,
+        telegram_id: message.from.id,
+        message_text: messageText,
+        message_type: messageType,
+        photo_file_id: photoFileId,
+        photo_url: photoUrl,
+        voice_file_id: voiceFileId,
+        voice_duration: voiceDuration,
+        voice_url: voiceUrl,
+        sender_type: 'customer',
+        timestamp: ts,
+      }, { update, message, messageType, customerId: customer.id });
+      return;
+    }
+
+    // Handle video messages (regular videos)
+    if (message.video) {
+      messageType = 'video';
+      const videoFileId = message.video.file_id;
+      const videoDuration = message.video.duration;
+      const videoUrl = await downloadAndStoreFile(videoFileId, 'video', message.video.file_unique_id, dlCtx);
+      const videoMimeType = message.video.mime_type || 'video/mp4';
+      messageText = message.caption || '[Video]';
+
+      console.log("Video captured and stored:", { videoFileId, videoUrl, duration: videoDuration, mediaGroupId });
+
+      await upsertMessage({
+        customer_id: customer.id,
+        telegram_id: message.from.id,
+        message_text: messageText,
+        message_type: messageType,
+        video_file_id: videoFileId,
+        video_url: videoUrl,
+        video_duration: videoDuration,
+        video_mime_type: videoMimeType,
+        media_group_id: mediaGroupId,
+        sender_type: 'customer',
+        timestamp: ts,
+      }, { update, message, messageType, customerId: customer.id });
+      return;
+    }
+
+    // Handle video note messages (circular videos)
+    if (message.video_note) {
+      messageType = 'video';
+      const videoFileId = message.video_note.file_id;
+      const videoDuration = message.video_note.duration;
+      const videoUrl = await downloadAndStoreFile(videoFileId, 'video', message.video_note.file_unique_id, dlCtx);
+      messageText = '[Video Note]';
+
+      console.log("Video note captured and stored:", { videoFileId, videoUrl, duration: videoDuration, mediaGroupId });
+
+      await upsertMessage({
+        customer_id: customer.id,
+        telegram_id: message.from.id,
+        message_text: messageText,
+        message_type: messageType,
+        video_file_id: videoFileId,
+        video_url: videoUrl,
+        video_duration: videoDuration,
+        video_mime_type: 'video/mp4',
+        media_group_id: mediaGroupId,
+        sender_type: 'customer',
+        timestamp: ts,
+      }, { update, message, messageType, customerId: customer.id });
+      return;
+    }
+
+    // Handle audio messages
+    if (message.audio) {
+      messageType = 'audio';
+      messageText = '[Audio]';
+    }
+
+    // Handle document messages
+    if (message.document) {
+      messageType = 'document';
+      const docFileId = message.document.file_id;
+      const docFileName = message.document.file_name || 'document';
+      const docMimeType = message.document.mime_type || 'application/octet-stream';
+      const docFileSize = message.document.file_size ?? null;
+
+      const docUrl = await downloadAndStoreDocument(docFileId, docFileName, message.document.file_unique_id, dlCtx);
+      messageText = message.caption || `[Document: ${docFileName}]`;
+
+      console.log("Document captured and stored:", { docFileId, docUrl, fileName: docFileName, mimeType: docMimeType, size: docFileSize });
+
+      await upsertMessage({
+        customer_id: customer.id,
+        telegram_id: message.from.id,
+        message_text: messageText,
+        message_type: messageType,
+        document_url: docUrl,
+        document_name: docFileName,
+        document_mime_type: docMimeType,
+        document_size: docFileSize,
+        sender_type: 'customer',
+        timestamp: ts,
+      }, { update, message, messageType, customerId: customer.id });
+      return;
+    }
+
+    // Default save (text and photo)
+    await upsertMessage({
+      customer_id: customer.id,
+      telegram_id: message.from.id,
+      message_text: messageText,
+      message_type: messageType,
+      photo_file_id: photoFileId,
+      photo_url: photoUrl,
+      voice_file_id: voiceFileId,
+      voice_duration: voiceDuration,
+      voice_url: null,
+      media_group_id: mediaGroupId,
+      sender_type: 'customer',
+      timestamp: ts,
+    }, { update, message, messageType, customerId: customer.id });
   } catch (error) {
     console.error("Error in saveMessage:", error);
+    await logFailure('process', {
+      update,
+      message,
+      customerId: customerForLog?.id ?? null,
+      error,
+    });
   }
 }
 
