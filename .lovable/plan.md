@@ -1,44 +1,31 @@
-## Goal
+# Fix duplicate inbound Telegram voice/document messages — minimal version
 
-Make the chat input non-blocking. After hitting send (text, media, or voice), the input clears immediately and is ready for the next message. The only "sending" indicator is the optimistic bubble (`isPending`) inside the conversation. Sends run concurrently and resolve independently.
+## Root cause (recap)
 
-## What's blocking today
+Telegram POSTs an update for an inbound voice/document. The webhook awaits `downloadAndStoreFile` / `downloadAndStoreDocument` (file fetch from Telegram CDN + upload to Supabase Storage) before responding 200. On slow links this exceeds Telegram's tolerance, Telegram retries the same update, and each retry runs the full pipeline again → multiple `messages` rows for one real Telegram message. The earlier bubbles point at incomplete/overwritten storage objects, so they show no play button / "File Unavailable".
 
-- `useChatMessages.ts` keeps two global flags: `isSending` (text) and `isUploadingFile` (media/voice). Each send sets the flag, awaits the edge function, then clears it.
-- `ChatPanel.tsx` disables the textarea, send button, attach button, and voice button based on those flags, so the user must wait for the round-trip (especially painful for voice → MP3 conversion + Messenger upload).
-- Each send function also early-returns if its flag is true, so even programmatic rapid sends are dropped.
+## Plan (single change)
 
-## Plan
+Edit only `supabase/functions/telegram-bot/index.ts`:
 
-1. **Remove global send/upload guards in `src/hooks/useChatMessages.ts`**
-   - Stop using `isSending` / `isUploadingFile` as gates inside `sendReply`, `sendMedia`, `sendMediaBatch`, and `sendVoiceClip`.
-   - Keep the optimistic message insertion (`isPending: true`) and the existing `markOptimisticSent` / failure rollback per message — that already gives per-bubble status.
-   - Keep `isSending` / `isUploadingFile` exported but only as informational counters (or drop them from the return). Per-message state lives on the optimistic message itself.
-   - Each call generates its own `tempId` and runs its own async pipeline, so concurrent invocations don't collide. Confirm the realtime dedupe path still keys off `tempId` / `messenger_mid`.
+1. At the very top of the `POST` handler, after parsing JSON, return `new Response('ok', { status: 200 })` immediately and run all existing message-processing logic in the background via `EdgeRuntime.waitUntil(...)` (fallback: fire-and-forget promise with `.catch` logger if `EdgeRuntime` is undefined).
+2. Wrap the existing processing in an `async` IIFE so its `await`s still work but no longer block the response.
+3. Keep all other behavior unchanged: same inserts, same downloads, same storage keys, same customer auto-create, same profile photo backfill, same command handling (`/start`, etc.).
 
-2. **Unblock the input in `src/components/ChatPanel.tsx`**
-   - Remove `isSending` and `isUploadingFile` from the `disabled=` props on the textarea, send button, attach button, and voice button.
-   - Keep functional disables that still make sense: empty input, `isMessengerOutsideWindow`, and the media-preview "Send" button gated on `mediaItems.length === 0`.
-   - On submit: clear `replyText` / selected files immediately, before awaiting the send. The optimistic bubble is already appended synchronously, so the user sees their message and a fresh input in the same frame.
-   - Voice: stop the recorder, append the optimistic voice bubble synchronously, then kick off conversion+upload+send in the background. The mic button returns to idle right away.
+No schema migration, no idempotency columns, no changes to client code, no changes to other edge functions.
 
-3. **Per-bubble UX**
-   - Optimistic bubbles continue to show a small "Sending…" / spinner state via `isPending`.
-   - On failure, the bubble is removed (existing behavior) and a toast explains why. No change to error-handling semantics.
-   - Voice bubble shows the same pending indicator while MP3 conversion + upload run in the background.
+## Why this is enough
 
-4. **Safety checks**
-   - Confirm no other caller depends on `isSending` / `isUploadingFile` being a hard mutex (search usages in `ChatPanel`, `Customers.tsx`, etc.).
-   - Make sure the realtime subscription continues to reconcile the eventual real row against optimistic messages, even when several are in flight at once.
+Telegram retries are triggered by slow/failed responses. Returning 200 within ~50 ms eliminates the retry trigger, which eliminates the duplicate inserts for the only two cases the user reported (voice and document — the slowest pipelines). The remaining theoretical risk (Telegram retrying despite a 200, or two webhook instances racing) is rare enough that we accept it for now and can revisit with idempotency later if duplicates ever reappear.
 
 ## Out of scope
 
-- No backend / edge function changes. Edge functions stay synchronous; only the client stops blocking on them.
-- No schema changes. We rely on existing `isPending` client-side flag and current realtime dedupe.
-- No queue/persistence for in-flight messages across reloads (can be a follow-up if desired).
+- Idempotency columns / unique index on `messages`.
+- Deterministic storage keys.
+- Cleanup SQL for existing duplicate rows in Rotha's and Ju Ju's chats (can be done manually on request).
 
 ## Success criteria
 
-- User can type and send a second text message while the first is still in flight; both appear as optimistic bubbles and resolve independently.
-- User can record and send a voice clip, then immediately type and send a text without waiting; the voice bubble shows pending until upload+send completes.
-- Failed sends remove only their own optimistic bubble and show a toast; other in-flight messages are unaffected.
+- Webhook responds 200 within milliseconds regardless of attachment size.
+- A single inbound voice or PDF from a Telegram user produces exactly one `messages` row and one working bubble.
+- Edge function logs still show the existing "Voice message saved successfully" / "Document message saved successfully" lines, just after the response has already been sent.
