@@ -184,6 +184,55 @@ const WebhookDebug = () => {
           </Button>
         </div>
 
+        {/* Recent Telegram inbound failures */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              Recent Inbound Failures (Telegram)
+            </CardTitle>
+            <CardDescription>
+              Background processing errors after the webhook returned 200. Empty list means everything is working.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {failures.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No recent failures.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>When</TableHead>
+                    <TableHead>Stage</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Chat ID</TableHead>
+                    <TableHead>Update ID</TableHead>
+                    <TableHead>Error</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {failures.map((f) => (
+                    <TableRow key={f.id}>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                        {new Date(f.created_at).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="destructive">{f.stage}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{f.message_type || '—'}</Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{f.chat_id ?? '—'}</TableCell>
+                      <TableCell className="font-mono text-xs">{f.update_id ?? '—'}</TableCell>
+                      <TableCell className="max-w-md truncate text-xs" title={f.error}>{f.error}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Webhook Configuration */}
         <Card>
           <CardHeader>
