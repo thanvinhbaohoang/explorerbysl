@@ -1322,17 +1322,29 @@ serve(async (req) => {
         }
       }
       
-      // Handle webhook updates from Telegram
+      // Handle webhook updates from Telegram — respond 200 immediately and
+      // process in the background so slow downloads (voice/document) don't
+      // trigger Telegram's automatic retries (which caused duplicate inbound
+      // messages with broken media).
       console.log("Received webhook:", JSON.stringify(body));
 
-      // Handle /start command
-      if (body.message?.text?.startsWith("/start")) {
-        await handleStart(body.message);
-      }
-      
-      // Save all messages to database
-      if (body.message) {
-        await saveMessage(body.message);
+      const processUpdate = (async () => {
+        try {
+          if (body.message?.text?.startsWith("/start")) {
+            await handleStart(body.message);
+          }
+          if (body.message) {
+            await saveMessage(body.message);
+          }
+        } catch (err) {
+          console.error("Background webhook processing error:", err);
+        }
+      })();
+
+      // @ts-ignore - EdgeRuntime is available in Supabase Edge Functions
+      if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(processUpdate);
       }
 
       return new Response(JSON.stringify({ ok: true }), {
@@ -1340,6 +1352,7 @@ serve(async (req) => {
         status: 200,
       });
     }
+
 
     // Handle GET requests (for health checks)
     const meResponse = await fetch(`${TELEGRAM_API}/getMe`);
