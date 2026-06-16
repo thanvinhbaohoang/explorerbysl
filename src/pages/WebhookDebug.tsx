@@ -111,7 +111,15 @@ const WebhookDebug = () => {
       });
       setUniquePages(Array.from(pages));
     }
-    
+
+    // Fetch recent Telegram webhook failures (admin-only via RLS; non-admins get [])
+    const { data: failuresData } = await (supabase as any)
+      .from('telegram_webhook_failures')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    setFailures((failuresData as TelegramFailure[]) || []);
+
     setLoading(false);
   };
 
