@@ -1384,10 +1384,11 @@ serve(async (req) => {
             await handleStart(body.message);
           }
           if (body.message) {
-            await saveMessage(body.message);
+            await saveMessage(body.message, body);
           }
         } catch (err) {
           console.error("Background webhook processing error:", err);
+          await logFailure('process', { update: body, message: body?.message, error: err });
         }
       })();
 
