@@ -34,9 +34,21 @@ interface WebhookInfo {
   pageAccessTokenSet: boolean;
 }
 
+interface TelegramFailure {
+  id: string;
+  update_id: number | null;
+  chat_id: number | null;
+  customer_id: string | null;
+  stage: string;
+  message_type: string | null;
+  error: string;
+  created_at: string;
+}
+
 const WebhookDebug = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [failures, setFailures] = useState<TelegramFailure[]>([]);
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [webhookInfo, setWebhookInfo] = useState<WebhookInfo>({
