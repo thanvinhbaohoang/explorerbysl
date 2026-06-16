@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCw, Activity, Database, MessageSquare, CheckCircle, XCircle, Globe, Copy } from "lucide-react";
+import { RefreshCw, Activity, Database, MessageSquare, CheckCircle, XCircle, Globe, Copy, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 interface Customer {
