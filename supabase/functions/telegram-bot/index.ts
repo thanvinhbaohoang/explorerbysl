@@ -338,94 +338,170 @@ async function getUserProfilePhoto(userId: number, customerId: string): Promise<
   }
 }
 
-// Download file from Telegram and upload to Supabase Storage
-async function downloadAndStoreFile(fileId: string, fileType: 'photo' | 'voice' | 'video'): Promise<string | null> {
+// Record a webhook processing failure for visibility on the WebhookDebug page.
+async function logFailure(
+  stage: 'download' | 'storage' | 'insert' | 'customer_lookup' | 'process',
+  opts: {
+    update?: any;
+    message?: any;
+    customerId?: string | null;
+    messageType?: string | null;
+    error: unknown;
+  }
+) {
   try {
-    // Get file path from Telegram
+    const errMsg =
+      opts.error instanceof Error
+        ? `${opts.error.name}: ${opts.error.message}`
+        : typeof opts.error === 'string'
+        ? opts.error
+        : JSON.stringify(opts.error);
+
+    const updateId = opts.update?.update_id ?? null;
+    const chatId =
+      opts.message?.chat?.id ?? opts.update?.message?.chat?.id ?? null;
+
+    await supabase.from('telegram_webhook_failures').insert({
+      update_id: updateId,
+      chat_id: chatId,
+      customer_id: opts.customerId ?? null,
+      stage,
+      message_type: opts.messageType ?? null,
+      error: errMsg,
+      raw_update: opts.update ?? opts.message ?? null,
+    });
+  } catch (e) {
+    console.error('Failed to log webhook failure:', e);
+  }
+}
+
+// Idempotent message insert: ignore duplicates keyed on telegram_update_id.
+async function upsertMessage(
+  row: Record<string, any>,
+  ctx: { update: any; message: any; messageType: string; customerId: string }
+): Promise<boolean> {
+  const enriched = {
+    ...row,
+    telegram_update_id: ctx.update?.update_id ?? null,
+    telegram_message_id: ctx.message?.message_id ?? null,
+  };
+
+  const { error } = await supabase
+    .from('messages')
+    .upsert(enriched, {
+      onConflict: 'telegram_update_id',
+      ignoreDuplicates: true,
+    });
+
+  if (error) {
+    console.error(`Error upserting ${ctx.messageType} message:`, error);
+    await logFailure('insert', {
+      update: ctx.update,
+      message: ctx.message,
+      customerId: ctx.customerId,
+      messageType: ctx.messageType,
+      error,
+    });
+    return false;
+  }
+  return true;
+}
+
+// Download file from Telegram and upload to Supabase Storage.
+// Uses file_unique_id for a deterministic storage key so retries overwrite
+// the same object instead of creating ghost/orphaned files.
+async function downloadAndStoreFile(
+  fileId: string,
+  fileType: 'photo' | 'voice' | 'video',
+  fileUniqueId?: string,
+  ctx?: { update: any; message: any }
+): Promise<string | null> {
+  try {
     const response = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
     const data = await response.json();
-    
+
     if (!data.ok || !data.result.file_path) {
       console.error("Failed to get file path from Telegram");
+      if (ctx) await logFailure('download', { ...ctx, messageType: fileType, error: `getFile failed: ${JSON.stringify(data)}` });
       return null;
     }
-    
+
     const telegramFileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
-    
-    // Download the file
+
     const fileResponse = await fetch(telegramFileUrl);
     if (!fileResponse.ok) {
       console.error("Failed to download file from Telegram");
+      if (ctx) await logFailure('download', { ...ctx, messageType: fileType, error: `download HTTP ${fileResponse.status}` });
       return null;
     }
-    
+
     const fileBuffer = await fileResponse.arrayBuffer();
-    
-    // Determine file extension from file_path
     const filePath = data.result.file_path;
     const extension = filePath.split('.').pop() || (fileType === 'photo' ? 'jpg' : fileType === 'voice' ? 'ogg' : 'mp4');
-    
-    // Generate unique filename
-    const fileName = `telegram-${fileType}/${Date.now()}_${Math.random().toString(36).substring(7)}.${extension}`;
-    
-    // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
+
+    // Deterministic key using Telegram's stable file_unique_id (fall back to file_id).
+    const stableKey = fileUniqueId || fileId;
+    const fileName = `telegram-${fileType}/${stableKey}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
       .from('chat-attachments')
       .upload(fileName, fileBuffer, {
         contentType: fileType === 'photo' ? `image/${extension}` : fileType === 'voice' ? 'audio/ogg' : `video/${extension}`,
         cacheControl: '3600',
-        upsert: false,
+        upsert: true,
       });
-    
+
     if (uploadError) {
       console.error("Failed to upload to storage:", uploadError);
-      // Fallback to temporary Telegram URL
+      if (ctx) await logFailure('storage', { ...ctx, messageType: fileType, error: uploadError });
       return telegramFileUrl;
     }
-    
-    // Get public URL
+
     const { data: urlData } = supabase.storage
       .from('chat-attachments')
       .getPublicUrl(fileName);
-    
+
     console.log("File stored permanently:", urlData.publicUrl);
     return urlData.publicUrl;
   } catch (error) {
     console.error("Error downloading and storing file:", error);
+    if (ctx) await logFailure('download', { ...ctx, messageType: fileType, error });
     return null;
   }
 }
 
-// Download document from Telegram and upload to Supabase Storage
-async function downloadAndStoreDocument(fileId: string, fileName: string): Promise<string | null> {
+// Download document from Telegram and upload to Supabase Storage (deterministic key).
+async function downloadAndStoreDocument(
+  fileId: string,
+  fileName: string,
+  fileUniqueId?: string,
+  ctx?: { update: any; message: any }
+): Promise<string | null> {
   try {
-    // Get file path from Telegram
     const response = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
     const data = await response.json();
-    
+
     if (!data.ok || !data.result.file_path) {
       console.error("Failed to get document path from Telegram");
+      if (ctx) await logFailure('download', { ...ctx, messageType: 'document', error: `getFile failed: ${JSON.stringify(data)}` });
       return null;
     }
-    
+
     const telegramFileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
-    
-    // Download the file
+
     const fileResponse = await fetch(telegramFileUrl);
     if (!fileResponse.ok) {
       console.error("Failed to download document from Telegram");
+      if (ctx) await logFailure('download', { ...ctx, messageType: 'document', error: `download HTTP ${fileResponse.status}` });
       return null;
     }
-    
+
     const fileBuffer = await fileResponse.arrayBuffer();
-    
-    // Get extension from original filename or file path
     const extension = fileName.split('.').pop() || data.result.file_path.split('.').pop() || 'bin';
-    
-    // Generate unique filename
-    const storedFileName = `telegram-document/${Date.now()}_${Math.random().toString(36).substring(7)}.${extension}`;
-    
-    // Determine content type from extension
+
+    const stableKey = fileUniqueId || fileId;
+    const storedFileName = `telegram-document/${stableKey}.${extension}`;
+
     const contentTypeMap: Record<string, string> = {
       'pdf': 'application/pdf',
       'doc': 'application/msword',
@@ -437,31 +513,30 @@ async function downloadAndStoreDocument(fileId: string, fileName: string): Promi
       'rar': 'application/x-rar-compressed',
     };
     const contentType = contentTypeMap[extension.toLowerCase()] || 'application/octet-stream';
-    
-    // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
+
+    const { error: uploadError } = await supabase.storage
       .from('chat-attachments')
       .upload(storedFileName, fileBuffer, {
         contentType,
         cacheControl: '3600',
-        upsert: false,
+        upsert: true,
       });
-    
+
     if (uploadError) {
       console.error("Failed to upload document to storage:", uploadError);
-      // Fallback to temporary Telegram URL
+      if (ctx) await logFailure('storage', { ...ctx, messageType: 'document', error: uploadError });
       return telegramFileUrl;
     }
-    
-    // Get public URL
+
     const { data: urlData } = supabase.storage
       .from('chat-attachments')
       .getPublicUrl(storedFileName);
-    
+
     console.log("Document stored permanently:", urlData.publicUrl);
     return urlData.publicUrl;
   } catch (error) {
     console.error("Error downloading and storing document:", error);
+    if (ctx) await logFailure('download', { ...ctx, messageType: 'document', error });
     return null;
   }
 }
@@ -535,15 +610,30 @@ async function ensureCustomerFromTelegramUser(message: any): Promise<{ id: strin
 }
 
 // Save message to database
-async function saveMessage(message: any) {
+async function saveMessage(message: any, update?: any) {
+  const dlCtx = { update, message };
+  let customerForLog: { id: string } | null = null;
   try {
     // Ensure customer exists (auto-create if user messaged without /start)
-    const customer = await ensureCustomerFromTelegramUser(message);
+    let customer: { id: string; messenger_profile_pic: string | null } | null = null;
+    try {
+      customer = await ensureCustomerFromTelegramUser(message);
+    } catch (custErr) {
+      await logFailure('customer_lookup', { update, message, error: custErr });
+      return;
+    }
 
-    if (customer) {
-      // Fetch and store profile photo if missing (backfill for existing customers)
-      if (!customer.messenger_profile_pic) {
-        console.log("Profile photo missing for customer during message, fetching...");
+    if (!customer) {
+      await logFailure('customer_lookup', { update, message, error: 'ensureCustomerFromTelegramUser returned null' });
+      return;
+    }
+
+    customerForLog = customer;
+
+    // Fetch and store profile photo if missing (backfill for existing customers)
+    if (!customer.messenger_profile_pic) {
+      console.log("Profile photo missing for customer during message, fetching...");
+      try {
         const profilePhotoUrl = await getUserProfilePhoto(message.from.id, customer.id);
         if (profilePhotoUrl) {
           await supabase
@@ -552,207 +642,167 @@ async function saveMessage(message: any) {
             .eq('id', customer.id);
           console.log("Profile photo backfilled for customer:", customer.id);
         }
-      }
-
-      let messageType = 'text';
-      let messageText = message.text || message.caption || null;
-      
-      // Capture media_group_id for album grouping (Telegram sends this for multi-photo/video albums)
-      const mediaGroupId = message.media_group_id || null;
-      let photoFileId = null;
-      let photoUrl = null;
-      let voiceFileId = null;
-      let voiceDuration = null;
-
-      // Handle photo messages
-      if (message.photo && message.photo.length > 0) {
-        messageType = 'photo';
-        // Get the largest photo
-        const largestPhoto = message.photo[message.photo.length - 1];
-        photoFileId = largestPhoto.file_id;
-        // Download and store permanently instead of using temporary URL
-        photoUrl = await downloadAndStoreFile(photoFileId, 'photo');
-        messageText = message.caption || '[Photo]';
-        console.log("Photo captured and stored:", { photoFileId, photoUrl, caption: message.caption });
-      }
-
-      // Handle voice messages
-      if (message.voice) {
-        messageType = 'voice';
-        voiceFileId = message.voice.file_id;
-        voiceDuration = message.voice.duration;
-        // Download and store permanently
-        const voiceUrl = await downloadAndStoreFile(voiceFileId, 'voice');
-        messageText = '[Voice message]';
-        
-        // Save with voice URL
-        const { error } = await supabase
-          .from('messages')
-          .insert({
-            customer_id: customer.id,
-            telegram_id: message.from.id,
-            message_text: messageText,
-            message_type: messageType,
-            photo_file_id: photoFileId,
-            photo_url: photoUrl,
-            voice_file_id: voiceFileId,
-            voice_duration: voiceDuration,
-            voice_url: voiceUrl,
-            sender_type: 'customer',
-            timestamp: new Date(message.date * 1000).toISOString(),
-          });
-
-        if (error) {
-          console.error("Error saving voice message:", error);
-        } else {
-          console.log("Voice message saved successfully");
-        }
-        return; // Early return for voice messages
-      }
-
-      // Handle video messages (regular videos)
-      if (message.video) {
-        messageType = 'video';
-        const videoFileId = message.video.file_id;
-        const videoDuration = message.video.duration;
-        // Download and store permanently
-        const videoUrl = await downloadAndStoreFile(videoFileId, 'video');
-        const videoMimeType = message.video.mime_type || 'video/mp4';
-        messageText = message.caption || '[Video]';
-        
-        console.log("Video captured and stored:", { videoFileId, videoUrl, duration: videoDuration, mediaGroupId });
-        
-        // Save with video URL
-        const { error } = await supabase
-          .from('messages')
-          .insert({
-            customer_id: customer.id,
-            telegram_id: message.from.id,
-            message_text: messageText,
-            message_type: messageType,
-            video_file_id: videoFileId,
-            video_url: videoUrl,
-            video_duration: videoDuration,
-            video_mime_type: videoMimeType,
-            media_group_id: mediaGroupId,
-            sender_type: 'customer',
-            timestamp: new Date(message.date * 1000).toISOString(),
-          });
-
-        if (error) {
-          console.error("Error saving video message:", error);
-        } else {
-          console.log("Video message saved successfully");
-        }
-        return; // Early return for video messages
-      }
-
-      // Handle video note messages (circular videos)
-      if (message.video_note) {
-        messageType = 'video';
-        const videoFileId = message.video_note.file_id;
-        const videoDuration = message.video_note.duration;
-        // Download and store permanently
-        const videoUrl = await downloadAndStoreFile(videoFileId, 'video');
-        messageText = '[Video Note]';
-        
-        console.log("Video note captured and stored:", { videoFileId, videoUrl, duration: videoDuration, mediaGroupId });
-        
-        // Save with video URL
-        const { error } = await supabase
-          .from('messages')
-          .insert({
-            customer_id: customer.id,
-            telegram_id: message.from.id,
-            message_text: messageText,
-            message_type: messageType,
-            video_file_id: videoFileId,
-            video_url: videoUrl,
-            video_duration: videoDuration,
-            video_mime_type: 'video/mp4',
-            media_group_id: mediaGroupId,
-            sender_type: 'customer',
-            timestamp: new Date(message.date * 1000).toISOString(),
-          });
-
-        if (error) {
-          console.error("Error saving video note:", error);
-        } else {
-          console.log("Video note saved successfully");
-        }
-        return; // Early return for video note messages
-      }
-
-      // Handle audio messages
-      if (message.audio) {
-        messageType = 'audio';
-        messageText = '[Audio]';
-      }
-
-      // Handle document messages
-      if (message.document) {
-        messageType = 'document';
-        const docFileId = message.document.file_id;
-        const docFileName = message.document.file_name || 'document';
-        const docMimeType = message.document.mime_type || 'application/octet-stream';
-        const docFileSize = message.document.file_size ?? null;
-        
-        // Download and store the document
-        const docUrl = await downloadAndStoreDocument(docFileId, docFileName);
-        messageText = message.caption || `[Document: ${docFileName}]`;
-        
-        console.log("Document captured and stored:", { docFileId, docUrl, fileName: docFileName, mimeType: docMimeType, size: docFileSize });
-        
-        // Save with document fields
-        const { error } = await supabase
-          .from('messages')
-          .insert({
-            customer_id: customer.id,
-            telegram_id: message.from.id,
-            message_text: messageText,
-            message_type: messageType,
-            document_url: docUrl,
-            document_name: docFileName,
-            document_mime_type: docMimeType,
-            document_size: docFileSize,
-            sender_type: 'customer',
-            timestamp: new Date(message.date * 1000).toISOString(),
-          });
-
-        if (error) {
-          console.error("Error saving document message:", error);
-        } else {
-          console.log("Document message saved successfully");
-        }
-        return; // Early return for document messages
-      }
-
-      // Save the message (for photos and text)
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          customer_id: customer.id,
-          telegram_id: message.from.id,
-          message_text: messageText,
-          message_type: messageType,
-          photo_file_id: photoFileId,
-          photo_url: photoUrl,
-          voice_file_id: voiceFileId,
-          voice_duration: voiceDuration,
-          voice_url: null, // Will be null for non-voice messages
-          media_group_id: mediaGroupId,
-          sender_type: 'customer',
-          timestamp: new Date(message.date * 1000).toISOString(),
-        });
-
-      if (error) {
-        console.error("Error saving message:", error);
-      } else {
-        console.log("Message saved successfully:", { messageType, photoUrl, messageText, mediaGroupId });
+      } catch (photoErr) {
+        // Non-fatal — log but continue saving the message.
+        console.error("Profile photo backfill failed (non-fatal):", photoErr);
       }
     }
+
+    let messageType = 'text';
+    let messageText = message.text || message.caption || null;
+
+    const mediaGroupId = message.media_group_id || null;
+    let photoFileId = null;
+    let photoUrl = null;
+    let voiceFileId = null;
+    let voiceDuration = null;
+
+    const ts = new Date(message.date * 1000).toISOString();
+
+    // Handle photo messages
+    if (message.photo && message.photo.length > 0) {
+      messageType = 'photo';
+      const largestPhoto = message.photo[message.photo.length - 1];
+      photoFileId = largestPhoto.file_id;
+      photoUrl = await downloadAndStoreFile(photoFileId, 'photo', largestPhoto.file_unique_id, dlCtx);
+      messageText = message.caption || '[Photo]';
+      console.log("Photo captured and stored:", { photoFileId, photoUrl, caption: message.caption });
+    }
+
+    // Handle voice messages
+    if (message.voice) {
+      messageType = 'voice';
+      voiceFileId = message.voice.file_id;
+      voiceDuration = message.voice.duration;
+      const voiceUrl = await downloadAndStoreFile(voiceFileId, 'voice', message.voice.file_unique_id, dlCtx);
+      messageText = '[Voice message]';
+
+      await upsertMessage({
+        customer_id: customer.id,
+        telegram_id: message.from.id,
+        message_text: messageText,
+        message_type: messageType,
+        photo_file_id: photoFileId,
+        photo_url: photoUrl,
+        voice_file_id: voiceFileId,
+        voice_duration: voiceDuration,
+        voice_url: voiceUrl,
+        sender_type: 'customer',
+        timestamp: ts,
+      }, { update, message, messageType, customerId: customer.id });
+      return;
+    }
+
+    // Handle video messages (regular videos)
+    if (message.video) {
+      messageType = 'video';
+      const videoFileId = message.video.file_id;
+      const videoDuration = message.video.duration;
+      const videoUrl = await downloadAndStoreFile(videoFileId, 'video', message.video.file_unique_id, dlCtx);
+      const videoMimeType = message.video.mime_type || 'video/mp4';
+      messageText = message.caption || '[Video]';
+
+      console.log("Video captured and stored:", { videoFileId, videoUrl, duration: videoDuration, mediaGroupId });
+
+      await upsertMessage({
+        customer_id: customer.id,
+        telegram_id: message.from.id,
+        message_text: messageText,
+        message_type: messageType,
+        video_file_id: videoFileId,
+        video_url: videoUrl,
+        video_duration: videoDuration,
+        video_mime_type: videoMimeType,
+        media_group_id: mediaGroupId,
+        sender_type: 'customer',
+        timestamp: ts,
+      }, { update, message, messageType, customerId: customer.id });
+      return;
+    }
+
+    // Handle video note messages (circular videos)
+    if (message.video_note) {
+      messageType = 'video';
+      const videoFileId = message.video_note.file_id;
+      const videoDuration = message.video_note.duration;
+      const videoUrl = await downloadAndStoreFile(videoFileId, 'video', message.video_note.file_unique_id, dlCtx);
+      messageText = '[Video Note]';
+
+      console.log("Video note captured and stored:", { videoFileId, videoUrl, duration: videoDuration, mediaGroupId });
+
+      await upsertMessage({
+        customer_id: customer.id,
+        telegram_id: message.from.id,
+        message_text: messageText,
+        message_type: messageType,
+        video_file_id: videoFileId,
+        video_url: videoUrl,
+        video_duration: videoDuration,
+        video_mime_type: 'video/mp4',
+        media_group_id: mediaGroupId,
+        sender_type: 'customer',
+        timestamp: ts,
+      }, { update, message, messageType, customerId: customer.id });
+      return;
+    }
+
+    // Handle audio messages
+    if (message.audio) {
+      messageType = 'audio';
+      messageText = '[Audio]';
+    }
+
+    // Handle document messages
+    if (message.document) {
+      messageType = 'document';
+      const docFileId = message.document.file_id;
+      const docFileName = message.document.file_name || 'document';
+      const docMimeType = message.document.mime_type || 'application/octet-stream';
+      const docFileSize = message.document.file_size ?? null;
+
+      const docUrl = await downloadAndStoreDocument(docFileId, docFileName, message.document.file_unique_id, dlCtx);
+      messageText = message.caption || `[Document: ${docFileName}]`;
+
+      console.log("Document captured and stored:", { docFileId, docUrl, fileName: docFileName, mimeType: docMimeType, size: docFileSize });
+
+      await upsertMessage({
+        customer_id: customer.id,
+        telegram_id: message.from.id,
+        message_text: messageText,
+        message_type: messageType,
+        document_url: docUrl,
+        document_name: docFileName,
+        document_mime_type: docMimeType,
+        document_size: docFileSize,
+        sender_type: 'customer',
+        timestamp: ts,
+      }, { update, message, messageType, customerId: customer.id });
+      return;
+    }
+
+    // Default save (text and photo)
+    await upsertMessage({
+      customer_id: customer.id,
+      telegram_id: message.from.id,
+      message_text: messageText,
+      message_type: messageType,
+      photo_file_id: photoFileId,
+      photo_url: photoUrl,
+      voice_file_id: voiceFileId,
+      voice_duration: voiceDuration,
+      voice_url: null,
+      media_group_id: mediaGroupId,
+      sender_type: 'customer',
+      timestamp: ts,
+    }, { update, message, messageType, customerId: customer.id });
   } catch (error) {
     console.error("Error in saveMessage:", error);
+    await logFailure('process', {
+      update,
+      message,
+      customerId: customerForLog?.id ?? null,
+      error,
+    });
   }
 }
 
@@ -1334,10 +1384,11 @@ serve(async (req) => {
             await handleStart(body.message);
           }
           if (body.message) {
-            await saveMessage(body.message);
+            await saveMessage(body.message, body);
           }
         } catch (err) {
           console.error("Background webhook processing error:", err);
+          await logFailure('process', { update: body, message: body?.message, error: err });
         }
       })();
 
