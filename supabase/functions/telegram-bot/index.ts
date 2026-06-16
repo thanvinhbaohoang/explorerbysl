@@ -338,94 +338,170 @@ async function getUserProfilePhoto(userId: number, customerId: string): Promise<
   }
 }
 
-// Download file from Telegram and upload to Supabase Storage
-async function downloadAndStoreFile(fileId: string, fileType: 'photo' | 'voice' | 'video'): Promise<string | null> {
+// Record a webhook processing failure for visibility on the WebhookDebug page.
+async function logFailure(
+  stage: 'download' | 'storage' | 'insert' | 'customer_lookup' | 'process',
+  opts: {
+    update?: any;
+    message?: any;
+    customerId?: string | null;
+    messageType?: string | null;
+    error: unknown;
+  }
+) {
   try {
-    // Get file path from Telegram
+    const errMsg =
+      opts.error instanceof Error
+        ? `${opts.error.name}: ${opts.error.message}`
+        : typeof opts.error === 'string'
+        ? opts.error
+        : JSON.stringify(opts.error);
+
+    const updateId = opts.update?.update_id ?? null;
+    const chatId =
+      opts.message?.chat?.id ?? opts.update?.message?.chat?.id ?? null;
+
+    await supabase.from('telegram_webhook_failures').insert({
+      update_id: updateId,
+      chat_id: chatId,
+      customer_id: opts.customerId ?? null,
+      stage,
+      message_type: opts.messageType ?? null,
+      error: errMsg,
+      raw_update: opts.update ?? opts.message ?? null,
+    });
+  } catch (e) {
+    console.error('Failed to log webhook failure:', e);
+  }
+}
+
+// Idempotent message insert: ignore duplicates keyed on telegram_update_id.
+async function upsertMessage(
+  row: Record<string, any>,
+  ctx: { update: any; message: any; messageType: string; customerId: string }
+): Promise<boolean> {
+  const enriched = {
+    ...row,
+    telegram_update_id: ctx.update?.update_id ?? null,
+    telegram_message_id: ctx.message?.message_id ?? null,
+  };
+
+  const { error } = await supabase
+    .from('messages')
+    .upsert(enriched, {
+      onConflict: 'telegram_update_id',
+      ignoreDuplicates: true,
+    });
+
+  if (error) {
+    console.error(`Error upserting ${ctx.messageType} message:`, error);
+    await logFailure('insert', {
+      update: ctx.update,
+      message: ctx.message,
+      customerId: ctx.customerId,
+      messageType: ctx.messageType,
+      error,
+    });
+    return false;
+  }
+  return true;
+}
+
+// Download file from Telegram and upload to Supabase Storage.
+// Uses file_unique_id for a deterministic storage key so retries overwrite
+// the same object instead of creating ghost/orphaned files.
+async function downloadAndStoreFile(
+  fileId: string,
+  fileType: 'photo' | 'voice' | 'video',
+  fileUniqueId?: string,
+  ctx?: { update: any; message: any }
+): Promise<string | null> {
+  try {
     const response = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
     const data = await response.json();
-    
+
     if (!data.ok || !data.result.file_path) {
       console.error("Failed to get file path from Telegram");
+      if (ctx) await logFailure('download', { ...ctx, messageType: fileType, error: `getFile failed: ${JSON.stringify(data)}` });
       return null;
     }
-    
+
     const telegramFileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
-    
-    // Download the file
+
     const fileResponse = await fetch(telegramFileUrl);
     if (!fileResponse.ok) {
       console.error("Failed to download file from Telegram");
+      if (ctx) await logFailure('download', { ...ctx, messageType: fileType, error: `download HTTP ${fileResponse.status}` });
       return null;
     }
-    
+
     const fileBuffer = await fileResponse.arrayBuffer();
-    
-    // Determine file extension from file_path
     const filePath = data.result.file_path;
     const extension = filePath.split('.').pop() || (fileType === 'photo' ? 'jpg' : fileType === 'voice' ? 'ogg' : 'mp4');
-    
-    // Generate unique filename
-    const fileName = `telegram-${fileType}/${Date.now()}_${Math.random().toString(36).substring(7)}.${extension}`;
-    
-    // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
+
+    // Deterministic key using Telegram's stable file_unique_id (fall back to file_id).
+    const stableKey = fileUniqueId || fileId;
+    const fileName = `telegram-${fileType}/${stableKey}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
       .from('chat-attachments')
       .upload(fileName, fileBuffer, {
         contentType: fileType === 'photo' ? `image/${extension}` : fileType === 'voice' ? 'audio/ogg' : `video/${extension}`,
         cacheControl: '3600',
-        upsert: false,
+        upsert: true,
       });
-    
+
     if (uploadError) {
       console.error("Failed to upload to storage:", uploadError);
-      // Fallback to temporary Telegram URL
+      if (ctx) await logFailure('storage', { ...ctx, messageType: fileType, error: uploadError });
       return telegramFileUrl;
     }
-    
-    // Get public URL
+
     const { data: urlData } = supabase.storage
       .from('chat-attachments')
       .getPublicUrl(fileName);
-    
+
     console.log("File stored permanently:", urlData.publicUrl);
     return urlData.publicUrl;
   } catch (error) {
     console.error("Error downloading and storing file:", error);
+    if (ctx) await logFailure('download', { ...ctx, messageType: fileType, error });
     return null;
   }
 }
 
-// Download document from Telegram and upload to Supabase Storage
-async function downloadAndStoreDocument(fileId: string, fileName: string): Promise<string | null> {
+// Download document from Telegram and upload to Supabase Storage (deterministic key).
+async function downloadAndStoreDocument(
+  fileId: string,
+  fileName: string,
+  fileUniqueId?: string,
+  ctx?: { update: any; message: any }
+): Promise<string | null> {
   try {
-    // Get file path from Telegram
     const response = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
     const data = await response.json();
-    
+
     if (!data.ok || !data.result.file_path) {
       console.error("Failed to get document path from Telegram");
+      if (ctx) await logFailure('download', { ...ctx, messageType: 'document', error: `getFile failed: ${JSON.stringify(data)}` });
       return null;
     }
-    
+
     const telegramFileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${data.result.file_path}`;
-    
-    // Download the file
+
     const fileResponse = await fetch(telegramFileUrl);
     if (!fileResponse.ok) {
       console.error("Failed to download document from Telegram");
+      if (ctx) await logFailure('download', { ...ctx, messageType: 'document', error: `download HTTP ${fileResponse.status}` });
       return null;
     }
-    
+
     const fileBuffer = await fileResponse.arrayBuffer();
-    
-    // Get extension from original filename or file path
     const extension = fileName.split('.').pop() || data.result.file_path.split('.').pop() || 'bin';
-    
-    // Generate unique filename
-    const storedFileName = `telegram-document/${Date.now()}_${Math.random().toString(36).substring(7)}.${extension}`;
-    
-    // Determine content type from extension
+
+    const stableKey = fileUniqueId || fileId;
+    const storedFileName = `telegram-document/${stableKey}.${extension}`;
+
     const contentTypeMap: Record<string, string> = {
       'pdf': 'application/pdf',
       'doc': 'application/msword',
@@ -437,31 +513,30 @@ async function downloadAndStoreDocument(fileId: string, fileName: string): Promi
       'rar': 'application/x-rar-compressed',
     };
     const contentType = contentTypeMap[extension.toLowerCase()] || 'application/octet-stream';
-    
-    // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
+
+    const { error: uploadError } = await supabase.storage
       .from('chat-attachments')
       .upload(storedFileName, fileBuffer, {
         contentType,
         cacheControl: '3600',
-        upsert: false,
+        upsert: true,
       });
-    
+
     if (uploadError) {
       console.error("Failed to upload document to storage:", uploadError);
-      // Fallback to temporary Telegram URL
+      if (ctx) await logFailure('storage', { ...ctx, messageType: 'document', error: uploadError });
       return telegramFileUrl;
     }
-    
-    // Get public URL
+
     const { data: urlData } = supabase.storage
       .from('chat-attachments')
       .getPublicUrl(storedFileName);
-    
+
     console.log("Document stored permanently:", urlData.publicUrl);
     return urlData.publicUrl;
   } catch (error) {
     console.error("Error downloading and storing document:", error);
+    if (ctx) await logFailure('download', { ...ctx, messageType: 'document', error });
     return null;
   }
 }
