@@ -70,6 +70,61 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [mediaViewerOpen, setMediaViewerOpen] = useState(false);
+  const [linkedAccounts, setLinkedAccounts] = useState<Customer[]>([]);
+  const [linkedUnreadCounts, setLinkedUnreadCounts] = useState<Record<string, number>>({});
+
+  // Fetch linked accounts whenever current customer changes
+  useEffect(() => {
+    let cancelled = false;
+    const fetchLinked = async () => {
+      const orFilters = [`id.eq.${customer.linked_customer_id || '00000000-0000-0000-0000-000000000000'}`, `linked_customer_id.eq.${customer.id}`];
+      if (customer.linked_customer_id) {
+        orFilters.push(`linked_customer_id.eq.${customer.linked_customer_id}`);
+      }
+      const { data, error } = await supabase
+        .from("customer")
+        .select("id, telegram_id, username, first_name, last_name, language_code, detected_language, is_premium, first_message_at, last_message_at, created_at, messenger_id, messenger_name, messenger_profile_pic, locale, timezone_offset, linked_customer_id, page_id")
+        .or(orFilters.join(","));
+
+      if (cancelled) return;
+      if (error || !data) {
+        setLinkedAccounts([]);
+        return;
+      }
+      const filtered = data.filter((c) => c.id !== customer.id) as Customer[];
+      // Dedupe by id
+      const seen = new Set<string>();
+      const unique = filtered.filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)));
+      setLinkedAccounts(unique);
+    };
+    fetchLinked();
+    return () => { cancelled = true; };
+  }, [customer.id, customer.linked_customer_id]);
+
+  // Poll unread counts for linked accounts
+  useEffect(() => {
+    if (linkedAccounts.length === 0) {
+      setLinkedUnreadCounts({});
+      return;
+    }
+    let cancelled = false;
+    const fetchUnread = async () => {
+      const { data, error } = await supabase.rpc("get_unread_counts");
+      if (cancelled || error || !data) return;
+      const map: Record<string, number> = {};
+      const linkedIds = new Set(linkedAccounts.map((a) => a.id));
+      for (const row of data as Array<{ customer_id: string; unread_count: number }>) {
+        if (linkedIds.has(row.customer_id)) {
+          map[row.customer_id] = Number(row.unread_count) || 0;
+        }
+      }
+      setLinkedUnreadCounts(map);
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [linkedAccounts]);
+
 
   const {
     filteredMessages,
