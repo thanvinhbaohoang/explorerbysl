@@ -522,13 +522,39 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
                 const isMessenger = !!acc.messenger_id;
                 const accName = acc.messenger_name || `${acc.first_name || ''} ${acc.last_name || ''}`.trim() || 'Account';
                 const unread = linkedUnreadCounts[acc.id] || 0;
+                const handleSwitch = () => {
+                  // Optimistic: clear unread badge immediately
+                  setLinkedUnreadCounts((prev) => ({ ...prev, [acc.id]: 0 }));
+
+                  // Fire-and-forget: mark messages as read in DB for the target account
+                  void supabase
+                    .from("messages")
+                    .update({ is_read: true })
+                    .eq("customer_id", acc.id)
+                    .eq("sender_type", "customer")
+                    .eq("is_read", false)
+                    .then(({ error }) => {
+                      if (error) console.error('Failed to mark messages read:', error);
+                    });
+
+                  // Telegram typing/seen indicator
+                  if (acc.telegram_id) {
+                    void supabase.functions.invoke('telegram-bot', {
+                      body: { action: 'mark_seen', telegram_id: acc.telegram_id },
+                    }).catch((error) => {
+                      console.error('Failed to send typing indicator:', error);
+                    });
+                  }
+
+                  onSwitchCustomer?.(acc);
+                };
                 return (
                   <div key={acc.id} className="relative">
                     <Button
                       variant="outline"
                       size="sm"
                       className="h-7 text-xs pl-1 pr-2 gap-1"
-                      onClick={() => onSwitchCustomer?.(acc)}
+                      onClick={handleSwitch}
                       title={`Switch to ${isMessenger ? 'Messenger' : 'Telegram'} conversation with ${accName}`}
                     >
                       <Avatar className="h-5 w-5">
