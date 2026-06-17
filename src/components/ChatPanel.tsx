@@ -42,6 +42,7 @@ import { toast } from "sonner";
 interface ChatPanelProps {
   customer: Customer;
   onBack?: () => void;
+  onSwitchCustomer?: (customer: Customer) => void;
 }
 
 // Helper function to get initials from name
