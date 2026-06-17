@@ -101,29 +101,58 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
     return () => { cancelled = true; };
   }, [customer.id, customer.linked_customer_id]);
 
-  // Poll unread counts for linked accounts
+  // Refresh unread counts for linked accounts (immediate + delayed + realtime + 30s safety poll)
   useEffect(() => {
     if (linkedAccounts.length === 0) {
       setLinkedUnreadCounts({});
       return;
     }
     let cancelled = false;
+    const linkedIds = linkedAccounts.map((a) => a.id);
+    const linkedIdSet = new Set(linkedIds);
+
     const fetchUnread = async () => {
       const { data, error } = await supabase.rpc("get_unread_counts");
       if (cancelled || error || !data) return;
       const map: Record<string, number> = {};
-      const linkedIds = new Set(linkedAccounts.map((a) => a.id));
       for (const row of data as Array<{ customer_id: string; unread_count: number }>) {
-        if (linkedIds.has(row.customer_id)) {
+        if (linkedIdSet.has(row.customer_id)) {
           map[row.customer_id] = Number(row.unread_count) || 0;
         }
       }
       setLinkedUnreadCounts(map);
     };
+
+    // Immediate refresh + delayed refresh (waits for markMessagesAsRead to commit on switch)
     fetchUnread();
+    const delayed = setTimeout(fetchUnread, 800);
+
+    // Realtime: refetch when messages for linked customers change (insert OR mark-as-read update)
+    const channel = supabase
+      .channel(`chat-linked-unread-${customer.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `customer_id=in.(${linkedIds.join(',')})` },
+        () => fetchUnread(),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'messages', filter: `customer_id=in.(${linkedIds.join(',')})` },
+        () => fetchUnread(),
+      )
+      .subscribe();
+
+    // Safety fallback poll
     const interval = setInterval(fetchUnread, 30_000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [linkedAccounts]);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(delayed);
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [linkedAccounts, customer.id]);
+
 
 
   const {
