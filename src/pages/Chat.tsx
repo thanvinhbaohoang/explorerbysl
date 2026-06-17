@@ -92,7 +92,7 @@ const Chat = () => {
         
         <ResizablePanel defaultSize={70}>
           {selectedCustomer ? (
-            <ChatPanel customer={selectedCustomer} />
+            <ChatPanel customer={selectedCustomer} onSwitchCustomer={setSelectedCustomer} />
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground bg-muted/20">
               <MessageSquare className="h-16 w-16 mb-4 opacity-30" />
