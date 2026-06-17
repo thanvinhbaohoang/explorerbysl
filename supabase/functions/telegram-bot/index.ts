@@ -1323,14 +1323,17 @@ serve(async (req) => {
       }
       
       // Handle webhook updates from Telegram
-      console.log("Received webhook:", JSON.stringify(body));
+      const isReplay = req.headers.get("x-replay") === "true";
+      console.log(isReplay ? "Replaying webhook:" : "Received webhook:", JSON.stringify(body));
 
-      // Handle /start command
-      if (body.message?.text?.startsWith("/start")) {
+      // Handle /start command — skip during replay so we don't send a duplicate
+      // welcome message to customers hours/days after the fact.
+      if (body.message?.text?.startsWith("/start") && !isReplay) {
         await handleStart(body.message);
       }
-      
-      // Save all messages to database
+
+      // Save all messages to database (safe to replay — idempotent via
+      // messages_telegram_update_id_key unique index).
       if (body.message) {
         await saveMessage(body.message);
       }
