@@ -61,6 +61,7 @@ const Chat = () => {
           <ChatPanel 
             customer={selectedCustomer} 
             onBack={() => setSelectedCustomer(null)}
+            onSwitchCustomer={setSelectedCustomer}
           />
         ) : (
           <ChatConversationList 
