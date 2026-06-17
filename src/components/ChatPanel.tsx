@@ -55,7 +55,7 @@ const getInitials = (name: string): string => {
     .join('');
 };
 
-export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
+export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps) => {
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
