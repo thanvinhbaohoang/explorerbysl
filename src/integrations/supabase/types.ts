@@ -390,6 +390,8 @@ export type Database = {
           sender_type: string | null
           sent_by_name: string | null
           telegram_id: number | null
+          telegram_message_id: number | null
+          telegram_update_id: number | null
           timestamp: string
           video_duration: number | null
           video_file_id: string | null
@@ -419,6 +421,8 @@ export type Database = {
           sender_type?: string | null
           sent_by_name?: string | null
           telegram_id?: number | null
+          telegram_message_id?: number | null
+          telegram_update_id?: number | null
           timestamp?: string
           video_duration?: number | null
           video_file_id?: string | null
@@ -448,6 +452,8 @@ export type Database = {
           sender_type?: string | null
           sent_by_name?: string | null
           telegram_id?: number | null
+          telegram_message_id?: number | null
+          telegram_update_id?: number | null
           timestamp?: string
           video_duration?: number | null
           video_file_id?: string | null
@@ -601,6 +607,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      telegram_webhook_failures: {
+        Row: {
+          chat_id: number | null
+          created_at: string
+          customer_id: string | null
+          error: string
+          id: string
+          message_type: string | null
+          raw_update: Json | null
+          stage: string
+          update_id: number | null
+        }
+        Insert: {
+          chat_id?: number | null
+          created_at?: string
+          customer_id?: string | null
+          error: string
+          id?: string
+          message_type?: string | null
+          raw_update?: Json | null
+          stage: string
+          update_id?: number | null
+        }
+        Update: {
+          chat_id?: number | null
+          created_at?: string
+          customer_id?: string | null
+          error?: string
+          id?: string
+          message_type?: string | null
+          raw_update?: Json | null
+          stage?: string
+          update_id?: number | null
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {
