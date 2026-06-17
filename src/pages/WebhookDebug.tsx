@@ -172,10 +172,14 @@ const WebhookDebug = () => {
 
   useEffect(() => {
     fetchData();
-    
+    fetchFailureCount();
+
     // Auto-refresh every 10 seconds
-    const interval = setInterval(fetchData, 10000);
-    
+    const interval = setInterval(() => {
+      fetchData();
+      fetchFailureCount();
+    }, 10000);
+
     return () => clearInterval(interval);
   }, []);
 
@@ -196,6 +200,60 @@ const WebhookDebug = () => {
             Refresh
           </Button>
         </div>
+
+        {/* Telegram Failure Recovery (admin only) */}
+        {isAdmin && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Telegram Webhook Recovery
+              </CardTitle>
+              <CardDescription>
+                Replay updates that failed during the recent outage. Safe to re-run — duplicates are skipped automatically and no messages are sent back to customers.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Unreplayed failures</p>
+                  <p className="text-3xl font-bold">{failureCount ?? '—'}</p>
+                </div>
+                <Button onClick={replayFailures} disabled={replaying || (failureCount ?? 0) === 0}>
+                  {replaying ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Replaying…
+                    </>
+                  ) : (
+                    <>
+                      <History className="mr-2 h-4 w-4" />
+                      Replay failed updates
+                    </>
+                  )}
+                </Button>
+              </div>
+              {lastReplay && (
+                <div className="rounded-lg border p-3 text-sm space-y-1">
+                  <div className="flex gap-4">
+                    <span>Restored: <strong>{lastReplay.replayed}</strong></span>
+                    <span>Skipped (duplicates): <strong>{lastReplay.skipped_duplicate}</strong></span>
+                    <span>Failed: <strong>{lastReplay.failed}</strong></span>
+                  </div>
+                  {lastReplay.sample_errors?.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-muted-foreground">Sample errors</summary>
+                      <pre className="mt-2 text-xs overflow-auto">
+                        {JSON.stringify(lastReplay.sample_errors, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
 
         {/* Webhook Configuration */}
         <Card>
