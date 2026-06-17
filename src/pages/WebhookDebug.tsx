@@ -4,8 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCw, Activity, Database, MessageSquare, CheckCircle, XCircle, Globe, Copy } from "lucide-react";
+import { RefreshCw, Activity, Database, MessageSquare, CheckCircle, XCircle, Globe, Copy, History } from "lucide-react";
 import { toast } from "sonner";
+import { useUserRole } from "@/hooks/useUserRole";
 
 interface Customer {
   id: string;
@@ -46,9 +47,41 @@ const WebhookDebug = () => {
     pageAccessTokenSet: false,
   });
   const [uniquePages, setUniquePages] = useState<string[]>([]);
-  
+  const [failureCount, setFailureCount] = useState<number | null>(null);
+  const [replaying, setReplaying] = useState(false);
+  const [lastReplay, setLastReplay] = useState<any>(null);
+  const { isAdmin } = useUserRole();
+
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/messenger-webhook`;
   const verifyToken = "Your FACEBOOK_VERIFY_TOKEN secret value";
+
+  const fetchFailureCount = async () => {
+    const { count } = await supabase
+      .from('telegram_webhook_failures')
+      .select('id', { count: 'exact', head: true })
+      .is('replayed_at', null);
+    setFailureCount(count ?? 0);
+  };
+
+  const replayFailures = async () => {
+    setReplaying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('replay-telegram-failures', {
+        body: { limit: 500 },
+      });
+      if (error) throw error;
+      setLastReplay(data);
+      toast.success(
+        `Replay complete: ${data.replayed} restored, ${data.skipped_duplicate} skipped, ${data.failed} failed`
+      );
+      await fetchFailureCount();
+      await fetchData();
+    } catch (e: any) {
+      toast.error(`Replay failed: ${e.message || e}`);
+    } finally {
+      setReplaying(false);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -139,10 +172,14 @@ const WebhookDebug = () => {
 
   useEffect(() => {
     fetchData();
-    
+    fetchFailureCount();
+
     // Auto-refresh every 10 seconds
-    const interval = setInterval(fetchData, 10000);
-    
+    const interval = setInterval(() => {
+      fetchData();
+      fetchFailureCount();
+    }, 10000);
+
     return () => clearInterval(interval);
   }, []);
 
@@ -163,6 +200,60 @@ const WebhookDebug = () => {
             Refresh
           </Button>
         </div>
+
+        {/* Telegram Failure Recovery (admin only) */}
+        {isAdmin && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Telegram Webhook Recovery
+              </CardTitle>
+              <CardDescription>
+                Replay updates that failed during the recent outage. Safe to re-run — duplicates are skipped automatically and no messages are sent back to customers.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Unreplayed failures</p>
+                  <p className="text-3xl font-bold">{failureCount ?? '—'}</p>
+                </div>
+                <Button onClick={replayFailures} disabled={replaying || (failureCount ?? 0) === 0}>
+                  {replaying ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Replaying…
+                    </>
+                  ) : (
+                    <>
+                      <History className="mr-2 h-4 w-4" />
+                      Replay failed updates
+                    </>
+                  )}
+                </Button>
+              </div>
+              {lastReplay && (
+                <div className="rounded-lg border p-3 text-sm space-y-1">
+                  <div className="flex gap-4">
+                    <span>Restored: <strong>{lastReplay.replayed}</strong></span>
+                    <span>Skipped (duplicates): <strong>{lastReplay.skipped_duplicate}</strong></span>
+                    <span>Failed: <strong>{lastReplay.failed}</strong></span>
+                  </div>
+                  {lastReplay.sample_errors?.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-muted-foreground">Sample errors</summary>
+                      <pre className="mt-2 text-xs overflow-auto">
+                        {JSON.stringify(lastReplay.sample_errors, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
 
         {/* Webhook Configuration */}
         <Card>

@@ -617,6 +617,8 @@ export type Database = {
           id: string
           message_type: string | null
           raw_update: Json | null
+          replay_error: string | null
+          replayed_at: string | null
           stage: string
           update_id: number | null
         }
@@ -628,6 +630,8 @@ export type Database = {
           id?: string
           message_type?: string | null
           raw_update?: Json | null
+          replay_error?: string | null
+          replayed_at?: string | null
           stage: string
           update_id?: number | null
         }
@@ -639,6 +643,8 @@ export type Database = {
           id?: string
           message_type?: string | null
           raw_update?: Json | null
+          replay_error?: string | null
+          replayed_at?: string | null
           stage?: string
           update_id?: number | null
         }
