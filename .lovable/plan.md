@@ -1,83 +1,44 @@
-# Durable Telegram webhook fix
+## Goal
 
-Two problems to solve together:
-1. **Duplicates** when Telegram retries (current minimal fix reduces but doesn't eliminate this).
-2. **Silent failures** after we return 200 — today, if a download/upload/insert fails in the background, the message vanishes with no UI signal.
+Make the chat input non-blocking. After hitting send (text, media, or voice), the input clears immediately and is ready for the next message. The only "sending" indicator is the optimistic bubble (`isPending`) inside the conversation. Sends run concurrently and resolve independently.
 
-## Part A — Idempotency (eliminates duplicates)
+## What's blocking today
 
-### Schema change (single migration)
-- Add to `public.messages`:
-  - `telegram_update_id BIGINT NULL` — Telegram's per-bot monotonic update id.
-  - `telegram_message_id BIGINT NULL` — Telegram's per-chat message id (useful for debugging/edits).
-- Partial unique index: `CREATE UNIQUE INDEX messages_telegram_update_id_key ON public.messages (telegram_update_id) WHERE telegram_update_id IS NOT NULL;`
-- No RLS change. No GRANT change. Existing rows stay NULL and are unaffected.
+- `useChatMessages.ts` keeps two global flags: `isSending` (text) and `isUploadingFile` (media/voice). Each send sets the flag, awaits the edge function, then clears it.
+- `ChatPanel.tsx` disables the textarea, send button, attach button, and voice button based on those flags, so the user must wait for the round-trip (especially painful for voice → MP3 conversion + Messenger upload).
+- Each send function also early-returns if its flag is true, so even programmatic rapid sends are dropped.
 
-### Code change in `supabase/functions/telegram-bot/index.ts`
-- For every inbound branch (text, photo, voice, video, document, video_note), replace `.insert({...})` with `.upsert({..., telegram_update_id, telegram_message_id }, { onConflict: 'telegram_update_id', ignoreDuplicates: true })`.
-- Keep `EdgeRuntime.waitUntil` from the previous fix — fast 200 is still desirable, idempotency is the safety net.
-- Result: even if Telegram retries, two webhook instances race, or the function restarts mid-flight, only one row per Telegram update can exist.
+## Plan
 
-### Storage key stability (bonus)
-- Change `downloadAndStoreDocument` / `downloadAndStoreFile` keys from time-based random to deterministic: `telegram-{type}/{file_unique_id}.{ext}` (Telegram exposes `file_unique_id` on every file object, stable across retries).
-- Use `upsert: true` on the storage upload so retries overwrite instead of creating orphan ghost files.
+1. **Remove global send/upload guards in `src/hooks/useChatMessages.ts`**
+   - Stop using `isSending` / `isUploadingFile` as gates inside `sendReply`, `sendMedia`, `sendMediaBatch`, and `sendVoiceClip`.
+   - Keep the optimistic message insertion (`isPending: true`) and the existing `markOptimisticSent` / failure rollback per message — that already gives per-bubble status.
+   - Keep `isSending` / `isUploadingFile` exported but only as informational counters (or drop them from the return). Per-message state lives on the optimistic message itself.
+   - Each call generates its own `tempId` and runs its own async pipeline, so concurrent invocations don't collide. Confirm the realtime dedupe path still keys off `tempId` / `messenger_mid`.
 
-## Part B — Failure visibility (so you know when something breaks)
+2. **Unblock the input in `src/components/ChatPanel.tsx`**
+   - Remove `isSending` and `isUploadingFile` from the `disabled=` props on the textarea, send button, attach button, and voice button.
+   - Keep functional disables that still make sense: empty input, `isMessengerOutsideWindow`, and the media-preview "Send" button gated on `mediaItems.length === 0`.
+   - On submit: clear `replyText` / selected files immediately, before awaiting the send. The optimistic bubble is already appended synchronously, so the user sees their message and a fresh input in the same frame.
+   - Voice: stop the recorder, append the optimistic voice bubble synchronously, then kick off conversion+upload+send in the background. The mic button returns to idle right away.
 
-Goal: any failure in the background pipeline shows up somewhere staff can see, not just edge logs.
+3. **Per-bubble UX**
+   - Optimistic bubbles continue to show a small "Sending…" / spinner state via `isPending`.
+   - On failure, the bubble is removed (existing behavior) and a toast explains why. No change to error-handling semantics.
+   - Voice bubble shows the same pending indicator while MP3 conversion + upload run in the background.
 
-### New table `public.telegram_webhook_failures`
-Columns: `update_id BIGINT`, `chat_id BIGINT`, `customer_id UUID NULL`, `stage TEXT` (`download` | `storage` | `insert` | `customer_lookup`), `message_type TEXT`, `error TEXT`, `raw_update JSONB`, `created_at`.
+4. **Safety checks**
+   - Confirm no other caller depends on `isSending` / `isUploadingFile` being a hard mutex (search usages in `ChatPanel`, `Customers.tsx`, etc.).
+   - Make sure the realtime subscription continues to reconcile the eventual real row against optimistic messages, even when several are in flight at once.
 
-Standard GRANTs (`authenticated` read, `service_role` all), RLS enabled, policy: admins can read.
+## Out of scope
 
-### Wrap each background step in try/catch
-In the webhook handler's `processUpdate`:
-- Wrap `downloadAndStoreFile` / `downloadAndStoreDocument` / customer auto-create / `.upsert` in try/catch.
-- On any failure, insert a row into `telegram_webhook_failures` with the stage, error message, and the raw Telegram update payload (so it can be replayed manually later if needed).
-- Still log to console so edge logs work too.
-
-### Surface in UI
-- Reuse the existing `WebhookDebug` page — add a "Recent inbound failures" card at the top showing last 20 rows from `telegram_webhook_failures` with stage, error, chat id, and timestamp.
-- That's it for surfacing — no toast/notification system needed unless you want one later. Staff can check the page after any reported "missing message."
-
-### Out of scope (intentionally)
-- No automatic replay/retry of failed updates. Manual retry from the raw payload can be added later if failures actually occur.
-- No Messenger webhook changes — same patterns can be applied there in a future pass if needed.
-- No cleanup of existing duplicate rows from Rotha/Ju Ju chats. Can be done by hand with a one-off SQL script on request.
-
-## Technical detail (for reference)
-
-```text
-inbound update
-   │
-   ├─► return 200 immediately
-   │
-   └─► waitUntil(processUpdate):
-         ├─ customer lookup / auto-create
-         ├─ download from Telegram CDN  ──fail──┐
-         ├─ upload to Storage           ──fail──┤
-         ├─ upsert into messages        ──fail──┤
-         │     onConflict: telegram_update_id    │
-         │     ignoreDuplicates: true            │
-         └─ done                                  ▼
-                              insert into telegram_webhook_failures
-                                          │
-                                          ▼
-                              shows on WebhookDebug page
-```
-
-Upsert with `ignoreDuplicates` means a retry is a no-op at the DB level — no error, no second row, no failure log. Only genuine errors hit the failures table.
+- No backend / edge function changes. Edge functions stay synchronous; only the client stops blocking on them.
+- No schema changes. We rely on existing `isPending` client-side flag and current realtime dedupe.
+- No queue/persistence for in-flight messages across reloads (can be a follow-up if desired).
 
 ## Success criteria
 
-- Sending the same voice/PDF from a Telegram user, even with simulated retries, results in exactly one row in `public.messages` and one working bubble.
-- If the Telegram CDN or Supabase Storage fails mid-pipeline, a row appears in `telegram_webhook_failures` and on the WebhookDebug page within seconds. No more silent message loss.
-- Existing successful flows (text, photo, voice, video, document, profile photo backfill, `/start`) behave identically to today.
-
-## Files to be changed
-
-- `supabase/functions/telegram-bot/index.ts` — add upserts, deterministic storage keys, try/catch per stage with failure logging.
-- New migration — add columns + partial unique index to `messages`, create `telegram_webhook_failures` table with GRANTs + RLS.
-- `src/pages/WebhookDebug.tsx` — new "Recent inbound failures" card.
-- `.lovable/plan.md` — replace with this plan.
+- User can type and send a second text message while the first is still in flight; both appear as optimistic bubbles and resolve independently.
+- User can record and send a voice clip, then immediately type and send a text without waiting; the voice bubble shows pending until upload+send completes.
+- Failed sends remove only their own optimistic bubble and show a toast; other in-flight messages are unaffected.
