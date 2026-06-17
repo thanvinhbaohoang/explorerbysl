@@ -1,43 +1,63 @@
 ## Goal
 
-Replay the 187 failed Telegram webhook events stored in `public.telegram_webhook_failures` so the corresponding messages, customers, and leads appear in the app as if the outage never happened.
+In the chat header, when the currently open customer is linked to another platform account (Telegram ↔ Messenger), show a button representing that other account with a red badge for its unread customer messages. Clicking it switches the chat panel to that linked conversation, and the header (avatar, name, platform badge) updates to that account's details.
 
-## What we have
+## Scope
 
-- 186 rows with `stage = 'insert'` — each has the full Telegram `raw_update` JSON. These can be replayed end-to-end through the existing `telegram-bot` edge function.
-- 1 row with `stage = 'download'` — a file (photo/document/voice) that failed to download from Telegram at the time. Telegram keeps file blobs ~1 hour, so the original `file_id` is almost certainly expired. We'll save the message metadata but mark the media as unavailable.
+Frontend only. No schema or webhook changes. Uses the existing `customer.linked_customer_id` relationship and the existing `get_unread_counts` RPC.
 
-## Plan
+## Behavior
 
-1. **Add a one-shot admin edge function `replay-telegram-failures`** (`verify_jwt = true`, admin-only via `has_role`). It will:
-   - Read rows from `telegram_webhook_failures` ordered by `created_at` ascending (preserves original message order).
-   - For each row, POST `raw_update` back to the existing `telegram-bot` function (internal `supabase.functions.invoke`), exactly as Telegram would have. The current code path handles customer upsert, message insert, media download, leads, and triggers — no logic duplication.
-   - Idempotency safety net: rely on the new `messages_telegram_update_id_key` unique index. Replays that already landed (or that Telegram retried successfully later) will no-op instead of duplicating.
-   - On success, delete the row from `telegram_webhook_failures` (or mark `replayed_at` if we want an audit trail — see step 4).
-   - On failure, leave the row in place and record the new error so we can iterate.
-   - Return a JSON summary `{ replayed, skipped_duplicate, failed, sample_errors }`.
+- Resolve "linked accounts" for the currently selected customer: any customer row where `id = current.linked_customer_id`, OR `linked_customer_id = current.id`, OR (when current has a non-null `linked_customer_id`) any row sharing the same `linked_customer_id`. Exclude the current customer itself.
+- For each linked account on a different platform than the current view, render a small pill/button next to the existing platform badge in the chat header:
+  - Avatar (messenger profile pic if Messenger, otherwise initials)
+  - Platform icon (Facebook for Messenger, Send for Telegram)
+  - Short name
+  - Red destructive `Badge` with unread count (only when count > 0), positioned top-right of the button
+- Click → switches the active conversation to that linked customer. The whole `ChatPanel` re-renders with that customer's avatar, name, messages, platform badge, and reply target. The original account then appears as the switch button on the other side.
+- If there are no linked accounts (or no linked account on a different platform), no extra buttons are shown — header stays as today.
+- Works on both desktop (resizable layout) and mobile (full-screen `ChatPanel`).
 
-2. **Add a small admin UI trigger** on the existing `WebhookDebug` page: a "Replay failed Telegram updates" button (admin-only) that calls the function and shows the summary. Disabled while running. No new page needed.
+## Technical details
 
-3. **Handle the `stage = 'download'` row** specifically:
-   - Attempt the download once. If Telegram returns "file is too old" / 404, insert the message row with `message_text = '[media unavailable — recovered after outage]'`, the correct `customer_id`, `timestamp`, and `message_type`, but null media URL. This keeps the conversation timeline intact even though the binary is gone.
+Files to change:
 
-4. **Audit trail (optional, recommended)**:
-   - Migration: add `replayed_at timestamptz` and `replay_error text` columns to `telegram_webhook_failures` instead of deleting rows. Lets the client see exactly what was recovered.
+1. `src/pages/Chat.tsx`
+   - Pass a new `onSwitchCustomer={setSelectedCustomer}` prop to `<ChatPanel>` in both mobile and desktop branches so the panel can replace the active customer.
 
-5. **Verification after replay**:
-   - Spot-check 5-10 customers whose chats went dark during the window: confirm new messages exist with the original `timestamp` (not `now()`), correct sender, and proper media.
-   - Confirm `messages_telegram_update_id_key` prevented any duplicates by counting `SELECT count(*), count(DISTINCT telegram_update_id) FROM messages WHERE telegram_update_id IS NOT NULL`.
+2. `src/components/ChatPanel.tsx`
+   - Accept new prop `onSwitchCustomer?: (c: Customer) => void`.
+   - New `useEffect` that, whenever `customer.id` changes, fetches linked accounts:
+     - Query `customer` table: `select id, telegram_id, first_name, last_name, username, messenger_id, messenger_name, messenger_profile_pic, last_message_at, page_id, detected_language, language_code, is_premium, first_message_at, created_at, locale, timezone_offset, linked_customer_id` using an `.or()` filter covering the three link cases above.
+     - Filter out the current customer; store as `linkedAccounts: Customer[]` in local state.
+   - Fetch unread counts for those linked ids:
+     - Call `supabase.rpc('get_unread_counts')`, build a `Record<string, number>`, then read counts for each linked account id. Re-fetch on customer change and on a 30s interval (matches existing realtime fallback cadence in this codebase). No need for a realtime subscription — the conversation list already drives realtime; the panel just polls.
+   - Render switcher buttons in the header's right-side action cluster, before the existing platform badge:
+     - For each linked account whose platform differs from the current one, render a `Button variant="outline" size="sm"` containing a tiny `Avatar` (h-5 w-5), the platform icon, and the name (truncated to ~14 chars on mobile).
+     - Wrap the button in a relative container; overlay a `<Badge variant="destructive" className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[10px]">` showing the unread count when > 0.
+     - `onClick` → `onSwitchCustomer?.(linkedAccount)`.
 
-## Notes / caveats
+3. No changes to `useChatMessages`. The platform filter logic inside the hook (built around `linkedCustomersMap`) is currently a no-op because the hook only seeds itself with `[customer.id]`; swapping the `customer` prop is sufficient and cleanest — the hook already fully resets on `selectedCustomer.id` change.
 
-- Messages will appear with their **original Telegram timestamps**, so they slot into the conversation history at the right place rather than as "new" messages.
-- We will **not** re-trigger customer-facing side effects (auto-replies, notifications) during replay. The `telegram-bot` function currently sends replies for `/start` and similar; for replay we'll pass an `x-replay: true` header and have the function skip outbound `sendMessage` calls when that header is present. This avoids spamming customers a day later.
-- Messenger is out of scope for this recovery — those failures (if any) aren't logged in this table. The outage was Telegram-specific.
+## Visual
 
-## Success criteria
+```
+[avatar] John Doe        [Media · 12]  [↩ John (FB) ⓷]  [Telegram]
+         summary chip
+```
 
-- `telegram_webhook_failures` either empties out or every remaining row has a `replay_error` explaining why.
-- The 186 missing Telegram messages appear in their respective customer threads at their original timestamps.
-- No duplicate rows in `messages` for any `telegram_update_id`.
-- No outbound Telegram messages sent to customers as a side effect of the replay.
+`⓷` = red destructive badge with unread count.
+
+## Out of scope
+
+- No change to the conversation list, unread aggregation across linked ids (already done there), the 24h Messenger window logic, or how messages are stored.
+- No support for linking more than 2 platforms (existing data model is 1:1, but loop handles N gracefully).
+- No animation for switch; relies on existing customer-change scroll-to-bottom behavior in `ChatPanel`.
+
+## Verification
+
+- Open a customer that has a linked account on the other platform → switch button appears with correct avatar/name/icon.
+- Send an unread message from the linked side (or seed `is_read=false`) → red badge shows correct count within 30s.
+- Click switch button → header avatar/name/platform badge swap; message list reloads for that account; switch button now points back to the original.
+- Open a customer with no link → no switch button rendered.
+- Mobile viewport: switch button still visible (truncated label) and tappable; no header overflow.

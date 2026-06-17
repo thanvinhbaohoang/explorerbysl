@@ -38,10 +38,12 @@ import {
   Images,
 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ChatPanelProps {
   customer: Customer;
   onBack?: () => void;
+  onSwitchCustomer?: (customer: Customer) => void;
 }
 
 // Helper function to get initials from name
@@ -54,7 +56,7 @@ const getInitials = (name: string): string => {
     .join('');
 };
 
-export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
+export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps) => {
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -68,6 +70,61 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [mediaViewerOpen, setMediaViewerOpen] = useState(false);
+  const [linkedAccounts, setLinkedAccounts] = useState<Customer[]>([]);
+  const [linkedUnreadCounts, setLinkedUnreadCounts] = useState<Record<string, number>>({});
+
+  // Fetch linked accounts whenever current customer changes
+  useEffect(() => {
+    let cancelled = false;
+    const fetchLinked = async () => {
+      const orFilters = [`id.eq.${customer.linked_customer_id || '00000000-0000-0000-0000-000000000000'}`, `linked_customer_id.eq.${customer.id}`];
+      if (customer.linked_customer_id) {
+        orFilters.push(`linked_customer_id.eq.${customer.linked_customer_id}`);
+      }
+      const { data, error } = await supabase
+        .from("customer")
+        .select("id, telegram_id, username, first_name, last_name, language_code, detected_language, is_premium, first_message_at, last_message_at, created_at, messenger_id, messenger_name, messenger_profile_pic, locale, timezone_offset, linked_customer_id, page_id")
+        .or(orFilters.join(","));
+
+      if (cancelled) return;
+      if (error || !data) {
+        setLinkedAccounts([]);
+        return;
+      }
+      const filtered = data.filter((c) => c.id !== customer.id) as Customer[];
+      // Dedupe by id
+      const seen = new Set<string>();
+      const unique = filtered.filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)));
+      setLinkedAccounts(unique);
+    };
+    fetchLinked();
+    return () => { cancelled = true; };
+  }, [customer.id, customer.linked_customer_id]);
+
+  // Poll unread counts for linked accounts
+  useEffect(() => {
+    if (linkedAccounts.length === 0) {
+      setLinkedUnreadCounts({});
+      return;
+    }
+    let cancelled = false;
+    const fetchUnread = async () => {
+      const { data, error } = await supabase.rpc("get_unread_counts");
+      if (cancelled || error || !data) return;
+      const map: Record<string, number> = {};
+      const linkedIds = new Set(linkedAccounts.map((a) => a.id));
+      for (const row of data as Array<{ customer_id: string; unread_count: number }>) {
+        if (linkedIds.has(row.customer_id)) {
+          map[row.customer_id] = Number(row.unread_count) || 0;
+        }
+      }
+      setLinkedUnreadCounts(map);
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [linkedAccounts]);
+
 
   const {
     filteredMessages,
@@ -425,7 +482,47 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {linkedAccounts
+              .filter((acc) => {
+                const accPlatform = acc.messenger_id ? 'messenger' : 'telegram';
+                const curPlatform = customer.messenger_id ? 'messenger' : 'telegram';
+                return accPlatform !== curPlatform;
+              })
+              .map((acc) => {
+                const isMessenger = !!acc.messenger_id;
+                const accName = acc.messenger_name || `${acc.first_name || ''} ${acc.last_name || ''}`.trim() || 'Account';
+                const unread = linkedUnreadCounts[acc.id] || 0;
+                return (
+                  <div key={acc.id} className="relative">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs pl-1 pr-2 gap-1"
+                      onClick={() => onSwitchCustomer?.(acc)}
+                      title={`Switch to ${isMessenger ? 'Messenger' : 'Telegram'} conversation with ${accName}`}
+                    >
+                      <Avatar className="h-5 w-5">
+                        <AvatarImage src={acc.messenger_profile_pic || undefined} />
+                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                          {getInitials(accName)}
+                        </AvatarFallback>
+                      </Avatar>
+                      {isMessenger ? <Facebook className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+                      <span className="max-w-[80px] truncate">{accName}</span>
+                    </Button>
+                    {unread > 0 && (
+                      <Badge
+                        variant="destructive"
+                        className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[10px] leading-none flex items-center justify-center rounded-full"
+                      >
+                        {unread > 99 ? '99+' : unread}
+                      </Badge>
+                    )}
+                  </div>
+                );
+              })}
+
             <Button
               variant="outline"
               size="sm"
@@ -437,6 +534,7 @@ export const ChatPanel = ({ customer, onBack }: ChatPanelProps) => {
               <Images className="h-3 w-3 mr-1" />
               Media{mediaItems.length > 0 ? ` · ${mediaItems.length}` : ''}
             </Button>
+
 
             <Badge variant={customer.messenger_id ? 'default' : 'secondary'}>
               {customer.messenger_id ? (
