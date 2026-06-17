@@ -482,7 +482,47 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {linkedAccounts
+              .filter((acc) => {
+                const accPlatform = acc.messenger_id ? 'messenger' : 'telegram';
+                const curPlatform = customer.messenger_id ? 'messenger' : 'telegram';
+                return accPlatform !== curPlatform;
+              })
+              .map((acc) => {
+                const isMessenger = !!acc.messenger_id;
+                const accName = acc.messenger_name || `${acc.first_name || ''} ${acc.last_name || ''}`.trim() || 'Account';
+                const unread = linkedUnreadCounts[acc.id] || 0;
+                return (
+                  <div key={acc.id} className="relative">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs pl-1 pr-2 gap-1"
+                      onClick={() => onSwitchCustomer?.(acc)}
+                      title={`Switch to ${isMessenger ? 'Messenger' : 'Telegram'} conversation with ${accName}`}
+                    >
+                      <Avatar className="h-5 w-5">
+                        <AvatarImage src={acc.messenger_profile_pic || undefined} />
+                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                          {getInitials(accName)}
+                        </AvatarFallback>
+                      </Avatar>
+                      {isMessenger ? <Facebook className="h-3 w-3" /> : <Send className="h-3 w-3" />}
+                      <span className="max-w-[80px] truncate">{accName}</span>
+                    </Button>
+                    {unread > 0 && (
+                      <Badge
+                        variant="destructive"
+                        className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[10px] leading-none flex items-center justify-center rounded-full"
+                      >
+                        {unread > 99 ? '99+' : unread}
+                      </Badge>
+                    )}
+                  </div>
+                );
+              })}
+
             <Button
               variant="outline"
               size="sm"
@@ -494,6 +534,7 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
               <Images className="h-3 w-3 mr-1" />
               Media{mediaItems.length > 0 ? ` · ${mediaItems.length}` : ''}
             </Button>
+
 
             <Badge variant={customer.messenger_id ? 'default' : 'secondary'}>
               {customer.messenger_id ? (
