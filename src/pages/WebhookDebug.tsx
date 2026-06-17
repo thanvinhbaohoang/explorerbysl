@@ -47,9 +47,41 @@ const WebhookDebug = () => {
     pageAccessTokenSet: false,
   });
   const [uniquePages, setUniquePages] = useState<string[]>([]);
-  
+  const [failureCount, setFailureCount] = useState<number | null>(null);
+  const [replaying, setReplaying] = useState(false);
+  const [lastReplay, setLastReplay] = useState<any>(null);
+  const { isAdmin } = useUserRole();
+
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/messenger-webhook`;
   const verifyToken = "Your FACEBOOK_VERIFY_TOKEN secret value";
+
+  const fetchFailureCount = async () => {
+    const { count } = await supabase
+      .from('telegram_webhook_failures')
+      .select('id', { count: 'exact', head: true })
+      .is('replayed_at', null);
+    setFailureCount(count ?? 0);
+  };
+
+  const replayFailures = async () => {
+    setReplaying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('replay-telegram-failures', {
+        body: { limit: 500 },
+      });
+      if (error) throw error;
+      setLastReplay(data);
+      toast.success(
+        `Replay complete: ${data.replayed} restored, ${data.skipped_duplicate} skipped, ${data.failed} failed`
+      );
+      await fetchFailureCount();
+      await fetchData();
+    } catch (e: any) {
+      toast.error(`Replay failed: ${e.message || e}`);
+    } finally {
+      setReplaying(false);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
