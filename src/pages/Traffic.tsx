@@ -85,6 +85,7 @@ const getPageNumbers = (currentPage: number, totalPages: number): (number | 'ell
 };
 import { TrendingUp, Search, X, Filter, UserPlus, User, CalendarIcon, MessageCircle, Send, Hash, Link as LinkIcon, Megaphone, Download } from "lucide-react";
 import { exportToCSV } from "@/lib/csv-export";
+import { fetchAllRows } from "@/lib/fetch-all-rows";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { cn } from "@/lib/utils";
 import { useTrafficFilterOptions, useTrafficData } from "@/hooks/useTrafficData";

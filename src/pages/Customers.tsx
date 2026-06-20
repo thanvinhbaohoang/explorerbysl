@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/select";
 import { Users, Bell, MessageSquare, Send, Facebook, AlertCircle, Link, Paperclip, Image, Video, X, Loader2, Mic, Square, Play, Pause, Trash2, Clock, Download, FileText, Search } from "lucide-react";
 import { exportToCSV } from "@/lib/csv-export";
+import { fetchAllRows } from "@/lib/fetch-all-rows";
 import { ChatSummaryDialog } from "@/components/ChatSummaryDialog";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { detectLanguage, getLanguageLabel } from "@/lib/language-detection";
