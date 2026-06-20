@@ -85,6 +85,7 @@ const getPageNumbers = (currentPage: number, totalPages: number): (number | 'ell
 };
 import { TrendingUp, Search, X, Filter, UserPlus, User, CalendarIcon, MessageCircle, Send, Hash, Link as LinkIcon, Megaphone, Download } from "lucide-react";
 import { exportToCSV } from "@/lib/csv-export";
+import { fetchAllRows } from "@/lib/fetch-all-rows";
 import { TableSkeleton } from "@/components/TableSkeleton";
 import { cn } from "@/lib/utils";
 import { useTrafficFilterOptions, useTrafficData } from "@/hooks/useTrafficData";
@@ -355,62 +356,73 @@ const Traffic = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={async () => {
-                  toast.info("Exporting all traffic data...");
-                  const { data: allTraffic, error } = await supabase
-                    .from('telegram_leads')
-                    .select('*, customer:user_id(id, telegram_id, username, first_name, last_name, messenger_id, messenger_name, first_message_at)')
-                    .not('user_id', 'is', null)
-                    .order('created_at', { ascending: false });
-                  
-                  if (error) {
-                    toast.error("Failed to export traffic data");
-                    return;
+                onClick={async (e) => {
+                  const btn = e.currentTarget as HTMLButtonElement;
+                  btn.disabled = true;
+                  const progressToast = toast.loading("Exporting all traffic data...");
+                  try {
+                    const allTraffic = await fetchAllRows<any>(
+                      (from, to) =>
+                        supabase
+                          .from('telegram_leads')
+                          .select('*, customer:user_id(id, telegram_id, username, first_name, last_name, messenger_id, messenger_name, first_message_at)')
+                          .not('user_id', 'is', null)
+                          .order('created_at', { ascending: false })
+                          .range(from, to),
+                      {
+                        onProgress: (n) =>
+                          toast.loading(`Exporting traffic… ${n} rows so far`, { id: progressToast }),
+                      }
+                    );
+
+                    const trafficWithStatus = allTraffic.map((t: any) => ({
+                      ...t,
+                      isNewCustomer: t.customer?.first_message_at ?
+                        Math.abs(new Date(t.created_at).getTime() - new Date(t.customer.first_message_at).getTime()) < 60000 : false
+                    }));
+
+                    exportToCSV(
+                      trafficWithStatus,
+                      [
+                        // Lead/Traffic record columns
+                        { key: 'id', header: 'ID' },
+                        { key: 'platform', header: 'Platform' },
+                        { key: 'isNewCustomer', header: 'Status', getValue: (t: any) => t.isNewCustomer ? 'New' : 'Existing' },
+                        { key: 'created_at', header: 'Created At', getValue: (t: any) => new Date(t.created_at).toLocaleString() },
+                        { key: 'updated_at', header: 'Updated At', getValue: (t: any) => t.updated_at ? new Date(t.updated_at).toLocaleString() : '' },
+                        // Customer info
+                        { key: 'customer_name', header: 'Customer Name', getValue: (t: any) => t.customer ? (t.customer.first_name || t.customer.messenger_name || '') + ' ' + (t.customer.last_name || '') : '' },
+                        { key: 'user_id', header: 'Customer ID', getValue: (t: any) => t.user_id || '' },
+                        // UTM parameters
+                        { key: 'utm_source', header: 'UTM Source' },
+                        { key: 'utm_medium', header: 'UTM Medium' },
+                        { key: 'utm_campaign', header: 'UTM Campaign' },
+                        { key: 'utm_content', header: 'UTM Content' },
+                        { key: 'utm_term', header: 'UTM Term' },
+                        { key: 'utm_campaign_id', header: 'UTM Campaign ID' },
+                        { key: 'utm_adset_id', header: 'UTM Ad Set ID' },
+                        { key: 'utm_ad_id', header: 'UTM Ad ID' },
+                        // Facebook/Meta tracking
+                        { key: 'facebook_click_id', header: 'FB Click ID' },
+                        // Messenger specific
+                        { key: 'messenger_ref', header: 'Post Tag' },
+                        { key: 'post_id', header: 'FB Post ID' },
+                        { key: 'ad_title', header: 'FB Ad Title' },
+                        { key: 'ad_id', header: 'FB Ad ID' },
+                        { key: 'messenger_ad_context', header: 'Messenger Ad Context (raw)', getValue: (t: any) => t.messenger_ad_context ? JSON.stringify(t.messenger_ad_context) : '' },
+                        // Other
+                        { key: 'referrer', header: 'Referrer' },
+                      ],
+                      'traffic'
+                    );
+                    toast.success(`Exported ${allTraffic.length} traffic records`, { id: progressToast });
+                  } catch (err: any) {
+                    toast.error(`Failed to export traffic data: ${err?.message ?? 'unknown error'}`, { id: progressToast });
+                  } finally {
+                    btn.disabled = false;
                   }
-                  
-                  // Determine if customer is new based on first_message_at
-                  const trafficWithStatus = (allTraffic || []).map(t => ({
-                    ...t,
-                    isNewCustomer: t.customer?.first_message_at ? 
-                      Math.abs(new Date(t.created_at).getTime() - new Date(t.customer.first_message_at).getTime()) < 60000 : false
-                  }));
-                  
-                  exportToCSV(
-                    trafficWithStatus,
-                    [
-                      // Lead/Traffic record columns
-                      { key: 'id', header: 'ID' },
-                      { key: 'platform', header: 'Platform' },
-                      { key: 'isNewCustomer', header: 'Status', getValue: (t: any) => t.isNewCustomer ? 'New' : 'Existing' },
-                      { key: 'created_at', header: 'Created At', getValue: (t: any) => new Date(t.created_at).toLocaleString() },
-                      { key: 'updated_at', header: 'Updated At', getValue: (t: any) => t.updated_at ? new Date(t.updated_at).toLocaleString() : '' },
-                      // Customer info
-                      { key: 'customer_name', header: 'Customer Name', getValue: (t: any) => t.customer ? (t.customer.first_name || t.customer.messenger_name || '') + ' ' + (t.customer.last_name || '') : '' },
-                      { key: 'user_id', header: 'Customer ID', getValue: (t: any) => t.user_id || '' },
-                      // UTM parameters
-                      { key: 'utm_source', header: 'UTM Source' },
-                      { key: 'utm_medium', header: 'UTM Medium' },
-                      { key: 'utm_campaign', header: 'UTM Campaign' },
-                      { key: 'utm_content', header: 'UTM Content' },
-                      { key: 'utm_term', header: 'UTM Term' },
-                      { key: 'utm_campaign_id', header: 'UTM Campaign ID' },
-                      { key: 'utm_adset_id', header: 'UTM Ad Set ID' },
-                      { key: 'utm_ad_id', header: 'UTM Ad ID' },
-                      // Facebook/Meta tracking
-                      { key: 'facebook_click_id', header: 'FB Click ID' },
-                      // Messenger specific
-                      { key: 'messenger_ref', header: 'Post Tag' },
-                      { key: 'post_id', header: 'FB Post ID' },
-                      { key: 'ad_title', header: 'FB Ad Title' },
-                      { key: 'ad_id', header: 'FB Ad ID' },
-                      { key: 'messenger_ad_context', header: 'Messenger Ad Context (raw)', getValue: (t: any) => t.messenger_ad_context ? JSON.stringify(t.messenger_ad_context) : '' },
-                      // Other
-                      { key: 'referrer', header: 'Referrer' },
-                    ],
-                    'traffic'
-                  );
-                  toast.success(`Exported ${allTraffic?.length || 0} traffic records`);
                 }}
+
               >
                 <Download className="h-4 w-4 mr-2" />
                 Export CSV
