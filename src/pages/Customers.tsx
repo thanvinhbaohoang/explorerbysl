@@ -1753,62 +1753,74 @@ const Customers = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={async () => {
-                  toast.info("Exporting all customers...");
-                  const { data: allCustomers, error } = await supabase
-                    .from('customer')
-                    .select('*')
-                    .is('linked_customer_id', null)
-                    .order('last_message_at', { ascending: false });
-                  
-                  if (error) {
-                    toast.error("Failed to export customers");
-                    return;
+                onClick={async (e) => {
+                  const btn = e.currentTarget as HTMLButtonElement;
+                  btn.disabled = true;
+                  const progressToast = toast.loading("Exporting all customers...");
+                  try {
+                    const allCustomers = await fetchAllRows<any>(
+                      (from, to) =>
+                        supabase
+                          .from('customer')
+                          .select('*')
+                          .is('linked_customer_id', null)
+                          .order('last_message_at', { ascending: false })
+                          .range(from, to),
+                      {
+                        onProgress: (n) =>
+                          toast.loading(`Exporting customers… ${n} rows so far`, { id: progressToast }),
+                      }
+                    );
+
+                    exportToCSV(
+                      allCustomers,
+                      [
+                        // Core identifiers
+                        { key: 'id', header: 'ID' },
+                        { key: 'platform', header: 'Platform', getValue: (c) => c.messenger_id ? 'Messenger' : 'Telegram' },
+                        // Display names
+                        { key: 'first_name', header: 'First Name' },
+                        { key: 'last_name', header: 'Last Name' },
+                        { key: 'username', header: 'Username' },
+                        { key: 'messenger_name', header: 'Messenger Name' },
+                        // Platform IDs
+                        { key: 'telegram_id', header: 'Telegram ID' },
+                        { key: 'messenger_id', header: 'Messenger ID' },
+                        { key: 'page_id', header: 'Page ID' },
+                        // Language & locale
+                        { key: 'detected_language', header: 'Detected Language', getValue: (c) => getLanguageLabel(c.detected_language) },
+                        { key: 'language_code', header: 'Language Code' },
+                        { key: 'locale', header: 'Locale' },
+                        { key: 'timezone_offset', header: 'Timezone Offset' },
+                        // Timestamps
+                        { key: 'first_message_at', header: 'First Message', getValue: (c) => formatDateGMT7(c.first_message_at) },
+                        { key: 'last_message_at', header: 'Last Message', getValue: (c) => formatDateGMT7(c.last_message_at) },
+                        { key: 'created_at', header: 'Created At', getValue: (c) => formatDateGMT7(c.created_at) },
+                        { key: 'updated_at', header: 'Updated At', getValue: (c) => formatDateGMT7(c.updated_at) },
+                        // Status
+                        { key: 'is_premium', header: 'Premium', getValue: (c) => c.is_premium ? 'Yes' : 'No' },
+                        { key: 'linked_customer_id', header: 'Linked Customer ID' },
+                        // Profile
+                        { key: 'messenger_profile_pic', header: 'Profile Picture URL' },
+                        // Legal/Identity fields
+                        { key: 'legal_first_name', header: 'Legal First Name' },
+                        { key: 'legal_middle_name', header: 'Legal Middle Name' },
+                        { key: 'legal_last_name', header: 'Legal Last Name' },
+                        { key: 'sex', header: 'Sex' },
+                        { key: 'passport_number', header: 'Passport Number' },
+                        { key: 'nationality', header: 'Nationality' },
+                        { key: 'national_id', header: 'National ID' },
+                      ],
+                      'customers'
+                    );
+                    toast.success(`Exported ${allCustomers.length} customers`, { id: progressToast });
+                  } catch (err: any) {
+                    toast.error(`Failed to export customers: ${err?.message ?? 'unknown error'}`, { id: progressToast });
+                  } finally {
+                    btn.disabled = false;
                   }
-                  
-                  exportToCSV(
-                    allCustomers || [],
-                    [
-                      // Core identifiers
-                      { key: 'id', header: 'ID' },
-                      { key: 'platform', header: 'Platform', getValue: (c) => c.messenger_id ? 'Messenger' : 'Telegram' },
-                      // Display names
-                      { key: 'first_name', header: 'First Name' },
-                      { key: 'last_name', header: 'Last Name' },
-                      { key: 'username', header: 'Username' },
-                      { key: 'messenger_name', header: 'Messenger Name' },
-                      // Platform IDs
-                      { key: 'telegram_id', header: 'Telegram ID' },
-                      { key: 'messenger_id', header: 'Messenger ID' },
-                      { key: 'page_id', header: 'Page ID' },
-                      // Language & locale
-                      { key: 'detected_language', header: 'Detected Language', getValue: (c) => getLanguageLabel(c.detected_language) },
-                      { key: 'language_code', header: 'Language Code' },
-                      { key: 'locale', header: 'Locale' },
-                      { key: 'timezone_offset', header: 'Timezone Offset' },
-                      // Timestamps
-                      { key: 'first_message_at', header: 'First Message', getValue: (c) => formatDateGMT7(c.first_message_at) },
-                      { key: 'last_message_at', header: 'Last Message', getValue: (c) => formatDateGMT7(c.last_message_at) },
-                      { key: 'created_at', header: 'Created At', getValue: (c) => formatDateGMT7(c.created_at) },
-                      { key: 'updated_at', header: 'Updated At', getValue: (c) => formatDateGMT7(c.updated_at) },
-                      // Status
-                      { key: 'is_premium', header: 'Premium', getValue: (c) => c.is_premium ? 'Yes' : 'No' },
-                      { key: 'linked_customer_id', header: 'Linked Customer ID' },
-                      // Profile
-                      { key: 'messenger_profile_pic', header: 'Profile Picture URL' },
-                      // Legal/Identity fields
-                      { key: 'legal_first_name', header: 'Legal First Name' },
-                      { key: 'legal_middle_name', header: 'Legal Middle Name' },
-                      { key: 'legal_last_name', header: 'Legal Last Name' },
-                      { key: 'sex', header: 'Sex' },
-                      { key: 'passport_number', header: 'Passport Number' },
-                      { key: 'nationality', header: 'Nationality' },
-                      { key: 'national_id', header: 'National ID' },
-                    ],
-                    'customers'
-                  );
-                  toast.success(`Exported ${allCustomers?.length || 0} customers`);
                 }}
+
               >
                 <Download className="h-4 w-4 mr-2" />
                 Export CSV
