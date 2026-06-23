@@ -50,6 +50,7 @@ interface Customer {
   passport_number: string | null;
   nationality: string | null;
   national_id: string | null;
+  page_id: string | null;
 }
 
 interface LeadSource {
@@ -94,6 +95,7 @@ const CustomerDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [unifiedData, setUnifiedData] = useState<UnifiedCustomerData | null>(null);
+  const [pageNameMap, setPageNameMap] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
@@ -223,6 +225,22 @@ const CustomerDetail = () => {
           fromEmployee: messages.filter(m => m.sender_type === "employee").length,
           lastMessageAt: messages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0].timestamp,
         };
+      }
+
+      // Fetch facebook page names for any page_ids present on messenger accounts
+      const pageIds = Array.from(new Set(
+        messengerAccounts.map(c => c.page_id).filter((v): v is string => !!v)
+      ));
+      if (pageIds.length > 0) {
+        const { data: pages } = await supabase
+          .from("facebook_pages")
+          .select("page_id, name")
+          .in("page_id", pageIds);
+        const map: Record<string, string> = {};
+        pages?.forEach(p => { if (p.page_id && p.name) map[p.page_id] = p.name; });
+        setPageNameMap(map);
+      } else {
+        setPageNameMap({});
       }
 
       setUnifiedData({
@@ -409,6 +427,17 @@ const CustomerDetail = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <InfoItem label="Messenger PSID" value={account.messenger_id} icon={<Hash className="h-4 w-4" />} />
                     <InfoItem label="Name" value={account.messenger_name} icon={<User className="h-4 w-4" />} />
+                    <InfoItem
+                      label="Messaged Facebook Page"
+                      value={
+                        account.page_id
+                          ? (pageNameMap[account.page_id]
+                              ? `${pageNameMap[account.page_id]} (${account.page_id})`
+                              : account.page_id)
+                          : null
+                      }
+                      icon={<Facebook className="h-4 w-4" />}
+                    />
                     <InfoItem label="Locale" value={account.locale} icon={<Globe className="h-4 w-4" />} />
                     {account.timezone_offset !== null && (
                       <InfoItem 
