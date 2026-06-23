@@ -427,6 +427,17 @@ const CustomerDetail = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <InfoItem label="Messenger PSID" value={account.messenger_id} icon={<Hash className="h-4 w-4" />} />
                     <InfoItem label="Name" value={account.messenger_name} icon={<User className="h-4 w-4" />} />
+                    <InfoItem
+                      label="Messaged Facebook Page"
+                      value={
+                        account.page_id
+                          ? (pageNameMap[account.page_id]
+                              ? `${pageNameMap[account.page_id]} (${account.page_id})`
+                              : account.page_id)
+                          : null
+                      }
+                      icon={<Facebook className="h-4 w-4" />}
+                    />
                     <InfoItem label="Locale" value={account.locale} icon={<Globe className="h-4 w-4" />} />
                     {account.timezone_offset !== null && (
                       <InfoItem 
