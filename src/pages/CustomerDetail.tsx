@@ -65,6 +65,10 @@ interface LeadSource {
   utm_term: string | null;
   referrer: string | null;
   facebook_click_id: string | null;
+  ad_id: string | null;
+  utm_campaign_id: string | null;
+  utm_adset_id: string | null;
+  utm_ad_id: string | null;
   created_at: string;
   user_id: string;
 }
@@ -534,13 +538,14 @@ const CustomerDetail = () => {
                       <InfoItem label="Platform" value={leadSource.platform} />
                       {leadSource.messenger_ref && <InfoItem label="Post Tag" value={leadSource.messenger_ref} />}
                       {leadSource.ad_title && <InfoItem label="Ad Title" value={leadSource.ad_title} />}
+                      {leadSource.ad_id && <InfoItem label="Ad ID" value={leadSource.ad_id} />}
                       {leadSource.post_id && <InfoItem label="Post ID" value={leadSource.post_id} />}
                       {leadSource.referrer && <InfoItem label="Referrer" value={leadSource.referrer} />}
                       {leadSource.facebook_click_id && <InfoItem label="Facebook Click ID" value={leadSource.facebook_click_id} />}
                     </div>
 
                     {/* UTM Parameters - always show section if any UTM param exists */}
-                    {(leadSource.utm_source || leadSource.utm_medium || leadSource.utm_campaign || leadSource.utm_content || leadSource.utm_term) && (
+                    {(leadSource.utm_source || leadSource.utm_medium || leadSource.utm_campaign || leadSource.utm_content || leadSource.utm_term || leadSource.utm_campaign_id || leadSource.utm_adset_id || leadSource.utm_ad_id) && (
                       <>
                         <Separator className="my-4" />
                         <div>
@@ -551,6 +556,9 @@ const CustomerDetail = () => {
                             <InfoItem label="Campaign" value={leadSource.utm_campaign || "—"} />
                             <InfoItem label="Content" value={leadSource.utm_content || "—"} />
                             <InfoItem label="Term" value={leadSource.utm_term || "—"} />
+                            <InfoItem label="Campaign ID" value={leadSource.utm_campaign_id || "—"} />
+                            <InfoItem label="Adset ID" value={leadSource.utm_adset_id || "—"} />
+                            <InfoItem label="Ad ID" value={leadSource.utm_ad_id || "—"} />
                           </div>
                         </div>
                       </>
