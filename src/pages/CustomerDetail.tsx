@@ -227,6 +227,22 @@ const CustomerDetail = () => {
         };
       }
 
+      // Fetch facebook page names for any page_ids present on messenger accounts
+      const pageIds = Array.from(new Set(
+        messengerAccounts.map(c => c.page_id).filter((v): v is string => !!v)
+      ));
+      if (pageIds.length > 0) {
+        const { data: pages } = await supabase
+          .from("facebook_pages")
+          .select("page_id, name")
+          .in("page_id", pageIds);
+        const map: Record<string, string> = {};
+        pages?.forEach(p => { if (p.page_id && p.name) map[p.page_id] = p.name; });
+        setPageNameMap(map);
+      } else {
+        setPageNameMap({});
+      }
+
       setUnifiedData({
         primaryCustomer,
         allCustomers,
