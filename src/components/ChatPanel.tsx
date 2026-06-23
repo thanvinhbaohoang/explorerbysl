@@ -453,6 +453,10 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
+    // Ignore scroll events while a customer-switch scroll-to-bottom is pending,
+    // or before the first page has finished loading — otherwise a transient
+    // scrollTop=0 during mount triggers a phantom "load older" and pins us at the top.
+    if (pendingScrollToBottomRef.current || isLoadingMessages || messageOffset === 0) return;
     if (container.scrollTop < 50 && hasMoreMessages && !isLoadingMoreMessages) {
       prevScrollHeightRef.current = container.scrollHeight;
       isPrependingRef.current = true;
