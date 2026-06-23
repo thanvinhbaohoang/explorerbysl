@@ -830,6 +830,32 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
   }
 }
 
+// Cache: ad_id -> { adset_id, campaign_id, campaign_name }
+const adHierarchyCache = new Map<string, { adset_id: string | null; campaign_id: string | null; campaign_name: string | null }>();
+
+async function lookupAdHierarchy(adId: string): Promise<{ adset_id: string | null; campaign_id: string | null; campaign_name: string | null }> {
+  const cached = adHierarchyCache.get(adId);
+  if (cached) return cached;
+  const token = systemUserToken;
+  if (!token) {
+    return { adset_id: null, campaign_id: null, campaign_name: null };
+  }
+  const url = `https://graph.facebook.com/v21.0/${adId}?fields=adset_id,campaign_id,campaign{name}&access_token=${token}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!res.ok || data?.error) {
+    console.warn(`[lookupAdHierarchy] graph error for ad_id=${adId}:`, data?.error || res.status);
+    return { adset_id: null, campaign_id: null, campaign_name: null };
+  }
+  const result = {
+    adset_id: data.adset_id || null,
+    campaign_id: data.campaign_id || null,
+    campaign_name: data.campaign?.name || null,
+  };
+  adHierarchyCache.set(adId, result);
+  return result;
+}
+
 // Handle referrals (ad attribution)
 async function handleReferral(senderId: string, referral: any, pageId: string) {
   console.log(`Handling referral from ${senderId} on page ${pageId}:`, referral);
@@ -905,6 +931,21 @@ async function handleReferral(senderId: string, referral: any, pageId: string) {
       return;
     }
 
+    // Enrich with adset_id / campaign_id from Marketing API (best-effort)
+    let adsetId: string | null = null;
+    let campaignId: string | null = null;
+    let campaignName: string | null = null;
+    if (adId) {
+      try {
+        const enriched = await lookupAdHierarchy(adId);
+        adsetId = enriched.adset_id;
+        campaignId = enriched.campaign_id;
+        campaignName = enriched.campaign_name;
+      } catch (e) {
+        console.warn(`[handleReferral] ad hierarchy lookup failed for ad_id=${adId}:`, e);
+      }
+    }
+
     const { error: leadError } = await supabase
       .from('telegram_leads')
       .insert({
@@ -916,6 +957,10 @@ async function handleReferral(senderId: string, referral: any, pageId: string) {
         post_id: postId,
         ad_title: referral.ads_context_data?.ad_title || null,
         referrer: referral.source || null,
+        utm_ad_id: adId,
+        utm_adset_id: adsetId,
+        utm_campaign_id: campaignId,
+        utm_campaign: campaignName,
       });
     
     if (leadError) {

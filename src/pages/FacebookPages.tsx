@@ -330,6 +330,24 @@ const FacebookPages = () => {
       setBackfillRunning(false);
     }
   };
+
+  // Backfill ad attribution (adset_id / campaign_id) for messenger leads
+  const [adAttrRunning, setAdAttrRunning] = useState(false);
+  const runBackfillAdAttribution = async () => {
+    setAdAttrRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('backfill-messenger-ad-ids', {});
+      if (error) throw error;
+      const r = data as { scanned: number; unique_ads: number; updated: number; failed: number };
+      toast.success('Ad attribution backfill complete', {
+        description: `Scanned ${r.scanned} · Unique ads ${r.unique_ads} · Updated ${r.updated} · Failed ${r.failed}`,
+      });
+    } catch (err: any) {
+      toast.error('Backfill failed', { description: err.message });
+    } finally {
+      setAdAttrRunning(false);
+    }
+  };
   
   // Fetch database pages for token management
   const fetchDbPages = async () => {
@@ -1469,6 +1487,31 @@ const FacebookPages = () => {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Backfill Ad Attribution - Admin Only */}
+              {isAdmin && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <RefreshCw className="h-5 w-5" />
+                      Backfill ad attribution (adset / campaign IDs)
+                    </CardTitle>
+                    <CardDescription>
+                      Messenger ad clicks only deliver <code>ad_id</code>. This looks up the matching <code>adset_id</code> and{' '}
+                      <code>campaign_id</code> via the Marketing API (using the System User token) and fills them into existing
+                      traffic leads. Safe to run repeatedly.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button onClick={runBackfillAdAttribution} disabled={adAttrRunning} className="gap-2">
+                      {adAttrRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      {adAttrRunning ? 'Running…' : 'Backfill now'}
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+
 
               {/* Cleanup Unknown Messenger Customers - Admin Only */}
               {isAdmin && (
