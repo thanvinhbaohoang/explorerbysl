@@ -830,6 +830,32 @@ async function handleMessage(senderId: string, message: any, pageId: string, has
   }
 }
 
+// Cache: ad_id -> { adset_id, campaign_id, campaign_name }
+const adHierarchyCache = new Map<string, { adset_id: string | null; campaign_id: string | null; campaign_name: string | null }>();
+
+async function lookupAdHierarchy(adId: string): Promise<{ adset_id: string | null; campaign_id: string | null; campaign_name: string | null }> {
+  const cached = adHierarchyCache.get(adId);
+  if (cached) return cached;
+  const token = systemUserToken;
+  if (!token) {
+    return { adset_id: null, campaign_id: null, campaign_name: null };
+  }
+  const url = `https://graph.facebook.com/v21.0/${adId}?fields=adset_id,campaign_id,campaign{name}&access_token=${token}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!res.ok || data?.error) {
+    console.warn(`[lookupAdHierarchy] graph error for ad_id=${adId}:`, data?.error || res.status);
+    return { adset_id: null, campaign_id: null, campaign_name: null };
+  }
+  const result = {
+    adset_id: data.adset_id || null,
+    campaign_id: data.campaign_id || null,
+    campaign_name: data.campaign?.name || null,
+  };
+  adHierarchyCache.set(adId, result);
+  return result;
+}
+
 // Handle referrals (ad attribution)
 async function handleReferral(senderId: string, referral: any, pageId: string) {
   console.log(`Handling referral from ${senderId} on page ${pageId}:`, referral);
