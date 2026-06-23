@@ -259,6 +259,11 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
   // Load messages when customer changes
   useEffect(() => {
     if (customer) {
+      // Reset any leftover prepend/anchor state from the previous conversation
+      isPrependingRef.current = false;
+      prevScrollHeightRef.current = null;
+      // Mark that the next render with this customer's messages must jump to bottom
+      pendingScrollToBottomRef.current = true;
       loadMessages(customer);
     }
   }, [customer.id]);
@@ -271,7 +276,6 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
     const container = scrollContainerRef.current;
     if (!container || isLoadingMessages) return;
 
-    const customerChanged = prevCustomerIdRef.current !== customer.id;
     const platformChanged = prevPlatformFilterRef.current !== platformFilter;
     const lastMsg = filteredMessages[filteredMessages.length - 1];
     const lastMsgId = lastMsg?.id ?? null;
@@ -282,8 +286,19 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
       container.scrollTop = Math.max(delta, 1);
       isPrependingRef.current = false;
       prevScrollHeightRef.current = null;
-    } else if (customerChanged || platformChanged) {
-      // Jump to bottom on conversation/platform switch
+    } else if (pendingScrollToBottomRef.current) {
+      // Wait until we actually have the new customer's messages rendered before jumping
+      if (filteredMessages.length > 0) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        // Re-assert on next paint to defeat any layout shift (images/media loading in)
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        }, 50);
+        pendingScrollToBottomRef.current = false;
+        prevCustomerIdRef.current = customer.id;
+        prevLastMessageIdRef.current = lastMsgId;
+      }
+    } else if (platformChanged) {
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
       }, 50);
@@ -295,9 +310,10 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
       }
     }
 
-    prevCustomerIdRef.current = customer.id;
     prevPlatformFilterRef.current = platformFilter;
-    prevLastMessageIdRef.current = lastMsgId;
+    if (!pendingScrollToBottomRef.current) {
+      prevLastMessageIdRef.current = lastMsgId;
+    }
   }, [filteredMessages, isLoadingMessages, platformFilter, customer.id]);
 
   // Shared file processing function
