@@ -905,6 +905,21 @@ async function handleReferral(senderId: string, referral: any, pageId: string) {
       return;
     }
 
+    // Enrich with adset_id / campaign_id from Marketing API (best-effort)
+    let adsetId: string | null = null;
+    let campaignId: string | null = null;
+    let campaignName: string | null = null;
+    if (adId) {
+      try {
+        const enriched = await lookupAdHierarchy(adId);
+        adsetId = enriched.adset_id;
+        campaignId = enriched.campaign_id;
+        campaignName = enriched.campaign_name;
+      } catch (e) {
+        console.warn(`[handleReferral] ad hierarchy lookup failed for ad_id=${adId}:`, e);
+      }
+    }
+
     const { error: leadError } = await supabase
       .from('telegram_leads')
       .insert({
@@ -916,6 +931,10 @@ async function handleReferral(senderId: string, referral: any, pageId: string) {
         post_id: postId,
         ad_title: referral.ads_context_data?.ad_title || null,
         referrer: referral.source || null,
+        utm_ad_id: adId,
+        utm_adset_id: adsetId,
+        utm_campaign_id: campaignId,
+        utm_campaign: campaignName,
       });
     
     if (leadError) {
