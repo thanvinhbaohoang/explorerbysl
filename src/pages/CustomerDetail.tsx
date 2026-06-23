@@ -65,6 +65,10 @@ interface LeadSource {
   utm_term: string | null;
   referrer: string | null;
   facebook_click_id: string | null;
+  ad_id: string | null;
+  utm_campaign_id: string | null;
+  utm_adset_id: string | null;
+  utm_ad_id: string | null;
   created_at: string;
   user_id: string;
 }
