@@ -330,6 +330,24 @@ const FacebookPages = () => {
       setBackfillRunning(false);
     }
   };
+
+  // Backfill ad attribution (adset_id / campaign_id) for messenger leads
+  const [adAttrRunning, setAdAttrRunning] = useState(false);
+  const runBackfillAdAttribution = async () => {
+    setAdAttrRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('backfill-messenger-ad-ids', {});
+      if (error) throw error;
+      const r = data as { scanned: number; unique_ads: number; updated: number; failed: number };
+      toast.success('Ad attribution backfill complete', {
+        description: `Scanned ${r.scanned} · Unique ads ${r.unique_ads} · Updated ${r.updated} · Failed ${r.failed}`,
+      });
+    } catch (err: any) {
+      toast.error('Backfill failed', { description: err.message });
+    } finally {
+      setAdAttrRunning(false);
+    }
+  };
   
   // Fetch database pages for token management
   const fetchDbPages = async () => {
