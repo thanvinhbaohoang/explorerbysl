@@ -95,6 +95,7 @@ const CustomerDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [unifiedData, setUnifiedData] = useState<UnifiedCustomerData | null>(null);
+  const [pageNameMap, setPageNameMap] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
