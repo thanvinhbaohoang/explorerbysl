@@ -50,6 +50,7 @@ interface Customer {
   passport_number: string | null;
   nationality: string | null;
   national_id: string | null;
+  page_id: string | null;
 }
 
 interface LeadSource {
