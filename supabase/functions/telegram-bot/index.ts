@@ -989,6 +989,59 @@ serve(async (req) => {
         }
       }
 
+      // Public self-heal: verify Telegram's webhook registration and re-register
+      // if it's empty or points somewhere other than this function. Safe to expose
+      // unauthenticated because it only ever sets the webhook back to our own URL.
+      // Intended to be invoked by a scheduled pg_cron job every few minutes.
+      if (body && body.action === "health_check") {
+        try {
+          const expectedUrl = `${SUPABASE_URL}/functions/v1/telegram-bot`;
+          const infoRes = await fetch(`${TELEGRAM_API}/getWebhookInfo`);
+          const infoData = await infoRes.json();
+          const currentUrl: string = infoData?.result?.url ?? "";
+          const lastErrorMessage: string | null = infoData?.result?.last_error_message ?? null;
+          const pending: number = infoData?.result?.pending_update_count ?? 0;
+
+          const mismatched = !currentUrl || currentUrl !== expectedUrl;
+          let repaired = false;
+          let setResult: any = null;
+
+          if (mismatched) {
+            const setRes = await fetch(`${TELEGRAM_API}/setWebhook`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ url: expectedUrl }),
+            });
+            setResult = await setRes.json();
+            repaired = !!setResult?.ok;
+            console.log(
+              `[health_check] Webhook was "${currentUrl}", expected "${expectedUrl}". Re-register ok=${repaired}`
+            );
+          }
+
+          return new Response(
+            JSON.stringify({
+              success: true,
+              healthy: !mismatched,
+              repaired,
+              current_url: currentUrl,
+              expected_url: expectedUrl,
+              pending_update_count: pending,
+              last_error_message: lastErrorMessage,
+              set_webhook_result: setResult,
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+          );
+        } catch (error: any) {
+          console.error("[health_check] error:", error);
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+          );
+        }
+      }
+
+
       // Any client-initiated action (non-webhook) requires an authenticated user.
       // Telegram webhook posts do not include an `action` field — they contain `update_id`/`message`.
       if (body && typeof body.action === "string") {
