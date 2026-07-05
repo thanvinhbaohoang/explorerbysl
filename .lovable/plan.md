@@ -1,34 +1,38 @@
-# Fix: chat opens scrolled to top instead of bottom
+## What's happening
 
-## Problem
+Telegram has stopped delivering messages to the bot. Evidence:
 
-When opening certain conversations from the chat list, the message view appears scrolled to the very top instead of the latest message at the bottom. The "Load older messages" infinite-scroll logic is incorrectly winning the race against the "jump to bottom on customer switch" logic.
+- Last saved Telegram message was ~6 hours ago (2026-07-05 06:12 UTC).
+- Recent `telegram-bot` edge function logs show only cold-start "booted" events — **zero incoming POST requests from Telegram**.
+- Meanwhile `messenger-webhook` is receiving traffic normally, so it's not a project-wide outage.
+- The `telegram_webhook_failures` table has no new rows since June 17 — so it's not a parsing/insert error, Telegram simply isn't hitting our endpoint.
+- The 401 "Unauthorized" runtime error surfaced in the client is from the WebhookDebug page calling `action: "get_status"` without an auth token — unrelated to inbound messages, but I'll fix it as part of this pass.
 
-## Root cause
+Most likely cause: Telegram's webhook registration was cleared or is failing (expired secret, wrong URL, or `getWebhookInfo` shows a `last_error_message`). Telegram silently backs off after enough consecutive failures.
 
-In `src/components/ChatPanel.tsx`, the scroll-management `useLayoutEffect` (around lines 269-300) has two flaws:
+## Plan
 
-1. **`prevCustomerIdRef` is advanced on every effect run**, even when the effect runs with the previous customer's messages still in `filteredMessages` (the `isLoadingMessages` flag and `filteredMessages` don't update in the same render). By the time the new customer's messages arrive, `customerChanged` is already false, so the "scroll to bottom" branch never runs.
+1. **Add an unauthenticated diagnostic action** to `telegram-bot`:
+   - `action: "webhook_info"` → calls Telegram `getWebhookInfo` and returns the full result (URL, pending_update_count, last_error_date, last_error_message, ip_address).
+   - No auth required so we can call it from a plain `curl` to diagnose. It only reads status, never mutates.
 
-2. **`handleScroll` (lines 437-444) can fire during the transition.** While the new conversation is mounting, the container momentarily has `scrollTop = 0`. The scroll handler interprets that as "user reached the top → load older", sets `isPrependingRef.current = true`, and the next effect run takes the prepend-anchor branch — pinning the view at the top.
+2. **Call it from the sandbox** to see exactly what Telegram reports:
+   - If `url` is empty → webhook was unregistered.
+   - If `last_error_message` is set → Telegram was getting errors from our endpoint (likely a deploy/cold-start window).
+   - If `pending_update_count > 0` → queued messages waiting.
 
-## Fix
+3. **Re-register the webhook** via the existing `set_webhook` action (or a new authenticated `reset_webhook` that also calls `deleteWebhook` first with `drop_pending_updates=false`, so queued messages are re-delivered).
 
-Edit only `src/components/ChatPanel.tsx`:
+4. **Fix the WebhookDebug 401** — the page is calling `telegram-bot` with `action: "get_status"` but not attaching the user's Supabase session token. Update the client call to include `Authorization: Bearer <access_token>` from the current session (same pattern the other admin actions use).
 
-1. **Track an explicit "pending scroll to bottom" ref**, set when `customer.id` changes (in the existing `loadMessages` `useEffect`) and consumed only after messages for the new customer have actually rendered (`filteredMessages.length > 0` and `!isLoadingMessages`). Keep retrying until consumed instead of relying on `customerChanged` being true on exactly the right render.
+5. **Verify recovery**:
+   - Send a test Telegram message.
+   - Confirm a new row appears in `messages` and the `telegram-bot` edge logs show an incoming POST.
 
-2. **Clear stale prepend state on customer switch.** When `customer.id` changes, reset `isPrependingRef.current = false` and `prevScrollHeightRef.current = null` so any leftover state from the previous conversation can't hijack the next render.
+## Technical details
 
-3. **Guard `handleScroll`** so it ignores scroll events while a pending-scroll-to-bottom is in flight, and require `messageOffset > 0` (i.e. we've already loaded the first page) before triggering an auto-load. This prevents the "scrollTop=0 during mount" false positive.
+- `supabase/functions/telegram-bot/index.ts`: add a new branch `if (body.action === "webhook_info")` **before** the auth gate at line 976 (add it to the same "no-auth allow-list" the webhook payloads already use, by checking the action name before the auth block, or by making the auth block skip known-safe read-only actions).
+- Optionally add `reset_webhook` (authenticated) that does `deleteWebhook` then `setWebhook`, returning the final `getWebhookInfo`.
+- `src/pages/WebhookDebug.tsx` (or wherever the `get_status` call lives): grab `supabase.auth.getSession()` and attach `Authorization: Bearer ${session.access_token}` to the fetch/`functions.invoke` call.
 
-4. **Only advance `prevCustomerIdRef`** once we've actually handled the new customer's messages (i.e. after the scroll-to-bottom has been performed), not on every effect tick.
-
-No changes to `useChatMessages.ts`, no schema or backend changes. Behavior of manual "Load older messages" button and the user-initiated scroll-to-top prepend remain unchanged once a conversation is fully loaded.
-
-## Verification
-
-- Open several conversations in a row (short ones, long ones, ones with media). Each should land at the latest message.
-- Scroll up in a long conversation, trigger auto-load older messages — scroll position should still anchor correctly.
-- Click "Load older messages" button — same anchoring behavior preserved.
-- Receive a new message while scrolled up — still does not yank to bottom; while scrolled near bottom, still auto-follows.
+No schema changes, no new secrets. All existing message-handling logic is untouched.
