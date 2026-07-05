@@ -971,6 +971,24 @@ serve(async (req) => {
       // Parse the body once
       const body = await req.json();
 
+      // Public read-only diagnostic: fetch webhook registration status from Telegram.
+      // Safe to expose unauthenticated because it only reads webhook metadata.
+      if (body && body.action === "webhook_info") {
+        try {
+          const res = await fetch(`${TELEGRAM_API}/getWebhookInfo`);
+          const data = await res.json();
+          return new Response(
+            JSON.stringify({ success: data.ok, result: data.result, expected_url: `${SUPABASE_URL}/functions/v1/telegram-bot` }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+          );
+        } catch (error: any) {
+          return new Response(
+            JSON.stringify({ error: error.message }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
+          );
+        }
+      }
+
       // Any client-initiated action (non-webhook) requires an authenticated user.
       // Telegram webhook posts do not include an `action` field — they contain `update_id`/`message`.
       if (body && typeof body.action === "string") {
