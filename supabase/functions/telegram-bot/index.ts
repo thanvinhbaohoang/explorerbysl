@@ -851,9 +851,9 @@ async function sendPhoto(chatId: number, photoUrl: string, caption?: string) {
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Telegram API error (sendPhoto):", error);
-    throw new Error(`Failed to send photo: ${error}`);
+    const err = await telegramErrorFromResponse("sendPhoto", response);
+    console.error("Telegram API error (sendPhoto):", err.message);
+    throw err;
   }
 
   return await response.json();
@@ -885,9 +885,9 @@ async function sendMediaGroup(chatId: number, media: Array<{
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Telegram API error (sendMediaGroup):", error);
-    throw new Error(`Failed to send media group: ${error}`);
+    const err = await telegramErrorFromResponse("sendMediaGroup", response);
+    console.error("Telegram API error (sendMediaGroup):", err.message);
+    throw err;
   }
 
   return await response.json();
@@ -906,9 +906,9 @@ async function sendVideo(chatId: number, videoUrl: string, caption?: string) {
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Telegram API error (sendVideo):", error);
-    throw new Error(`Failed to send video: ${error}`);
+    const err = await telegramErrorFromResponse("sendVideo", response);
+    console.error("Telegram API error (sendVideo):", err.message);
+    throw err;
   }
 
   return await response.json();
@@ -927,9 +927,9 @@ async function sendDocument(chatId: number, documentUrl: string, caption?: strin
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Telegram API error (sendDocument):", error);
-    throw new Error(`Failed to send document: ${error}`);
+    const err = await telegramErrorFromResponse("sendDocument", response);
+    console.error("Telegram API error (sendDocument):", err.message);
+    throw err;
   }
 
   return await response.json();
