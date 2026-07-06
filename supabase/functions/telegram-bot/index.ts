@@ -17,6 +17,88 @@ if (!BOT_TOKEN) {
   throw new Error("TELEGRAM_BOT_TOKEN is not set");
 }
 
+// Structured error carrying the underlying Telegram API failure so callers can
+// surface a specific, human-readable reason in the UI instead of a generic
+// "non-2xx status code" toast.
+class TelegramError extends Error {
+  method: string;
+  telegramErrorCode: number | null;
+  description: string;
+  retryAfter: number | null;
+  httpStatus: number;
+
+  constructor(
+    method: string,
+    httpStatus: number,
+    telegramErrorCode: number | null,
+    description: string,
+    retryAfter: number | null,
+  ) {
+    super(`Telegram ${method} failed [${telegramErrorCode ?? httpStatus}]: ${description}`);
+    this.name = "TelegramError";
+    this.method = method;
+    this.httpStatus = httpStatus;
+    this.telegramErrorCode = telegramErrorCode;
+    this.description = description;
+    this.retryAfter = retryAfter;
+  }
+}
+
+// Map a Telegram description to a stable machine-readable reason tag the
+// frontend can switch on for friendly messages.
+function classifyTelegramError(errorCode: number | null, description: string): string {
+  const d = (description || "").toLowerCase();
+  if (errorCode === 403 && d.includes("blocked")) return "blocked";
+  if (errorCode === 403 && (d.includes("deactivated") || d.includes("user is deactivated"))) return "deactivated";
+  if (errorCode === 403 && d.includes("bot was kicked")) return "kicked";
+  if (errorCode === 400 && d.includes("chat not found")) return "chat_not_found";
+  if (errorCode === 400 && d.includes("user not found")) return "chat_not_found";
+  if (errorCode === 400 && d.includes("message is too long")) return "message_too_long";
+  if (errorCode === 400 && d.includes("caption is too long")) return "caption_too_long";
+  if (errorCode === 429) return "rate_limited";
+  return "unknown";
+}
+
+// Parse a Telegram API Response into a TelegramError (assumes !response.ok).
+async function telegramErrorFromResponse(method: string, response: Response): Promise<TelegramError> {
+  const raw = await response.text();
+  let errorCode: number | null = null;
+  let description = raw;
+  let retryAfter: number | null = null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.error_code === "number") errorCode = parsed.error_code;
+    if (typeof parsed?.description === "string") description = parsed.description;
+    if (typeof parsed?.parameters?.retry_after === "number") retryAfter = parsed.parameters.retry_after;
+  } catch {
+    /* keep raw as description */
+  }
+  return new TelegramError(method, response.status, errorCode, description, retryAfter);
+}
+
+// Build the JSON error body returned from the edge function when a Telegram
+// send fails. Frontend reads this to render a specific toast.
+function telegramErrorResponse(err: TelegramError) {
+  const reason = classifyTelegramError(err.telegramErrorCode, err.description);
+  // Preserve Telegram's HTTP status where sensible (403/400/429), otherwise 502
+  // to signal an upstream failure rather than a bug in our function.
+  const status =
+    err.httpStatus === 403 || err.httpStatus === 400 || err.httpStatus === 429
+      ? err.httpStatus
+      : 502;
+  return new Response(
+    JSON.stringify({
+      error: "telegram_api_error",
+      method: err.method,
+      telegram_error_code: err.telegramErrorCode,
+      telegram_description: err.description,
+      reason,
+      retry_after: err.retryAfter,
+    }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" }, status },
+  );
+}
+
 // Send message to Telegram
 async function sendMessage(
   chatId: number,
@@ -34,9 +116,9 @@ async function sendMessage(
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Telegram API error:", error);
-    throw new Error(`Failed to send message: ${error}`);
+    const err = await telegramErrorFromResponse("sendMessage", response);
+    console.error("Telegram API error:", err.message);
+    throw err;
   }
 
   return await response.json();
