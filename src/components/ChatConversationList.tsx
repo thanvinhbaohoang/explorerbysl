@@ -194,6 +194,7 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
           else if (msg.message_type === 'video') text = '🎥 Video';
           else if (msg.message_type === 'voice') text = '🎤 Voice message';
           else if (msg.message_type === 'document') text = '📎 Document';
+          else if (msg.message_type === 'location') text = '📍 Location';
 
           msgMap[msg.customer_id] = { text, timestamp: msg.timestamp, senderType: msg.sender_type, sentByName: msg.sent_by_name };
         });
