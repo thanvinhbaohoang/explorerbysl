@@ -686,6 +686,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
 
 
+    let response: any;
     try {
       // Upload all files to storage first
       const uploadedMedia: Array<{ type: 'photo' | 'video'; url: string }> = [];
@@ -695,7 +696,6 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         uploadedMedia.push({ type, url });
       }
 
-      let response;
       if (platform === 'messenger') {
         response = await supabase.functions.invoke("messenger-webhook", {
           body: {
@@ -732,14 +732,15 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       toast.success(`Album sent (${albumFiles.length} items)`);
     } catch (error: any) {
       console.error("Error sending media batch:", error);
-      
+
       const isWindowExpired = error.message?.includes('24-hour messaging window');
       if (isWindowExpired && customerToReply) {
         setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
         toast.error("Cannot send album: The 24-hour messaging window has expired.", { duration: 8000 });
       } else {
-        toast.error("Failed to send album: " + error.message);
+        toast.error(await formatSendError(error, response?.data, 'Failed to send album'), { duration: 8000 });
       }
+
       
       setMessages(prev => prev.filter(msg => !tempIds.includes(msg.id)));
       tempIds.forEach(revokeBlobUrls);
