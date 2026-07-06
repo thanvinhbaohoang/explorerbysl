@@ -36,6 +36,8 @@ import {
   ArrowLeft,
   AlertCircle,
   Images,
+  MapPin,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -1040,8 +1042,54 @@ const MessageBubble = ({
         );
       })()}
 
+      {/* Location */}
+      {message.message_type === 'location' && message.latitude != null && message.longitude != null && (() => {
+        const lat = message.latitude as number;
+        const lng = message.longitude as number;
+        const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+        const staticMap = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=15&size=400x200&markers=${lat},${lng},red-pushpin`;
+        return (
+          <div className="flex flex-col gap-2 min-w-[240px] max-w-[320px]">
+            <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden border border-border hover:opacity-90 transition-opacity">
+              <img
+                src={staticMap}
+                alt="Location map"
+                className="w-full h-32 object-cover bg-muted"
+                loading="lazy"
+                onError={(e) => { (e.currentTarget.style.display = 'none'); }}
+              />
+            </a>
+            <div className="flex items-start gap-2">
+              <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0 text-primary" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium flex items-center gap-2">
+                  <span className="truncate">{message.location_title || 'Shared location'}</span>
+                  {message.location_live_period ? (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Live</Badge>
+                  ) : null}
+                </div>
+                {message.location_address && (
+                  <div className="text-xs text-muted-foreground break-words">{message.location_address}</div>
+                )}
+                <div className="text-[11px] font-mono text-muted-foreground mt-0.5">
+                  {lat.toFixed(5)}, {lng.toFixed(5)}
+                </div>
+              </div>
+            </div>
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-1.5 text-xs font-medium text-primary hover:underline"
+            >
+              Open in Google Maps <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+        );
+      })()}
+
       {/* Text */}
-      {message.message_text && message.message_type !== 'voice' && (
+      {message.message_text && message.message_type !== 'voice' && message.message_type !== 'location' && (
         <p className="text-sm whitespace-pre-wrap">{message.message_text}</p>
       )}
     </div>

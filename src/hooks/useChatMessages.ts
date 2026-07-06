@@ -73,6 +73,11 @@ export interface Message {
   messenger_mid: string | null;
   sent_by_name: string | null;
   media_group_id: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  location_address?: string | null;
+  location_title?: string | null;
+  location_live_period?: number | null;
   isPending?: boolean;
 }
 

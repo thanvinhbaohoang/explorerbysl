@@ -194,6 +194,7 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
           else if (msg.message_type === 'video') text = '🎥 Video';
           else if (msg.message_type === 'voice') text = '🎤 Voice message';
           else if (msg.message_type === 'document') text = '📎 Document';
+          else if (msg.message_type === 'location') text = '📍 Location';
 
           msgMap[msg.customer_id] = { text, timestamp: msg.timestamp, senderType: msg.sender_type, sentByName: msg.sent_by_name };
         });
@@ -260,6 +261,7 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
             else if (newMessage.message_type === 'video') messagePreview = '🎥 Video';
             else if (newMessage.message_type === 'voice') messagePreview = '🎤 Voice message';
             else if (newMessage.message_type === 'document') messagePreview = '📎 Document';
+            else if (newMessage.message_type === 'location') messagePreview = '📍 Location';
             else if (messagePreview.length > 50) {
               messagePreview = messagePreview.substring(0, 50) + '...';
             }
@@ -288,6 +290,7 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
           else if (newMessage.message_type === 'video') text = '🎥 Video';
           else if (newMessage.message_type === 'voice') text = '🎤 Voice message';
           else if (newMessage.message_type === 'document') text = '📎 Document';
+          else if (newMessage.message_type === 'location') text = '📍 Location';
           
           setLastMessages(prev => ({
             ...prev,
