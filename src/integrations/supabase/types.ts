@@ -380,6 +380,11 @@ export type Database = {
           document_url: string | null
           id: string
           is_read: boolean | null
+          latitude: number | null
+          location_address: string | null
+          location_live_period: number | null
+          location_title: string | null
+          longitude: number | null
           media_group_id: string | null
           message_text: string | null
           message_type: string | null
@@ -411,6 +416,11 @@ export type Database = {
           document_url?: string | null
           id?: string
           is_read?: boolean | null
+          latitude?: number | null
+          location_address?: string | null
+          location_live_period?: number | null
+          location_title?: string | null
+          longitude?: number | null
           media_group_id?: string | null
           message_text?: string | null
           message_type?: string | null
@@ -442,6 +452,11 @@ export type Database = {
           document_url?: string | null
           id?: string
           is_read?: boolean | null
+          latitude?: number | null
+          location_address?: string | null
+          location_live_period?: number | null
+          location_title?: string | null
+          longitude?: number | null
           media_group_id?: string | null
           message_text?: string | null
           message_type?: string | null
