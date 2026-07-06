@@ -261,6 +261,7 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
             else if (newMessage.message_type === 'video') messagePreview = '🎥 Video';
             else if (newMessage.message_type === 'voice') messagePreview = '🎤 Voice message';
             else if (newMessage.message_type === 'document') messagePreview = '📎 Document';
+            else if (newMessage.message_type === 'location') messagePreview = '📍 Location';
             else if (messagePreview.length > 50) {
               messagePreview = messagePreview.substring(0, 50) + '...';
             }
