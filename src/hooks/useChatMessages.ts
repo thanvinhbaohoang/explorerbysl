@@ -961,6 +961,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     setIsPlayingPreview(false);
     setPlaybackProgress(0);
 
+    let response: any;
     try {
       // Messenger only reliably renders MP3 voice attachments — webm/opus shows 0:00.
       // Convert client-side before upload. Telegram handles original format fine.
@@ -978,7 +979,6 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         console.warn('[voice] Messenger upload is not .mp3 — recipient may see 0:00 duration:', mediaUrl);
       }
 
-      let response;
       if (platform === 'messenger') {
         response = await supabase.functions.invoke("messenger-webhook", {
           body: {
@@ -1017,8 +1017,9 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
         toast.error("Cannot send voice: The 24-hour messaging window has expired.", { duration: 8000 });
       } else {
-        toast.error("Failed to send voice message: " + error.message);
+        toast.error(await formatSendError(error, response?.data, 'Failed to send voice message'), { duration: 8000 });
       }
+
 
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
       revokeBlobUrls(tempId);
