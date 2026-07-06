@@ -1300,6 +1300,7 @@ serve(async (req) => {
           );
         } catch (error: any) {
           console.error("Error sending message:", error);
+          if (error instanceof TelegramError) return telegramErrorResponse(error);
           return new Response(
             JSON.stringify({ error: error.message }),
             {
@@ -1388,6 +1389,7 @@ serve(async (req) => {
           );
         } catch (error: any) {
           console.error("Error sending media:", error);
+          if (error instanceof TelegramError) return telegramErrorResponse(error);
           return new Response(
             JSON.stringify({ error: error.message }),
             {
@@ -1465,6 +1467,7 @@ serve(async (req) => {
           );
         } catch (error: any) {
           console.error("Error sending media group:", error);
+          if (error instanceof TelegramError) return telegramErrorResponse(error);
           return new Response(
             JSON.stringify({ error: error.message }),
             {
