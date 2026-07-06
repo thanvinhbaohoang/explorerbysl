@@ -561,10 +561,10 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
     setMessages(prev => [...prev, optimisticMessage]);
 
+    let response: any;
     try {
       const mediaUrl = await uploadFileToStorage(file);
 
-      let response;
       if (platform === 'messenger') {
         response = await supabase.functions.invoke("messenger-webhook", {
           body: {
@@ -605,14 +605,15 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       toast.success("Media sent successfully");
     } catch (error: any) {
       console.error("Error sending media:", error);
-      
+
       const isWindowExpired = error.message?.includes('24-hour messaging window');
       if (isWindowExpired && customerToReply) {
         setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
         toast.error("Cannot send media: The 24-hour messaging window has expired.", { duration: 8000 });
       } else {
-        toast.error("Failed to send media: " + error.message);
+        toast.error(await formatSendError(error, response?.data, 'Failed to send media'), { duration: 8000 });
       }
+
       
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
       revokeBlobUrls(tempId);
