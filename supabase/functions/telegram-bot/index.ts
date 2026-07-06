@@ -1033,9 +1033,9 @@ async function sendAudio(chatId: number, audioUrl: string, caption?: string) {
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Telegram API error (sendAudio):", error);
-    throw new Error(`Failed to send audio: ${error}`);
+    const err = await telegramErrorFromResponse("sendAudio", response);
+    console.error("Telegram API error (sendAudio):", err.message);
+    throw err;
   }
 
   return await response.json();
