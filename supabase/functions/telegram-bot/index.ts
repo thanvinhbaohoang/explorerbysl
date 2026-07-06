@@ -809,6 +809,67 @@ async function saveMessage(message: any) {
         return; // Early return for document messages
       }
 
+      // Handle location/venue messages
+      if (message.venue || message.location) {
+        messageType = 'location';
+        const loc = message.venue ? message.venue.location : message.location;
+        const lat = loc.latitude;
+        const lng = loc.longitude;
+        const title = message.venue?.title || null;
+        let address: string | null = message.venue?.address || null;
+        const livePeriod = message.location?.live_period ?? null;
+
+        // Reverse-geocode plain pins via Nominatim (skip if venue already provided address)
+        if (!address && lat != null && lng != null) {
+          try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 2500);
+            const resp = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=en`,
+              {
+                headers: {
+                  'User-Agent': 'ExplorerBySL-CRM/1.0 (support@explorerbysl.com)',
+                  'Accept': 'application/json',
+                },
+                signal: ctrl.signal,
+              }
+            );
+            clearTimeout(timer);
+            if (resp.ok) {
+              const j = await resp.json();
+              address = j.display_name || null;
+            }
+          } catch (e) {
+            console.warn('Reverse geocode failed:', (e as Error).message);
+          }
+        }
+
+        messageText = title || address || '[Location]';
+
+        const { error } = await supabase
+          .from('messages')
+          .insert({
+            customer_id: customer.id,
+            telegram_id: message.from.id,
+            message_text: messageText,
+            message_type: messageType,
+            latitude: lat,
+            longitude: lng,
+            location_address: address,
+            location_title: title,
+            location_live_period: livePeriod,
+            sender_type: 'customer',
+            timestamp: new Date(message.date * 1000).toISOString(),
+          });
+
+        if (error) {
+          console.error('Error saving location message:', error);
+        } else {
+          console.log('Location message saved successfully');
+        }
+        return;
+      }
+
       // Save the message (for photos and text)
       const { error } = await supabase
         .from('messages')
