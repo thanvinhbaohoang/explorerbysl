@@ -457,9 +457,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
     setMessages(prev => [...prev, optimisticMessage]);
 
+    let response: any;
     try {
-      let response;
-      
       if (platform === 'messenger') {
         response = await supabase.functions.invoke("messenger-webhook", {
           body: {
@@ -492,18 +491,19 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       markOptimisticSent(tempId);
     } catch (error: any) {
       console.error("Error sending message:", error);
-      
-      const isWindowExpired = error.message?.includes('24-hour messaging window') || 
+
+      const isWindowExpired = error.message?.includes('24-hour messaging window') ||
                               error.message?.includes('MESSAGING_WINDOW_EXPIRED');
-      
+
       if (isWindowExpired && customerToReply) {
         setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
         toast.error("Cannot send message: The 24-hour messaging window has expired.", { duration: 8000 });
       } else if (error.message?.includes('Missing page_id') || error.message?.includes('page_id')) {
         toast.error("Cannot send message: Customer is missing page link. Ask them to send a message first.", { duration: 8000 });
       } else {
-        toast.error("Failed to send message");
+        toast.error(await formatSendError(error, response?.data, 'Failed to send message'), { duration: 8000 });
       }
+
       
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
     }
