@@ -7,6 +7,44 @@ import { detectLanguage } from "@/lib/language-detection";
 import { useQueryClient } from "@tanstack/react-query";
 import { processFileForUpload } from "@/lib/image-conversion";
 
+// Turn a supabase.functions.invoke() failure into a human-readable reason.
+// On non-2xx, supabase-js exposes the response as `error.context` (a Response),
+// and `data` is null — so read the JSON body from there when needed. The edge
+// function returns a structured Telegram error payload we can translate into a
+// friendly toast (e.g. "This user has blocked the bot") instead of the generic
+// "Edge Function returned a non-2xx status code".
+async function formatSendError(error: any, data: any, fallback: string): Promise<string> {
+  let body: any = data;
+  if (!body && error?.context && typeof error.context.json === 'function') {
+    try { body = await error.context.clone().json(); } catch { /* ignore */ }
+  }
+  const code = body?.telegram_error_code;
+  const desc = body?.telegram_description as string | undefined;
+  const reason = body?.reason as string | undefined;
+  const retry = body?.retry_after as number | undefined;
+
+  switch (reason) {
+    case 'blocked':
+      return 'This user has blocked the bot. They must unblock it in Telegram before you can message them again.';
+    case 'deactivated':
+      return "This Telegram account is deactivated — the user can't receive messages.";
+    case 'kicked':
+      return 'The bot was removed from this chat.';
+    case 'chat_not_found':
+      return "This user hasn't started a chat with the bot yet. Ask them to open the bot link and press Start.";
+    case 'message_too_long':
+      return 'Message is too long. Telegram allows up to 4096 characters per message.';
+    case 'caption_too_long':
+      return 'Caption is too long. Telegram allows up to 1024 characters per media caption.';
+    case 'rate_limited':
+      return `Telegram rate limit hit. Try again in ${retry ?? 30}s.`;
+  }
+  if (desc) return `Telegram: ${desc}${code ? ` (${code})` : ''}`;
+  if (body?.error && body.error !== 'telegram_api_error') return `${fallback}: ${body.error}`;
+  return `${fallback}${error?.message && !/non-2xx/i.test(error.message) ? ` — ${error.message}` : ''}`;
+}
+
+
 export interface Message {
   id: string;
   customer_id: string;
@@ -419,9 +457,8 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
     setMessages(prev => [...prev, optimisticMessage]);
 
+    let response: any;
     try {
-      let response;
-      
       if (platform === 'messenger') {
         response = await supabase.functions.invoke("messenger-webhook", {
           body: {
@@ -454,18 +491,19 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       markOptimisticSent(tempId);
     } catch (error: any) {
       console.error("Error sending message:", error);
-      
-      const isWindowExpired = error.message?.includes('24-hour messaging window') || 
+
+      const isWindowExpired = error.message?.includes('24-hour messaging window') ||
                               error.message?.includes('MESSAGING_WINDOW_EXPIRED');
-      
+
       if (isWindowExpired && customerToReply) {
         setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
         toast.error("Cannot send message: The 24-hour messaging window has expired.", { duration: 8000 });
       } else if (error.message?.includes('Missing page_id') || error.message?.includes('page_id')) {
         toast.error("Cannot send message: Customer is missing page link. Ask them to send a message first.", { duration: 8000 });
       } else {
-        toast.error("Failed to send message");
+        toast.error(await formatSendError(error, response?.data, 'Failed to send message'), { duration: 8000 });
       }
+
       
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
     }
@@ -523,10 +561,10 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
     setMessages(prev => [...prev, optimisticMessage]);
 
+    let response: any;
     try {
       const mediaUrl = await uploadFileToStorage(file);
 
-      let response;
       if (platform === 'messenger') {
         response = await supabase.functions.invoke("messenger-webhook", {
           body: {
@@ -567,14 +605,15 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       toast.success("Media sent successfully");
     } catch (error: any) {
       console.error("Error sending media:", error);
-      
+
       const isWindowExpired = error.message?.includes('24-hour messaging window');
       if (isWindowExpired && customerToReply) {
         setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
         toast.error("Cannot send media: The 24-hour messaging window has expired.", { duration: 8000 });
       } else {
-        toast.error("Failed to send media: " + error.message);
+        toast.error(await formatSendError(error, response?.data, 'Failed to send media'), { duration: 8000 });
       }
+
       
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
       revokeBlobUrls(tempId);
@@ -647,6 +686,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
 
 
 
+    let response: any;
     try {
       // Upload all files to storage first
       const uploadedMedia: Array<{ type: 'photo' | 'video'; url: string }> = [];
@@ -656,7 +696,6 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         uploadedMedia.push({ type, url });
       }
 
-      let response;
       if (platform === 'messenger') {
         response = await supabase.functions.invoke("messenger-webhook", {
           body: {
@@ -693,14 +732,15 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
       toast.success(`Album sent (${albumFiles.length} items)`);
     } catch (error: any) {
       console.error("Error sending media batch:", error);
-      
+
       const isWindowExpired = error.message?.includes('24-hour messaging window');
       if (isWindowExpired && customerToReply) {
         setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
         toast.error("Cannot send album: The 24-hour messaging window has expired.", { duration: 8000 });
       } else {
-        toast.error("Failed to send album: " + error.message);
+        toast.error(await formatSendError(error, response?.data, 'Failed to send album'), { duration: 8000 });
       }
+
       
       setMessages(prev => prev.filter(msg => !tempIds.includes(msg.id)));
       tempIds.forEach(revokeBlobUrls);
@@ -921,6 +961,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     setIsPlayingPreview(false);
     setPlaybackProgress(0);
 
+    let response: any;
     try {
       // Messenger only reliably renders MP3 voice attachments — webm/opus shows 0:00.
       // Convert client-side before upload. Telegram handles original format fine.
@@ -938,7 +979,6 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         console.warn('[voice] Messenger upload is not .mp3 — recipient may see 0:00 duration:', mediaUrl);
       }
 
-      let response;
       if (platform === 'messenger') {
         response = await supabase.functions.invoke("messenger-webhook", {
           body: {
@@ -977,8 +1017,9 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
         setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
         toast.error("Cannot send voice: The 24-hour messaging window has expired.", { duration: 8000 });
       } else {
-        toast.error("Failed to send voice message: " + error.message);
+        toast.error(await formatSendError(error, response?.data, 'Failed to send voice message'), { duration: 8000 });
       }
+
 
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
       revokeBlobUrls(tempId);
