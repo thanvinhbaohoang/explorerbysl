@@ -7,6 +7,44 @@ import { detectLanguage } from "@/lib/language-detection";
 import { useQueryClient } from "@tanstack/react-query";
 import { processFileForUpload } from "@/lib/image-conversion";
 
+// Turn a supabase.functions.invoke() failure into a human-readable reason.
+// On non-2xx, supabase-js exposes the response as `error.context` (a Response),
+// and `data` is null — so read the JSON body from there when needed. The edge
+// function returns a structured Telegram error payload we can translate into a
+// friendly toast (e.g. "This user has blocked the bot") instead of the generic
+// "Edge Function returned a non-2xx status code".
+async function formatSendError(error: any, data: any, fallback: string): Promise<string> {
+  let body: any = data;
+  if (!body && error?.context && typeof error.context.json === 'function') {
+    try { body = await error.context.clone().json(); } catch { /* ignore */ }
+  }
+  const code = body?.telegram_error_code;
+  const desc = body?.telegram_description as string | undefined;
+  const reason = body?.reason as string | undefined;
+  const retry = body?.retry_after as number | undefined;
+
+  switch (reason) {
+    case 'blocked':
+      return 'This user has blocked the bot. They must unblock it in Telegram before you can message them again.';
+    case 'deactivated':
+      return "This Telegram account is deactivated — the user can't receive messages.";
+    case 'kicked':
+      return 'The bot was removed from this chat.';
+    case 'chat_not_found':
+      return "This user hasn't started a chat with the bot yet. Ask them to open the bot link and press Start.";
+    case 'message_too_long':
+      return 'Message is too long. Telegram allows up to 4096 characters per message.';
+    case 'caption_too_long':
+      return 'Caption is too long. Telegram allows up to 1024 characters per media caption.';
+    case 'rate_limited':
+      return `Telegram rate limit hit. Try again in ${retry ?? 30}s.`;
+  }
+  if (desc) return `Telegram: ${desc}${code ? ` (${code})` : ''}`;
+  if (body?.error && body.error !== 'telegram_api_error') return `${fallback}: ${body.error}`;
+  return `${fallback}${error?.message && !/non-2xx/i.test(error.message) ? ` — ${error.message}` : ''}`;
+}
+
+
 export interface Message {
   id: string;
   customer_id: string;
