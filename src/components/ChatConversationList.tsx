@@ -290,6 +290,7 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
           else if (newMessage.message_type === 'video') text = '🎥 Video';
           else if (newMessage.message_type === 'voice') text = '🎤 Voice message';
           else if (newMessage.message_type === 'document') text = '📎 Document';
+          else if (newMessage.message_type === 'location') text = '📍 Location';
           
           setLastMessages(prev => ({
             ...prev,
