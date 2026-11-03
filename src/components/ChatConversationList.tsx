@@ -806,9 +806,64 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
           </PopoverContent>
         </Popover>
       </div>
-      
+
+      {/* Conversation filter: All / Unread / Not Replied */}
+      <div className="px-3 pb-2 border-b flex-shrink-0">
+        <div className="flex gap-1 p-0.5 rounded-lg bg-muted/50">
+          {([
+            { value: "all", label: "All" },
+            { value: "unread", label: "Unread" },
+            { value: "not_replied", label: "Not Replied" },
+          ] as const).map(({ value, label }) => (
+            <Button
+              key={value}
+              variant="ghost"
+              size="sm"
+              onClick={() => setFilter(value)}
+              className={cn(
+                "flex-1 h-7 text-xs font-medium rounded-md",
+                filter === value
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
       <ScrollArea key={page} className="flex-1">
         <div className="p-1">
+          {/* Filtered queries: never show stale All-tab rows via keepPreviousData,
+              and never show RPC errors as an empty inbox */}
+          {filter !== "all" && isError ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 px-4 text-center">
+              <p className="text-sm text-muted-foreground">Unable to load filtered conversations</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                Retry
+              </Button>
+            </div>
+          ) : filter !== "all" && isPlaceholderData ? (
+            <div className="p-2 space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 p-3">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-3 w-32" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : sortedCustomers.length === 0 && filter !== "all" ? (
+            <div className="py-10 px-4 text-center text-sm text-muted-foreground">
+              {filter === "unread"
+                ? "No unread conversations"
+                : "No conversations waiting for a reply"}
+            </div>
+          ) : null}
+          {!(filter !== "all" && (isError || isPlaceholderData)) && sortedCustomers.map(customer => {
           {sortedCustomers.map(customer => {
             const displayName = customer.messenger_name || 
               `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
