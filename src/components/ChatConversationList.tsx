@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useCustomersData, fetchCustomersPage, customersQueryKey } from "@/hooks/useCustomersData";
+import { useCustomersData, fetchCustomersPage, customersQueryKey, type ConversationFilter } from "@/hooks/useCustomersData";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 import { supabase } from "@/integrations/supabase/client";
@@ -44,6 +44,8 @@ interface ChatConversationListProps {
   onSelect: (customer: Customer) => void;
   page?: number;
   onPageChange?: (page: number) => void;
+  filter?: ConversationFilter;
+  onFilterChange?: (filter: ConversationFilter) => void;
 }
 
 // Helper function to get initials from name
