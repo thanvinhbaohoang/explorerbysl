@@ -864,7 +864,6 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
             </div>
           ) : null}
           {!(filter !== "all" && (isError || isPlaceholderData)) && sortedCustomers.map(customer => {
-          {sortedCustomers.map(customer => {
             const displayName = customer.messenger_name || 
               `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
               'Unknown';
