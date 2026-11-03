@@ -258,7 +258,17 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
           const newMessage = payload.new as any;
           const currentCustomers = allCustomersRef.current;
           const currentLinkedMap = allLinkedPlatformsMapRef.current;
-          
+
+          // Keep filtered lists current immediately (no 30s poll wait):
+          // a customer message can add a conversation to Unread/Not Replied;
+          // an employee reply removes it from Not Replied.
+          if (newMessage.sender_type === "customer") {
+            invalidateFilterCaches("unread");
+            invalidateFilterCaches("not_replied");
+          } else if (newMessage.sender_type === "employee") {
+            invalidateFilterCaches("not_replied");
+          }
+
           // Update unread count and play sound for customer messages
           if (newMessage.sender_type === "customer") {
             playMessageNotification();
