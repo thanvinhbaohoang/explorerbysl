@@ -36,13 +36,21 @@ interface CustomersData {
   linkedPlatformsMap: LinkedPlatformsMap;
 }
 
+export type ConversationFilter = "all" | "unread" | "not_replied";
+
 export const customersQueryKey = (
   page: number,
   itemsPerPage: number,
   searchTerm: string,
   platformFilter: string,
   messengerEnabled: boolean,
-) => ["customers", page, itemsPerPage, searchTerm, platformFilter, messengerEnabled] as const;
+  filter: ConversationFilter = "all",
+) =>
+  // The "all" key is exactly the original 6-element key; filtered modes
+  // append the filter as a 7th element so All caches are never disturbed.
+  filter === "all"
+    ? (["customers", page, itemsPerPage, searchTerm, platformFilter, messengerEnabled] as const)
+    : (["customers", page, itemsPerPage, searchTerm, platformFilter, messengerEnabled, filter] as const);
 
 export const fetchCustomersPage = async (
   page: number,
@@ -50,7 +58,65 @@ export const fetchCustomersPage = async (
   searchTerm: string,
   platformFilter: string,
   messengerEnabled: boolean,
+  filter: ConversationFilter = "all",
 ): Promise<CustomersData> => {
+  // Filtered modes: fetch matching IDs + total from the RPC, then hydrate rows.
+  if (filter !== "all") {
+    const { data: rpcData, error: rpcError } = await supabase.rpc("get_filtered_customer_ids", {
+      p_filter: filter,
+      p_search: searchTerm,
+      p_platform: platformFilter,
+      p_messenger_enabled: messengerEnabled,
+      p_limit: itemsPerPage,
+      p_offset: (page - 1) * itemsPerPage,
+    });
+
+    if (rpcError) throw rpcError;
+
+    // Defensive validation: malformed JSON must surface as an error,
+    // never as an apparently empty inbox.
+    const result = rpcData as { customer_ids?: unknown; total_count?: unknown } | null;
+    if (
+      !result ||
+      !Array.isArray(result.customer_ids) ||
+      typeof result.total_count !== "number"
+    ) {
+      throw new Error("Malformed response from get_filtered_customer_ids");
+    }
+
+    const ids = result.customer_ids as string[];
+    const total = result.total_count;
+
+    if (ids.length === 0) {
+      return { customers: [], total, linkedPlatformsMap: {} };
+    }
+
+    const { data: rows, error: rowsError } = await supabase
+      .from("customer")
+      .select("*")
+      .in("id", ids);
+
+    if (rowsError) throw rowsError;
+
+    // .in() does not preserve order — re-order to match the RPC's ID order
+    const byId = new Map((rows || []).map(r => [r.id, r]));
+    const ordered = ids.map(id => byId.get(id)).filter(Boolean) as Customer[];
+
+    let customersWithLeads = ordered;
+    const { data: leadsData } = await supabase
+      .from("telegram_leads")
+      .select("user_id, messenger_ref, referrer")
+      .in("user_id", ids);
+
+    customersWithLeads = ordered.map(customer => ({
+      ...customer,
+      lead_source: leadsData?.find(lead => lead.user_id === customer.id),
+    })) as Customer[];
+
+    return { customers: customersWithLeads, total, linkedPlatformsMap: {} };
+  }
+
+  // "all": existing code path, unchanged.
   // Build base query for count - each platform account is its own conversation
   let countQuery = supabase
     .from("customer")
