@@ -72,6 +72,8 @@ const Chat = () => {
             onSelect={setSelectedCustomer}
             page={chatListPage}
             onPageChange={setChatListPage}
+            filter={chatFilter}
+            onFilterChange={setChatFilter}
           />
         )}
       </div>
@@ -88,6 +90,8 @@ const Chat = () => {
             onSelect={setSelectedCustomer}
             page={chatListPage}
             onPageChange={setChatListPage}
+            filter={chatFilter}
+            onFilterChange={setChatFilter}
           />
         </ResizablePanel>
         
