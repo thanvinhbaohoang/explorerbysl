@@ -1,21 +1,20 @@
-# Publish-safety audit: inbox filters (All / Unread / Not Replied)
+# Fix: Unread sync + filtered-list consistency (no publish)
 
-Test-and-report only. No code edits, no migrations, no data changes, no publishing, no session minting, no messages sent or marked read.
+Scope: frontend only. No changes to All query/key, integrations, sending, auth, RPC, index, tables, RLS, or data.
 
-## Steps
-1. **Changeset review** — list changed files and the filter migration; diff against pre-feature versions; flag anything outside the expected scope (ChatConversationList, useCustomersData, Chat page, generated types, one additive migration).
-2. **All-tab equivalence** — line-by-line evidence that `filter === "all"` uses the original query, 6-element cache key, count, ordering, pagination, prefetch, page-one refresh, badges, previews, loading and realtime toasts; RPC not called.
-3. **Filter definitions** — confirm Unread / Not Replied SQL semantics and deterministic latest-message ordering (timestamp, created_at, id DESC); trace mark-read and reply flows for membership changes.
-4. **Migration audit** — read deployed function definition and grants from the database catalog (read-only): SECURITY INVOKER, no writes, revoked from PUBLIC/anon, granted to authenticated, input validation, limit clamp, offset floor, always-shaped JSON, ordering before LIMIT/OFFSET, index additive. Anon/unapproved access checked via policy and privilege analysis only.
-5. **RPC correctness (read-only SQL)** — compare RPC output to independent queries: totals, page 1 and a later page for both filters, duplicate checks, stable ordering, out-of-range offset, no-match search, invalid filter, oversized limit, negative offset, platform and Messenger-disabled parity with All. EXPLAIN ANALYZE both filters.
-6. **Client data handling** — review cache keys, targeted invalidation, prefetch keys, dependency arrays, error handling (malformed JSON, missing fields), error state text and retry, placeholder flashing, zero-total page reset, loop risk.
-7. **UI review** — code inspection plus signed-out-safe rendering where possible; labels, defaults, page reset, tokens, accessibility, empty states, mobile Back persistence, narrow/desktop overflow. Signed-in rendering not possible without a session.
-8. **Static verification** — production build, TypeScript check, existing tests, lint; separate pre-existing from new issues; confirm generated types include the RPC.
-9. **Manual test status** — mark signed-in checklist as MANUAL VERIFICATION REQUIRED (no authorized session).
-10. **Rollback review** — frontend revert path; additive RPC/index remain harmless; history restore does not revert database.
+## Changes
 
-## Output
-Structured 13-section report ending with exactly one verdict. Expected unless a defect is found: "AUTOMATED CHECKS PASSED — MANUAL SIGNED-IN TEST REQUIRED". Any discovered problem is reported, not fixed.
+1. **Shared helper** — move `invalidateFilterCaches` into `src/hooks/useCustomersData.ts` as an exported `invalidateFilteredCustomerCaches(queryClient, filter)` (predicate on `queryKey[0]==='customers' && queryKey[6]===filter`). The list component reuses it; All keys (6 elements) can never match.
+2. **Mark-read paths** (invalidate `unread` only, only after `error` is null):
+   - ChatConversationList selection path (already done; switch to shared helper).
+   - `ChatPanel.tsx` ~line 555 linked-account switch update.
+   - `useChatMessages.ts` `markMessagesAsRead` (~line 1158).
+3. **Realtime UPDATE listener** in `src/pages/Chat.tsx` (persists while mobile list unmounts): one `useEffect([])` channel on `messages` UPDATE; invalidates `unread` only when `new.sender_type==='customer' && old.is_read===false && new.is_read===true`. Unique channel name, `removeChannel` on unmount.
+4. **Missed events** — in `useCustomersData`, for filtered modes only set `refetchOnMount: 'always'`; All options untouched.
+5. **No previous-tab flash** — in ChatConversationList, treat result as current only when `!isPlaceholderData` (filtered modes); otherwise skip copying rows into `allCustomers` and render the filtered skeleton. Derive displayed rows during render (not via effect) so no one-frame lag.
+6. **Accessibility** — `aria-pressed={filter===value}` on the 3 buttons.
 
-## Technical notes
-Build/tsc/lint runs only write to temp/build output, not project source. Database access limited to SELECT, catalog reads, and EXPLAIN ANALYZE on read-only statements.
+## Process
+- Show the proposed diff in chat before applying, then apply.
+- Re-run the full 13-section audit, proving each listed item (mark-read paths, realtime predicate, employee reply → Not Replied, All never invalidated, single subscription, mobile Back keeps filter + refetches, no flash via code + render-order reasoning, build/tsgo pass, lint delta zero). Items needing a signed-in session marked NOT TESTED if no session.
+- Do not publish; return revised report.
