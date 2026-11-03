@@ -1,76 +1,133 @@
-## Goal
+# Inbox Conversation Filters: All / Unread / Not Replied
 
-When a Telegram user shares a location (either a raw pin or a Telegram "venue"), our app should:
+A minimal, regression-safe filter for the chat inbox. The existing "All" query path stays byte-for-byte unchanged; the two new filters run through one new additive, read-only RPC.
 
-1. Save it as a real message (not silently drop it).
-2. Show a nice bubble in the chat with the human-readable address, coordinates, a small static map preview, and a "Open in Google Maps" link.
+## 1. File-by-file change plan
 
-Today the webhook handler in `supabase/functions/telegram-bot/index.ts` handles text/photo/voice/video/video_note/audio/document but has **no branch for `message.location` or `message.venue`**, so location shares are dropped on the floor.
+### A. New SQL migration: `get_filtered_customer_ids` RPC
+One new function, nothing else. No table/column/RLS changes, no data writes.
 
-## Changes
+```sql
+CREATE OR REPLACE FUNCTION public.get_filtered_customer_ids(
+  p_filter text,              -- 'unread' | 'not_replied'
+  p_search text DEFAULT '',
+  p_platform text DEFAULT 'all',        -- 'all' | 'telegram' | 'messenger'
+  p_messenger_enabled boolean DEFAULT true,
+  p_limit int DEFAULT 20,
+  p_offset int DEFAULT 0
+)
+RETURNS TABLE(customer_id uuid, total_count bigint)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  WITH base AS (
+    SELECT c.id, c.last_message_at
+    FROM public.customer c
+    WHERE
+      -- same visibility rules as the existing All query
+      (p_messenger_enabled OR c.messenger_id IS NULL OR c.messenger_name <> 'Unknown')
+      AND (p_platform <> 'telegram'  OR (c.telegram_id IS NOT NULL AND c.messenger_id IS NULL))
+      AND (p_platform <> 'messenger' OR c.messenger_id IS NOT NULL)
+      AND (p_search = '' OR
+           c.first_name ILIKE '%' || p_search || '%' OR
+           c.last_name  ILIKE '%' || p_search || '%' OR
+           c.username   ILIKE '%' || p_search || '%' OR
+           c.messenger_name ILIKE '%' || p_search || '%')
+      AND (
+        (p_filter = 'unread' AND EXISTS (
+          SELECT 1 FROM public.messages m
+          WHERE m.customer_id = c.id AND m.sender_type = 'customer' AND m.is_read = false
+        ))
+        OR
+        (p_filter = 'not_replied' AND (
+          SELECT m.sender_type FROM public.messages m
+          WHERE m.customer_id = c.id
+          ORDER BY m.timestamp DESC LIMIT 1
+        ) = 'customer')
+      )
+    ORDER BY c.last_message_at DESC NULLS LAST
+  )
+  SELECT b.id, (SELECT count(*) FROM base) AS total_count
+  FROM base b
+  LIMIT p_limit OFFSET p_offset;
+$$;
 
-### 1. Database — add location columns to `messages`
+GRANT EXECUTE ON FUNCTION public.get_filtered_customer_ids(text, text, text, boolean, int, int) TO authenticated;
+```
 
-New migration adding nullable columns to `public.messages`:
+Notes:
+- Read-only `SELECT` — no INSERT/UPDATE/DELETE.
+- Mirrors the All query's visibility rules (messenger toggle, platform, search) so results are consistent.
+- Filter + sort happen in SQL **before** LIMIT/OFFSET, so pagination is correct across the whole dataset, not just the loaded page.
+- Does not touch or reuse `get_unanswered_customer_ids` or `get_unread_counts`.
 
-- `latitude double precision`
-- `longitude double precision`
-- `location_address text` — reverse-geocoded human address (nullable; filled async)
-- `location_title text` — Telegram venue title (e.g. "Aeon Mall Sen Sok"), null for plain pins
-- `location_live_period integer` — seconds, present when it's a Telegram live location
+### B. `src/hooks/useCustomersData.ts`
+- Add a `filter` parameter (default `"all"`) to `customersQueryKey` and `useCustomersData`, appended at the end of the key so existing cached "all" entries are untouched.
+- In `fetchCustomersPage`: if `filter === "all"`, run the **existing code path unchanged**. Otherwise:
+  1. `supabase.rpc("get_filtered_customer_ids", { p_filter, p_search, p_platform, p_messenger_enabled, p_limit: itemsPerPage, p_offset: (page-1)*itemsPerPage })`
+  2. Fetch full customer rows with `.in("id", ids)` and re-order them to match the RPC's ID order (`.in()` does not preserve order).
+  3. Attach lead_source exactly as the existing code does.
+  4. Return `{ customers, total: total_count, linkedPlatformsMap: {} }`.
 
-No new table, no policy changes (existing RLS on `messages` already covers this).
+### C. `src/components/ChatConversationList.tsx`
+- New state: `const [filter, setFilter] = useState<"all" | "unread" | "not_replied">("all")`.
+- Segmented control rendered directly below the search field, using existing `Button`/`cn` primitives and theme tokens (no hardcoded colors):
+  `[All] [Unread] [Not Replied]` — compact, `h-7`/`text-xs`, active segment uses `bg-muted`/secondary variant styling consistent with the current design.
+- `setFilter` also calls `setPage(1)` (resets pagination via the existing lifted page state in `Chat.tsx`).
+- Pass `filter` into `useCustomersData`; the key change automatically refetches.
+- Empty states:
+  - Unread: "No unread conversations"
+  - Not Replied: "No conversations waiting for a reply"
+  - All: existing behavior unchanged.
+- Header count line (`{totalCustomers} customers`) now reflects the filtered total automatically since it reads from the same query.
 
-### 2. Edge function — `telegram-bot/index.ts`
+### D. `src/pages/Chat.tsx`
+- No change required. Filter state lives in `ChatConversationList`; page state is already lifted and `onPageChange(1)` handles the reset.
 
-Add a handler branch alongside the existing media branches for the incoming user message:
+### E. Generated types
+- Regenerate `src/integrations/supabase/types.ts` happens automatically with the migration on Lovable Cloud; no manual edit.
 
-- If `message.venue` is present: use `venue.location.latitude/longitude`, `venue.title`, `venue.address` (Telegram already gives us the address for venues — no external call needed).
-- Else if `message.location` is present: use `location.latitude/longitude`, `location.live_period`. Reverse-geocode to an address (see #3).
-- Insert a row with `message_type = 'location'`, `message_text = title || address || "[Location]"`, plus the new lat/long/address columns.
+### F. Tests
+- The project has no test runner configured, so verification is a manual regression checklist (section 4) plus a direct RPC smoke test against the database after the migration.
 
-### 3. Reverse geocoding (for plain pins)
+## 2. RPC input/output contract
 
-**Preferred: Google Maps Platform connector** (already documented in the project, high-quality addresses, works globally including Khmer place names). If not linked yet, we'll link it via `standard_connectors--connect` at build time — no user secret needed. Call the Geocoding API through the connector gateway from the edge function.
+| Input | Type | Meaning |
+|---|---|---|
+| `p_filter` | text | `'unread'` or `'not_replied'` |
+| `p_search` | text | `''` = no search (list passes `''`, same as today) |
+| `p_platform` | text | `'all'` (list always passes `'all'` today) |
+| `p_messenger_enabled` | boolean | from `useMessengerIntegration` |
+| `p_limit` / `p_offset` | int | page size 20, offset from page number |
 
-**Fallback if user declines the connector:** OpenStreetMap Nominatim (`https://nominatim.openstreetmap.org/reverse`) — free, no key, but lower quality and required to send a descriptive `User-Agent`.
+Output rows: `customer_id uuid`, `total_count bigint` (same total repeated on every row; 0 rows when the filter matches nothing, in which case the client treats total as 0).
 
-Reverse geocode inline in the webhook (fast, ~200-500ms). If it fails or times out (>2s), still save the message with coordinates and leave `location_address` null — the UI will just show coordinates + map link.
+Semantics:
+- **unread**: customer has ≥1 message with `sender_type='customer' AND is_read=false`.
+- **not_replied**: the customer's latest message (by `timestamp`) has `sender_type='customer'`.
 
-### 4. Client — render location bubbles
+## 3. Realtime update strategy
 
-**`src/hooks/useChatMessages.ts`**: extend the message row type with `latitude`, `longitude`, `location_address`, `location_title`, `location_live_period`.
+No changes to the existing subscriptions. They keep working because:
+- New message INSERT → existing handler updates `lastMessages`, unread counts, and `last_message_at` locally, and calls `refreshPageOneInBackground()` for unknown conversations.
+- One addition: the background refresh and the page-1 polling refetch must invalidate the **current filter's** query key, not the hardcoded `("customers", 1, 20, "", "all", …)` key. `refreshPageOneInBackground` will include `filter` in the key it invalidates.
+- When a conversation is opened, `handleSelect` already marks messages read in the DB. On the next refetch (poll, page change, or realtime invalidation) it naturally drops out of Unread. Not Replied is unaffected by opening — it only clears when an employee message is inserted, which the existing realtime INSERT handler already observes; the next refetch removes it from the list.
+- The 30-second polling fallback (page 1 only) keeps filtered lists fresh without extra subscriptions.
 
-**`src/components/ChatPanel.tsx`**: add a `message.message_type === 'location'` branch in the bubble renderer. Bubble contents:
+## 4. Regression test checklist
 
-- Line 1 (bold): `location_title` if present, else `"Shared location"`. Show a small "Live" badge if `location_live_period` is set.
-- Line 2: `location_address` if present, else `"Address unavailable"`.
-- Line 3 (muted mono): `12.34567, 104.56789`.
-- A small static map thumbnail (Google Static Maps via connector, or an OSM static tile as fallback).
-- A button/link: **Open in Google Maps** → `https://www.google.com/maps?q=<lat>,<lng>` (opens in new tab / native maps app on mobile).
+1. **All tab (unchanged path)**: list, sorting, pagination, search, unread badges, waiting-time badges, platform icons, realtime toast + preview updates — all behave exactly as before.
+2. **Unread tab**: shows only conversations with unread customer messages; count line matches; opening a conversation clears its badge and (after refetch) removes it from the list.
+3. **Not Replied tab**: shows only conversations whose latest message is from the customer; opening one does **not** remove it; sending a reply (employee message) removes it on next refetch.
+4. **Pagination**: filter change resets to page 1; Prev/Next work; page-4 browsing is not yanked back to page 1 by incoming messages (existing behavior preserved for all tabs).
+5. **Filter + pagination correctness**: totals and pages reflect the whole filtered dataset, not just loaded rows.
+6. **Search**: still searches all customers via the dropdown, independent of the active filter.
+7. **Realtime**: new message appears, sounds play, list re-sorts by latest timestamp on every tab.
+8. **Mobile**: segmented control fits the narrow list pane; fullscreen chat navigation unchanged.
+9. **Messenger toggle off**: broken "Unknown" messenger profiles stay hidden on all tabs.
 
-**`src/components/ChatPanel.tsx` media viewer arrays** (around L236): skip location messages — they're not media.
+## 5. Rollback strategy
 
-**`src/components/ChatConversationList.tsx`** (last-message preview): show `📍 <title or address or "Location">` for `message_type === 'location'` so the inbox preview isn't blank.
-
-### 5. Out of scope
-
-- **Sending** a location from the CRM to the customer — user asked about receiving/displaying only.
-- Facebook Messenger location attachments — same pattern can be added to `messenger-webhook/index.ts` later if wanted; not touching it now.
-- Storing full address components (city/country/postal separately) — one `location_address` string is enough for the chat UI.
-
-## Result
-
-When ប៊ុន វណ្ណា (or anyone) drops a pin or shares a venue in Telegram, the chat shows something like:
-
-> **Aeon Mall Sen Sok** *(or "Shared location")*
-> 132 Street 1003, Phnom Penh, Cambodia
-> `11.58472, 104.89921`
-> [static map thumbnail]
-> [ Open in Google Maps ]
-
-instead of the message disappearing.
-
-## Question before I build
-
-Do you want me to wire up the **Google Maps connector** for higher-quality addresses and the static map thumbnail (recommended, no cost for typical usage), or keep it dependency-free with **OpenStreetMap / Nominatim** (free, no setup, slightly rougher addresses especially for Khmer place names)?
+- Frontend: revert the two file edits — the All path is untouched, so reverting fully restores current behavior.
+- Database: the RPC is additive and read-only; rollback is `DROP FUNCTION public.get_filtered_customer_ids(text, text, text, boolean, int, int);` — no data or schema is affected.
+- No migrations alter existing objects, so there is nothing to backfill or restore.
