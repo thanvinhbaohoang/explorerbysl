@@ -11,3 +11,10 @@
 
 ## Open
 - Signed-in browser test of the tabs — blocked: no preview session available (multiple auth users, none matching the requesting email). Needs user sign-in or an approved test account.
+
+## Unread sync fix (approved, not published)
+- [x] Shared filtered-cache refresh helper; all 3 mark-read paths refresh Unread after success
+- [x] Page-level live listener for unread→read changes
+- [x] Filtered tabs re-check server on return; no previous-tab flash; aria-pressed
+- [ ] Signed-in click-through (blocked: no preview session for your account)
+- [ ] Publish (waiting on your approval)

@@ -5,7 +5,9 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { MessageSquare } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useCustomersData, type ConversationFilter } from "@/hooks/useCustomersData";
+import { useCustomersData, invalidateFilteredCustomerCaches, type ConversationFilter } from "@/hooks/useCustomersData";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 
 interface Customer {
@@ -43,6 +45,30 @@ const Chat = () => {
   const { isEnabled: messengerEnabled } = useMessengerIntegration();
   const { data: customersData } = useCustomersData(1, 100, "", "all", messengerEnabled);
   const customers = (customersData?.customers || []) as Customer[];
+
+  // Page-level listener (stays mounted while the mobile list is hidden):
+  // when a customer message flips from unread to read anywhere, refresh
+  // the Unread tab. Ignores every other kind of message update.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const channel = supabase
+      .channel(`chat-read-status-${Math.random().toString(36).slice(2)}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages" },
+        (payload) => {
+          const next = payload.new as { sender_type?: string; is_read?: boolean };
+          const prev = payload.old as { is_read?: boolean };
+          if (next?.sender_type === "customer" && prev?.is_read === false && next?.is_read === true) {
+            void invalidateFilteredCustomerCaches(queryClient, "unread");
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   // Auto-select customer from URL parameter
   useEffect(() => {

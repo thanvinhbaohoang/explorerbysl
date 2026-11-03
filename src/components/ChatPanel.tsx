@@ -41,6 +41,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateFilteredCustomerCaches } from "@/hooks/useCustomersData";
 
 interface ChatPanelProps {
   customer: Customer;
@@ -59,6 +61,7 @@ const getInitials = (name: string): string => {
 };
 
 export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps) => {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -558,6 +561,7 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
                     .eq("is_read", false)
                     .then(({ error }) => {
                       if (error) console.error('Failed to mark messages read:', error);
+                      else void invalidateFilteredCustomerCaches(queryClient, "unread");
                     });
 
                   // Telegram typing/seen indicator
