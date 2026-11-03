@@ -378,7 +378,7 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
       });
 
     return () => { supabase.removeChannel(channel); };
-  }, [refreshPageOneInBackground, navigate, onSelect]);
+  }, [refreshPageOneInBackground, navigate, onSelect, invalidateFilterCaches]);
 
 
   // Polling fallback: refetch only when user is on page 1 (avoid disrupting
@@ -638,7 +638,12 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
       .eq("sender_type", "customer")
       .eq("is_read", false)
       .then(({ error }) => {
-        if (error) console.error('Failed to mark messages read:', error);
+        if (error) {
+          console.error('Failed to mark messages read:', error);
+        } else {
+          // Mark-read succeeded: drop this conversation from Unread immediately
+          invalidateFilterCaches("unread");
+        }
       });
 
     // 3) Fire-and-forget: send typing indicator for Telegram customers
