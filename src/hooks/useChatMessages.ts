@@ -5,6 +5,7 @@ import { useCurrentUserName } from "@/hooks/useCurrentUserName";
 import { toast } from "sonner";
 import { detectLanguage } from "@/lib/language-detection";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateFilteredCustomerCaches } from "@/hooks/useCustomersData";
 import { processFileForUpload } from "@/lib/image-conversion";
 
 // Turn a supabase.functions.invoke() failure into a human-readable reason.
