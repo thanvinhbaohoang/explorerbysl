@@ -1,22 +1,21 @@
-# Inbox Conversation Filters: All / Unread / Not Replied
+# Inbox Conversation Filters: All / Unread / Not Replied (revised)
 
-A minimal, regression-safe filter for the chat inbox. The existing "All" query path stays byte-for-byte unchanged; the two new filters run through one new additive, read-only RPC.
+A minimal, regression-safe filter for the chat inbox. The existing "All" query path and its cache key stay byte-for-byte unchanged; the two new filters run through one new additive, read-only RPC.
 
-## 1. File-by-file change plan
+## 1. The SQL migration (full text)
 
-### A. New SQL migration: `get_filtered_customer_ids` RPC
 One new function, nothing else. No table/column/RLS changes, no data writes.
 
 ```sql
 CREATE OR REPLACE FUNCTION public.get_filtered_customer_ids(
-  p_filter text,              -- 'unread' | 'not_replied'
+  p_filter text,                        -- 'unread' | 'not_replied'
   p_search text DEFAULT '',
   p_platform text DEFAULT 'all',        -- 'all' | 'telegram' | 'messenger'
   p_messenger_enabled boolean DEFAULT true,
   p_limit int DEFAULT 20,
   p_offset int DEFAULT 0
 )
-RETURNS TABLE(customer_id uuid, total_count bigint)
+RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path TO 'public'
 AS $$
@@ -42,92 +41,94 @@ AS $$
         (p_filter = 'not_replied' AND (
           SELECT m.sender_type FROM public.messages m
           WHERE m.customer_id = c.id
-          ORDER BY m.timestamp DESC LIMIT 1
+          ORDER BY m.timestamp DESC, m.created_at DESC, m.id DESC
+          LIMIT 1
         ) = 'customer')
       )
-    ORDER BY c.last_message_at DESC NULLS LAST
+    ORDER BY c.last_message_at DESC NULLS LAST, c.id
+  ),
+  counted AS (
+    SELECT count(*) AS total FROM base
+  ),
+  paged AS (
+    SELECT id FROM base LIMIT p_limit OFFSET p_offset
   )
-  SELECT b.id, (SELECT count(*) FROM base) AS total_count
-  FROM base b
-  LIMIT p_limit OFFSET p_offset;
+  SELECT jsonb_build_object(
+    'customer_ids', COALESCE((SELECT jsonb_agg(id) FROM paged), '[]'::jsonb),
+    'total_count', (SELECT total FROM counted)
+  );
 $$;
 
+-- Lock down, then grant narrowly: SECURITY DEFINER must not be publicly executable
+REVOKE EXECUTE ON FUNCTION public.get_filtered_customer_ids(text, text, text, boolean, int, int) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_filtered_customer_ids(text, text, text, boolean, int, int) FROM anon;
 GRANT EXECUTE ON FUNCTION public.get_filtered_customer_ids(text, text, text, boolean, int, int) TO authenticated;
 ```
 
-Notes:
+Key properties:
+- Returns a **single JSON object** `{ customer_ids: [...], total_count: N }` — always returned, even when the page is empty or out of range (`customer_ids` is `[]`, `total_count` still correct).
 - Read-only `SELECT` — no INSERT/UPDATE/DELETE.
-- Mirrors the All query's visibility rules (messenger toggle, platform, search) so results are consistent.
-- Filter + sort happen in SQL **before** LIMIT/OFFSET, so pagination is correct across the whole dataset, not just the loaded page.
+- Deterministic ordering: customers by `last_message_at DESC NULLS LAST, id`; latest-message lookup by `timestamp DESC, created_at DESC, id DESC`.
+- Filter + sort happen in SQL **before** LIMIT/OFFSET — pagination is correct across the whole dataset.
 - Does not touch or reuse `get_unanswered_customer_ids` or `get_unread_counts`.
+- After applying: run `EXPLAIN ANALYZE` for both filter modes. If `not_replied` is slow, add an additive composite index `CREATE INDEX idx_messages_customer_ts ON public.messages (customer_id, timestamp DESC);` in the same or a follow-up migration.
 
-### B. `src/hooks/useCustomersData.ts`
-- Add a `filter` parameter (default `"all"`) to `customersQueryKey` and `useCustomersData`, appended at the end of the key so existing cached "all" entries are untouched.
-- In `fetchCustomersPage`: if `filter === "all"`, run the **existing code path unchanged**. Otherwise:
-  1. `supabase.rpc("get_filtered_customer_ids", { p_filter, p_search, p_platform, p_messenger_enabled, p_limit: itemsPerPage, p_offset: (page-1)*itemsPerPage })`
-  2. Fetch full customer rows with `.in("id", ids)` and re-order them to match the RPC's ID order (`.in()` does not preserve order).
-  3. Attach lead_source exactly as the existing code does.
-  4. Return `{ customers, total: total_count, linkedPlatformsMap: {} }`.
+## 2. File-by-file change plan
 
-### C. `src/components/ChatConversationList.tsx`
+### `src/hooks/useCustomersData.ts`
+- `customersQueryKey` and `useCustomersData` gain a `filter` parameter defaulting to `"all"`.
+- Cache key rule: when `filter === "all"`, the key is **exactly the existing 5-element key** (unchanged). Only for `"unread"` / `"not_replied"` is the filter appended as a 6th element.
+- `fetchCustomersPage`: if `filter === "all"`, run the existing code path unchanged. Otherwise:
+  1. `supabase.rpc("get_filtered_customer_ids", { p_filter: filter, p_search: searchTerm, p_platform: platformFilter, p_messenger_enabled: messengerEnabled, p_limit: itemsPerPage, p_offset: (page - 1) * itemsPerPage })`
+  2. Read `data.customer_ids` / `data.total_count` from the JSON result; if `customer_ids` is empty, return `{ customers: [], total: total_count, linkedPlatformsMap: {} }` immediately.
+  3. Fetch full customer rows with `.in("id", ids)` and re-order them to match the RPC's ID order (`.in()` does not preserve order).
+  4. Attach `lead_source` exactly as the existing code does.
+
+### `src/components/ChatConversationList.tsx`
 - New state: `const [filter, setFilter] = useState<"all" | "unread" | "not_replied">("all")`.
-- Segmented control rendered directly below the search field, using existing `Button`/`cn` primitives and theme tokens (no hardcoded colors):
-  `[All] [Unread] [Not Replied]` — compact, `h-7`/`text-xs`, active segment uses `bg-muted`/secondary variant styling consistent with the current design.
-- `setFilter` also calls `setPage(1)` (resets pagination via the existing lifted page state in `Chat.tsx`).
-- Pass `filter` into `useCustomersData`; the key change automatically refetches.
-- Empty states:
-  - Unread: "No unread conversations"
-  - Not Replied: "No conversations waiting for a reply"
-  - All: existing behavior unchanged.
-- Header count line (`{totalCustomers} customers`) now reflects the filtered total automatically since it reads from the same query.
+- Segmented control below the search field, built from existing `Button`/`cn` primitives and theme tokens: `[All] [Unread] [Not Replied]`, compact (`h-7`, `text-xs`), active segment styled like the existing muted/selected row treatment.
+- `setFilter` also calls `setPage(1)` (uses the existing lifted page state).
+- Pass `filter` into `useCustomersData`, `refreshPageOneInBackground`, and the next-page prefetch (both its `queryKey` and its `queryFn`), plus their dependency arrays.
+- **keepPreviousData guard:** when `filter !== "all"`, do not render `placeholderData` rows from a previous filter. While the filtered query is pending, show the skeleton loading state (or an empty list) instead of stale All-tab rows.
+- Empty states: Unread → "No unread conversations"; Not Replied → "No conversations waiting for a reply"; All → unchanged.
+- Header count line reflects the filtered total automatically (same query data).
 
-### D. `src/pages/Chat.tsx`
-- No change required. Filter state lives in `ChatConversationList`; page state is already lifted and `onPageChange(1)` handles the reset.
+### `src/pages/Chat.tsx`
+- No change required.
 
-### E. Generated types
-- Regenerate `src/integrations/supabase/types.ts` happens automatically with the migration on Lovable Cloud; no manual edit.
+### Generated types
+- Regenerate `src/integrations/supabase/types.ts` after the migration and **verify** `get_filtered_customer_ids` is present in the file before wiring the client call (explicit check, not assumed).
 
-### F. Tests
-- The project has no test runner configured, so verification is a manual regression checklist (section 4) plus a direct RPC smoke test against the database after the migration.
+## 3. Realtime update strategy (immediate, no 30s wait)
 
-## 2. RPC input/output contract
+Existing subscriptions stay; three targeted refetches are added, all invalidating the **current filter's** query key:
 
-| Input | Type | Meaning |
-|---|---|---|
-| `p_filter` | text | `'unread'` or `'not_replied'` |
-| `p_search` | text | `''` = no search (list passes `''`, same as today) |
-| `p_platform` | text | `'all'` (list always passes `'all'` today) |
-| `p_messenger_enabled` | boolean | from `useMessengerIntegration` |
-| `p_limit` / `p_offset` | int | page size 20, offset from page number |
+1. **Mark-read success** (`handleSelect`'s messages update resolves) → invalidate the current Unread query so the conversation leaves the Unread list immediately.
+2. **Employee message INSERT** (existing realtime handler) → invalidate the current Not Replied query so the conversation leaves Not Replied immediately.
+3. **Customer message INSERT** (existing handler) → invalidate the current filtered query (Unread and Not Replied both gain the conversation) in addition to the existing local preview/unread updates and `refreshPageOneInBackground`.
+4. The 30-second page-1 polling fallback remains as a safety net, but nothing depends on it.
 
-Output rows: `customer_id uuid`, `total_count bigint` (same total repeated on every row; 0 rows when the filter matches nothing, in which case the client treats total as 0).
-
-Semantics:
-- **unread**: customer has ≥1 message with `sender_type='customer' AND is_read=false`.
-- **not_replied**: the customer's latest message (by `timestamp`) has `sender_type='customer'`.
-
-## 3. Realtime update strategy
-
-No changes to the existing subscriptions. They keep working because:
-- New message INSERT → existing handler updates `lastMessages`, unread counts, and `last_message_at` locally, and calls `refreshPageOneInBackground()` for unknown conversations.
-- One addition: the background refresh and the page-1 polling refetch must invalidate the **current filter's** query key, not the hardcoded `("customers", 1, 20, "", "all", …)` key. `refreshPageOneInBackground` will include `filter` in the key it invalidates.
-- When a conversation is opened, `handleSelect` already marks messages read in the DB. On the next refetch (poll, page change, or realtime invalidation) it naturally drops out of Unread. Not Replied is unaffected by opening — it only clears when an employee message is inserted, which the existing realtime INSERT handler already observes; the next refetch removes it from the list.
-- The 30-second polling fallback (page 1 only) keeps filtered lists fresh without extra subscriptions.
+Invalidations use the filter-aware key; the All key is never touched by filtered-tab logic.
 
 ## 4. Regression test checklist
 
-1. **All tab (unchanged path)**: list, sorting, pagination, search, unread badges, waiting-time badges, platform icons, realtime toast + preview updates — all behave exactly as before.
-2. **Unread tab**: shows only conversations with unread customer messages; count line matches; opening a conversation clears its badge and (after refetch) removes it from the list.
-3. **Not Replied tab**: shows only conversations whose latest message is from the customer; opening one does **not** remove it; sending a reply (employee message) removes it on next refetch.
-4. **Pagination**: filter change resets to page 1; Prev/Next work; page-4 browsing is not yanked back to page 1 by incoming messages (existing behavior preserved for all tabs).
-5. **Filter + pagination correctness**: totals and pages reflect the whole filtered dataset, not just loaded rows.
-6. **Search**: still searches all customers via the dropdown, independent of the active filter.
-7. **Realtime**: new message appears, sounds play, list re-sorts by latest timestamp on every tab.
-8. **Mobile**: segmented control fits the narrow list pane; fullscreen chat navigation unchanged.
+1. **All tab**: list, sorting, pagination, search, unread badges, waiting badges, platform icons, realtime toasts — identical to today; cache key unchanged (verify no refetch storm on mount).
+2. **Unread tab**: only conversations with unread customer messages; opening one clears the badge and removes it from the list immediately after mark-read resolves.
+3. **Not Replied tab**: only conversations whose latest message is from the customer; opening does not remove it; sending a reply removes it immediately on the employee-message insert.
+4. **Tab switch**: no flash of All-tab rows under Unread/Not Replied (loading/empty state shown instead).
+5. **Pagination**: filter change resets to page 1; totals/pages reflect the whole filtered dataset; browsing older pages is not yanked back by incoming messages.
+6. **Search**: dropdown search still works independently of the active filter.
+7. **Realtime**: new customer message makes the conversation appear in Unread/Not Replied without waiting 30s; sounds and previews still fire.
+8. **Mobile**: segmented control fits the narrow pane; fullscreen chat navigation unchanged.
 9. **Messenger toggle off**: broken "Unknown" messenger profiles stay hidden on all tabs.
+10. **RPC security**: calling the RPC as anon fails; as authenticated succeeds (verified via a direct query after migration).
 
 ## 5. Rollback strategy
 
-- Frontend: revert the two file edits — the All path is untouched, so reverting fully restores current behavior.
-- Database: the RPC is additive and read-only; rollback is `DROP FUNCTION public.get_filtered_customer_ids(text, text, text, boolean, int, int);` — no data or schema is affected.
-- No migrations alter existing objects, so there is nothing to backfill or restore.
+- Frontend: revert the two file edits — the All path and key are untouched, so reverting fully restores current behavior.
+- Database: `DROP FUNCTION public.get_filtered_customer_ids(text, text, text, boolean, int, int);` (and `DROP INDEX IF EXISTS idx_messages_customer_ts;` if the index was added). No data or existing schema is affected.
+- No backfill or restore needed — nothing existing is modified.
+
+## Scope limits
+
+Only `ChatConversationList.tsx`, `useCustomersData.ts`, generated types, and one additive migration. No Telegram, Messenger, auth, sending, attachment, customer-linking, or existing table changes.
