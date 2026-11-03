@@ -61,6 +61,7 @@ const getInitials = (name: string): string => {
 };
 
 export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps) => {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
