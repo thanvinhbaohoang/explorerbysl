@@ -11,7 +11,7 @@
 
 ## Open
 - Signed-in browser test of the tabs — blocked: no preview session available (multiple auth users, none matching the requesting email). Needs user sign-in or an approved test account.
-- Requested verification: All → Unread → Not Replied → All, mobile Back, Retry, and cross-device reading; fix reproduced issues only. Blocked until a signed-in account is available.
+- Requested verification: All → Unread → Not Replied → All, mobile Back, Retry, and cross-device reading — NOT TESTED: opening `/chat` in Chromium redirects to `/auth`; session minting and `--self` failed because no auth account matches the requester. No source fixes or customer interactions performed. Awaiting preview sign-in.
 
 ## Unread sync fix (approved, not published)
 - [x] Shared filtered-cache refresh helper; all 3 mark-read paths refresh Unread after success
