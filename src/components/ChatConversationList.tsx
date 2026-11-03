@@ -156,7 +156,12 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
     if (totalCustomers > 0 && page > totalPages) {
       setPage(totalPages);
     }
-  }, [totalCustomers, totalPages, page]);
+    // Filtered lists: if the total shrinks to zero while on page 2+, go back
+    // to page 1. All-tab behavior is unchanged.
+    if (filter !== "all" && totalCustomers === 0 && page > 1) {
+      setPage(1);
+    }
+  }, [totalCustomers, totalPages, page, filter]);
 
   // Prefetch the next 4 pages so paginating forward feels instant
   useEffect(() => {
