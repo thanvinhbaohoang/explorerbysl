@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useCustomersData, fetchCustomersPage, customersQueryKey } from "@/hooks/useCustomersData";
+import { useCustomersData, fetchCustomersPage, customersQueryKey, type ConversationFilter } from "@/hooks/useCustomersData";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 import { supabase } from "@/integrations/supabase/client";
@@ -44,6 +44,8 @@ interface ChatConversationListProps {
   onSelect: (customer: Customer) => void;
   page?: number;
   onPageChange?: (page: number) => void;
+  filter?: ConversationFilter;
+  onFilterChange?: (filter: ConversationFilter) => void;
 }
 
 // Helper function to get initials from name
@@ -56,7 +58,7 @@ const getInitials = (name: string): string => {
     .join('') || '?';
 };
 
-export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onPageChange }: ChatConversationListProps) => {
+export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onPageChange, filter: filterProp, onFilterChange }: ChatConversationListProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const isOnChatPage = location.pathname === '/chat';
@@ -70,8 +72,19 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
     if (onPageChange) onPageChange(next);
     else setLocalPage(next);
   }, [onPageChange, page]);
+
+  // Filter state: controlled from Chat.tsx when provided (survives mobile
+  // unmount), local fallback otherwise — same pattern as page state.
+  const [localFilter, setLocalFilter] = useState<ConversationFilter>("all");
+  const filter = filterProp ?? localFilter;
+  const setFilter = useCallback((next: ConversationFilter) => {
+    if (onFilterChange) onFilterChange(next);
+    else setLocalFilter(next);
+    setPage(1);
+  }, [onFilterChange, setPage]);
+
   const itemsPerPage = 20;
-  const { data: customersData, isLoading, isPlaceholderData, refetch } = useCustomersData(page, itemsPerPage, "", "all", messengerEnabled);
+  const { data: customersData, isLoading, isPlaceholderData, isError, error, refetch } = useCustomersData(page, itemsPerPage, "", "all", messengerEnabled, filter);
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -113,9 +126,21 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
   const queryClient = useQueryClient();
   const refreshPageOneInBackground = useCallback(() => {
     void queryClient.invalidateQueries({
-      queryKey: customersQueryKey(1, itemsPerPage, "", "all", messengerEnabled),
+      queryKey: customersQueryKey(1, itemsPerPage, "", "all", messengerEnabled, filter),
     });
-  }, [queryClient, itemsPerPage, messengerEnabled]);
+  }, [queryClient, itemsPerPage, messengerEnabled, filter]);
+
+  // Invalidate EVERY cached page of a given filter (predicate match on the
+  // 7th key element). Never touches the All cache — 6-element keys have no
+  // element 7, so they can't match.
+  const invalidateFilterCaches = useCallback((target: Exclude<ConversationFilter, "all">) => {
+    void queryClient.invalidateQueries({
+      predicate: (query) =>
+        Array.isArray(query.queryKey) &&
+        query.queryKey[0] === "customers" &&
+        query.queryKey[6] === target,
+    });
+  }, [queryClient]);
 
 
   // Sync current page data into local state (replace, don't accumulate)
@@ -131,7 +156,12 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
     if (totalCustomers > 0 && page > totalPages) {
       setPage(totalPages);
     }
-  }, [totalCustomers, totalPages, page]);
+    // Filtered lists: if the total shrinks to zero while on page 2+, go back
+    // to page 1. All-tab behavior is unchanged.
+    if (filter !== "all" && totalCustomers === 0 && page > 1) {
+      setPage(1);
+    }
+  }, [totalCustomers, totalPages, page, filter]);
 
   // Prefetch the next 4 pages so paginating forward feels instant
   useEffect(() => {
@@ -139,12 +169,12 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
     const maxPrefetch = Math.min(totalPages, page + 4);
     for (let p = page + 1; p <= maxPrefetch; p++) {
       queryClient.prefetchQuery({
-        queryKey: customersQueryKey(p, itemsPerPage, "", "all", messengerEnabled),
-        queryFn: () => fetchCustomersPage(p, itemsPerPage, "", "all", messengerEnabled),
+        queryKey: customersQueryKey(p, itemsPerPage, "", "all", messengerEnabled, filter),
+        queryFn: () => fetchCustomersPage(p, itemsPerPage, "", "all", messengerEnabled, filter),
         staleTime: 5 * 60 * 1000,
       });
     }
-  }, [page, totalPages, itemsPerPage, messengerEnabled, queryClient]);
+  }, [page, totalPages, itemsPerPage, messengerEnabled, queryClient, filter]);
 
   // Fetch unread counts via RPC (avoids 1000-row select limit)
   const fetchUnreadCounts = async () => {
@@ -228,7 +258,17 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
           const newMessage = payload.new as any;
           const currentCustomers = allCustomersRef.current;
           const currentLinkedMap = allLinkedPlatformsMapRef.current;
-          
+
+          // Keep filtered lists current immediately (no 30s poll wait):
+          // a customer message can add a conversation to Unread/Not Replied;
+          // an employee reply removes it from Not Replied.
+          if (newMessage.sender_type === "customer") {
+            invalidateFilterCaches("unread");
+            invalidateFilterCaches("not_replied");
+          } else if (newMessage.sender_type === "employee") {
+            invalidateFilterCaches("not_replied");
+          }
+
           // Update unread count and play sound for customer messages
           if (newMessage.sender_type === "customer") {
             playMessageNotification();
@@ -338,7 +378,7 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
       });
 
     return () => { supabase.removeChannel(channel); };
-  }, [refreshPageOneInBackground, navigate, onSelect]);
+  }, [refreshPageOneInBackground, navigate, onSelect, invalidateFilterCaches]);
 
 
   // Polling fallback: refetch only when user is on page 1 (avoid disrupting
@@ -598,7 +638,12 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
       .eq("sender_type", "customer")
       .eq("is_read", false)
       .then(({ error }) => {
-        if (error) console.error('Failed to mark messages read:', error);
+        if (error) {
+          console.error('Failed to mark messages read:', error);
+        } else {
+          // Mark-read succeeded: drop this conversation from Unread immediately
+          invalidateFilterCaches("unread");
+        }
       });
 
     // 3) Fire-and-forget: send typing indicator for Telegram customers
@@ -761,10 +806,64 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
           </PopoverContent>
         </Popover>
       </div>
-      
+
+      {/* Conversation filter: All / Unread / Not Replied */}
+      <div className="px-3 pb-2 border-b flex-shrink-0">
+        <div className="flex gap-1 p-0.5 rounded-lg bg-muted/50">
+          {([
+            { value: "all", label: "All" },
+            { value: "unread", label: "Unread" },
+            { value: "not_replied", label: "Not Replied" },
+          ] as const).map(({ value, label }) => (
+            <Button
+              key={value}
+              variant="ghost"
+              size="sm"
+              onClick={() => setFilter(value)}
+              className={cn(
+                "flex-1 h-7 text-xs font-medium rounded-md",
+                filter === value
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
       <ScrollArea key={page} className="flex-1">
         <div className="p-1">
-          {sortedCustomers.map(customer => {
+          {/* Filtered queries: never show stale All-tab rows via keepPreviousData,
+              and never show RPC errors as an empty inbox */}
+          {filter !== "all" && isError ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 px-4 text-center">
+              <p className="text-sm text-muted-foreground">Unable to load filtered conversations</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                Retry
+              </Button>
+            </div>
+          ) : filter !== "all" && isPlaceholderData ? (
+            <div className="p-2 space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 p-3">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-3 w-32" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : sortedCustomers.length === 0 && filter !== "all" ? (
+            <div className="py-10 px-4 text-center text-sm text-muted-foreground">
+              {filter === "unread"
+                ? "No unread conversations"
+                : "No conversations waiting for a reply"}
+            </div>
+          ) : null}
+          {!(filter !== "all" && (isError || isPlaceholderData)) && sortedCustomers.map(customer => {
             const displayName = customer.messenger_name || 
               `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
               'Unknown';

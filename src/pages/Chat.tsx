@@ -5,7 +5,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { MessageSquare } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useCustomersData } from "@/hooks/useCustomersData";
+import { useCustomersData, type ConversationFilter } from "@/hooks/useCustomersData";
 import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 
 interface Customer {
@@ -33,6 +33,9 @@ const Chat = () => {
   const isMobile = useIsMobile();
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [chatListPage, setChatListPage] = useState(1);
+  // Filter state lives here (not in ChatConversationList) because on mobile
+  // the list unmounts when a conversation opens — local state would reset.
+  const [chatFilter, setChatFilter] = useState<ConversationFilter>("all");
   const [searchParams, setSearchParams] = useSearchParams();
   const customerId = searchParams.get('customer');
   
@@ -69,6 +72,8 @@ const Chat = () => {
             onSelect={setSelectedCustomer}
             page={chatListPage}
             onPageChange={setChatListPage}
+            filter={chatFilter}
+            onFilterChange={setChatFilter}
           />
         )}
       </div>
@@ -85,6 +90,8 @@ const Chat = () => {
             onSelect={setSelectedCustomer}
             page={chatListPage}
             onPageChange={setChatListPage}
+            filter={chatFilter}
+            onFilterChange={setChatFilter}
           />
         </ResizablePanel>
         

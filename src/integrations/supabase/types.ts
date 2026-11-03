@@ -706,6 +706,17 @@ export type Database = {
     }
     Functions: {
       execute_unknown_messenger_cleanup: { Args: never; Returns: Json }
+      get_filtered_customer_ids: {
+        Args: {
+          p_filter: string
+          p_limit?: number
+          p_messenger_enabled?: boolean
+          p_offset?: number
+          p_platform?: string
+          p_search?: string
+        }
+        Returns: Json
+      }
       get_latest_messages: {
         Args: { p_customer_ids: string[] }
         Returns: {

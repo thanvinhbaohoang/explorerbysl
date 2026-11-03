@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_messages_customer_ts ON public.messages (customer_id, "timestamp" DESC, created_at DESC, id DESC);
