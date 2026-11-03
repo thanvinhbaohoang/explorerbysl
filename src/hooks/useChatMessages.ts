@@ -1153,12 +1153,17 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   const markMessagesAsRead = async () => {
     if (linkedCustomerIds.length === 0) return;
     
-    await supabase
+    const { error } = await supabase
       .from("messages")
       .update({ is_read: true })
       .in("customer_id", linkedCustomerIds)
       .eq("sender_type", "customer")
       .eq("is_read", false);
+    if (error) {
+      console.error('Failed to mark messages read:', error);
+      return;
+    }
+    void invalidateFilteredCustomerCaches(queryClient, "unread");
   };
 
   return {

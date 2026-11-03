@@ -558,6 +558,7 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
                     .eq("is_read", false)
                     .then(({ error }) => {
                       if (error) console.error('Failed to mark messages read:', error);
+                      else void invalidateFilteredCustomerCaches(queryClient, "unread");
                     });
 
                   // Telegram typing/seen indicator

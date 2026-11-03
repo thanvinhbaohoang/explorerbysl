@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useCustomersData, fetchCustomersPage, customersQueryKey, type ConversationFilter } from "@/hooks/useCustomersData";
+import { useCustomersData, fetchCustomersPage, customersQueryKey, invalidateFilteredCustomerCaches, type ConversationFilter } from "@/hooks/useCustomersData";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMessengerIntegration } from "@/hooks/useMessengerIntegration";
 import { supabase } from "@/integrations/supabase/client";
