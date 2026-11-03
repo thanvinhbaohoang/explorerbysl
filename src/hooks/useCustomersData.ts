@@ -190,10 +190,10 @@ export const fetchCustomersPage = async (
 };
 
 
-export const useCustomersData = (page: number, itemsPerPage: number = 10, searchTerm: string = "", platformFilter: string = "all", messengerEnabled: boolean = true) => {
+export const useCustomersData = (page: number, itemsPerPage: number = 10, searchTerm: string = "", platformFilter: string = "all", messengerEnabled: boolean = true, filter: ConversationFilter = "all") => {
   return useQuery({
-    queryKey: customersQueryKey(page, itemsPerPage, searchTerm, platformFilter, messengerEnabled),
-    queryFn: () => fetchCustomersPage(page, itemsPerPage, searchTerm, platformFilter, messengerEnabled),
+    queryKey: customersQueryKey(page, itemsPerPage, searchTerm, platformFilter, messengerEnabled, filter),
+    queryFn: () => fetchCustomersPage(page, itemsPerPage, searchTerm, platformFilter, messengerEnabled, filter),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     placeholderData: keepPreviousData,
