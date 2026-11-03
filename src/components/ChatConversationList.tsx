@@ -126,9 +126,21 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
   const queryClient = useQueryClient();
   const refreshPageOneInBackground = useCallback(() => {
     void queryClient.invalidateQueries({
-      queryKey: customersQueryKey(1, itemsPerPage, "", "all", messengerEnabled),
+      queryKey: customersQueryKey(1, itemsPerPage, "", "all", messengerEnabled, filter),
     });
-  }, [queryClient, itemsPerPage, messengerEnabled]);
+  }, [queryClient, itemsPerPage, messengerEnabled, filter]);
+
+  // Invalidate EVERY cached page of a given filter (predicate match on the
+  // 7th key element). Never touches the All cache — 6-element keys have no
+  // element 7, so they can't match.
+  const invalidateFilterCaches = useCallback((target: Exclude<ConversationFilter, "all">) => {
+    void queryClient.invalidateQueries({
+      predicate: (query) =>
+        Array.isArray(query.queryKey) &&
+        query.queryKey[0] === "customers" &&
+        query.queryKey[6] === target,
+    });
+  }, [queryClient]);
 
 
   // Sync current page data into local state (replace, don't accumulate)
@@ -152,12 +164,12 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
     const maxPrefetch = Math.min(totalPages, page + 4);
     for (let p = page + 1; p <= maxPrefetch; p++) {
       queryClient.prefetchQuery({
-        queryKey: customersQueryKey(p, itemsPerPage, "", "all", messengerEnabled),
-        queryFn: () => fetchCustomersPage(p, itemsPerPage, "", "all", messengerEnabled),
+        queryKey: customersQueryKey(p, itemsPerPage, "", "all", messengerEnabled, filter),
+        queryFn: () => fetchCustomersPage(p, itemsPerPage, "", "all", messengerEnabled, filter),
         staleTime: 5 * 60 * 1000,
       });
     }
-  }, [page, totalPages, itemsPerPage, messengerEnabled, queryClient]);
+  }, [page, totalPages, itemsPerPage, messengerEnabled, queryClient, filter]);
 
   // Fetch unread counts via RPC (avoids 1000-row select limit)
   const fetchUnreadCounts = async () => {
