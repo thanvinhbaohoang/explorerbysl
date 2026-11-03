@@ -58,7 +58,7 @@ const getInitials = (name: string): string => {
     .join('') || '?';
 };
 
-export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onPageChange }: ChatConversationListProps) => {
+export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onPageChange, filter: filterProp, onFilterChange }: ChatConversationListProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const isOnChatPage = location.pathname === '/chat';
@@ -72,8 +72,19 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
     if (onPageChange) onPageChange(next);
     else setLocalPage(next);
   }, [onPageChange, page]);
+
+  // Filter state: controlled from Chat.tsx when provided (survives mobile
+  // unmount), local fallback otherwise — same pattern as page state.
+  const [localFilter, setLocalFilter] = useState<ConversationFilter>("all");
+  const filter = filterProp ?? localFilter;
+  const setFilter = useCallback((next: ConversationFilter) => {
+    if (onFilterChange) onFilterChange(next);
+    else setLocalFilter(next);
+    setPage(1);
+  }, [onFilterChange, setPage]);
+
   const itemsPerPage = 20;
-  const { data: customersData, isLoading, isPlaceholderData, refetch } = useCustomersData(page, itemsPerPage, "", "all", messengerEnabled);
+  const { data: customersData, isLoading, isPlaceholderData, isError, error, refetch } = useCustomersData(page, itemsPerPage, "", "all", messengerEnabled, filter);
   
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
