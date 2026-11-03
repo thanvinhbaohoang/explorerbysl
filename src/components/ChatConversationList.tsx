@@ -134,22 +134,24 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
   // 7th key element). Never touches the All cache — 6-element keys have no
   // element 7, so they can't match.
   const invalidateFilterCaches = useCallback((target: Exclude<ConversationFilter, "all">) => {
-    void queryClient.invalidateQueries({
-      predicate: (query) =>
-        Array.isArray(query.queryKey) &&
-        query.queryKey[0] === "customers" &&
-        query.queryKey[6] === target,
-    });
+    void invalidateFilteredCustomerCaches(queryClient, target);
   }, [queryClient]);
 
 
   // Sync current page data into local state (replace, don't accumulate)
+  // syncedData records which query result allCustomers was copied from, so
+  // filtered tabs can tell (in the same render) when local rows are stale.
+  const [syncedData, setSyncedData] = useState<typeof customersData>(undefined);
   useEffect(() => {
     if (customersData?.customers) {
       setAllCustomers(customersData.customers as Customer[]);
       setAllLinkedPlatformsMap(customersData.linkedPlatformsMap || {});
+      setSyncedData(customersData);
     }
   }, [customersData]);
+  // Filtered tabs: rows are shown only once local state holds the CURRENT
+  // query's result (never placeholder data from a previous tab/page).
+  const filteredPending = filter !== "all" && (isPlaceholderData || !customersData || syncedData !== customersData);
 
   // Clamp page when total shrinks
   useEffect(() => {
@@ -820,6 +822,7 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
               variant="ghost"
               size="sm"
               onClick={() => setFilter(value)}
+              aria-pressed={filter === value}
               className={cn(
                 "flex-1 h-7 text-xs font-medium rounded-md",
                 filter === value
@@ -844,7 +847,7 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
                 Retry
               </Button>
             </div>
-          ) : filter !== "all" && isPlaceholderData ? (
+          ) : filteredPending ? (
             <div className="p-2 space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="flex items-center gap-3 p-3">
@@ -863,7 +866,7 @@ export const ChatConversationList = ({ selectedId, onSelect, page: pageProp, onP
                 : "No conversations waiting for a reply"}
             </div>
           ) : null}
-          {!(filter !== "all" && (isError || isPlaceholderData)) && sortedCustomers.map(customer => {
+          {!(filter !== "all" && (isError || filteredPending)) && sortedCustomers.map(customer => {
             const displayName = customer.messenger_name || 
               `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
               'Unknown';

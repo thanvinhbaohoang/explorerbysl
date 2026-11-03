@@ -1,4 +1,4 @@
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, keepPreviousData, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 interface Customer {
@@ -197,6 +197,24 @@ export const useCustomersData = (page: number, itemsPerPage: number = 10, search
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     placeholderData: keepPreviousData,
+    // Filtered tabs always re-check the server when the list mounts so changes
+    // made elsewhere (e.g. another staff member reading a chat) are picked up.
+    // All keeps its original refetch behavior.
+    ...(filter !== "all" ? { refetchOnMount: "always" as const } : {}),
   });
 };
+
+// Invalidate EVERY cached page of one filtered tab. Matches only keys whose
+// 7th element is the filter; the 6-element All key can never match.
+export const invalidateFilteredCustomerCaches = (
+  queryClient: QueryClient,
+  filter: Exclude<ConversationFilter, "all">,
+) =>
+  queryClient.invalidateQueries({
+    predicate: (query) =>
+      Array.isArray(query.queryKey) &&
+      query.queryKey.length === 7 &&
+      query.queryKey[0] === "customers" &&
+      query.queryKey[6] === filter,
+  });
 
