@@ -905,6 +905,20 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
         onClose={() => setMediaViewerOpen(false)}
       />
     )}
+    <AlertDialog open={!!replaceConfirm} onOpenChange={(o) => { if (!o) replaceConfirm?.(false); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Replace the current draft?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will replace the text and attachments currently in your message.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => replaceConfirm?.(false)}>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={() => replaceConfirm?.(true)}>Replace draft</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     </ChatMediaProvider>
   );
 };
