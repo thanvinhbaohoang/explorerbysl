@@ -1,10 +1,13 @@
-# Saved Replies: 0–4 ordered pictures (backward-compatible upgrade) — revised
+# Saved Replies: 0–4 ordered pictures (backward-compatible upgrade) — revision 3
 
 Plan only. The applied `0002_add_saved_replies` migration is untouched. Nothing publishes automatically. Telegram/Messenger delivery functions, `sendMediaBatch`, and the Send path are not changed.
 
 ## Current state (checked today)
-- 32 saved replies exist; all 32 have a picture; 0 have a partial picture record (the existing all-or-none CHECK guarantees this).
-- Existing storage policies: upload/delete only in the uploader's own folder (or admin); extension allowlist jpg/jpeg/png/webp; read for approved roles. They already cover the new path shape — no storage policy change.
+- 32 saved replies exist; all 32 have a picture; 0 have a partial picture record.
+- Existing storage policies (own folder or admin for upload/delete; jpg/jpeg/png/webp; approved-role read) already fit the new paths — no storage policy change.
+
+## Design change in this revision (please note)
+Because clients can no longer write the picture table directly (item 3), the save functions and the old-app sync trigger must be able to write it on the caller's behalf. They therefore run as **SECURITY DEFINER** with explicit, hardened checks (non-null `auth.uid()`, approved role, creator-or-admin on the locked parent row, fixed `search_path = public, pg_temp`, static SQL only, execution granted only to `authenticated`, internal trigger functions with no execution grant at all). This replaces the earlier SECURITY INVOKER choice, which only works while clients hold direct write grants. Authorization is unchanged in effect: only the reply's creator or an admin can change its pictures.
 
 ## 1. Existing-data audit (read-only, before the migration)
 ```sql
@@ -21,11 +24,11 @@ select
 from public.saved_replies;
 -- plus: rows whose image_path has no object in storage.objects (bucket saved-reply-media)
 ```
-Any non-zero incomplete / bad_mime / bad_size / duplicate_paths is reported and the migration waits for review. Missing objects are reported, not blocking.
+Any non-zero incomplete / bad_mime / bad_size / duplicate_paths is reported and the migration waits for review.
 
 ## 2. Forward migration `add_saved_reply_images` (additive)
 
-### Child table + column-level grants
+### Child table and grants
 ```sql
 create table public.saved_reply_images (
   id uuid primary key default gen_random_uuid(),
@@ -41,60 +44,70 @@ create table public.saved_reply_images (
 );
 create index saved_reply_images_reply_position_idx on public.saved_reply_images (saved_reply_id, position);
 
-grant select, delete on public.saved_reply_images to authenticated;
-grant insert (id, saved_reply_id, position, image_path, image_name, image_mime_type, image_size)
-  on public.saved_reply_images to authenticated;
-grant update (position, image_path, image_name, image_mime_type, image_size)
-  on public.saved_reply_images to authenticated;
--- id, saved_reply_id, created_at: never client-updatable; created_at never client-insertable
+grant select on public.saved_reply_images to authenticated;      -- read only
+revoke insert, update, delete on public.saved_reply_images from authenticated, anon, public;
 grant all on public.saved_reply_images to service_role;
--- no anon grant
 alter table public.saved_reply_images enable row level security;
+create policy "Approved staff can view saved reply images" on public.saved_reply_images
+  for select to authenticated using (
+    public.has_role(auth.uid(),'admin') or public.has_role(auth.uid(),'user') or public.has_role(auth.uid(),'moderator'));
 ```
-Max four: position 0–3 + unique (reply, position) makes a fifth row impossible; a BEFORE INSERT trigger also raises a clear "at most 4 pictures" message.
+No client insert/update/delete grants or policies exist, so every picture change goes through the functions below. Fifth picture impossible (position 0–3 + unique), and the functions reject arrays longer than 4 with a clear message.
 
-### RLS (authorization via parent row)
-- SELECT: approved role (admin/user/moderator).
-- INSERT (with check), UPDATE (using + with check), DELETE (using): approved role AND parent `saved_replies` row exists with `created_by = auth.uid()` or caller is admin.
-- anon: no grant/policy. Unapproved signed-in: no access.
-
-### Storage cleanup queue (no picture silently orphaned)
+### Cleanup queue
 ```sql
 create table public.saved_reply_image_cleanup (
   id uuid primary key default gen_random_uuid(),
   image_path text not null unique,
-  creator_id uuid not null,              -- first folder of the path
+  creator_id uuid not null,
   queued_at timestamptz not null default now()
 );
-grant select, delete on public.saved_reply_image_cleanup to authenticated;
-grant insert (image_path, creator_id) on public.saved_reply_image_cleanup to authenticated;
+grant select on public.saved_reply_image_cleanup to authenticated;
+revoke insert, update, delete on public.saved_reply_image_cleanup from authenticated, anon, public;
 grant all on public.saved_reply_image_cleanup to service_role;
 alter table public.saved_reply_image_cleanup enable row level security;
--- select / insert / delete: approved role AND (creator_id = auth.uid() OR admin)
+-- select: approved role AND (creator_id = auth.uid() OR admin)
 ```
-- AFTER DELETE trigger on `saved_reply_images` (SECURITY INVOKER, `search_path = public, pg_temp`, execute revoked) queues the deleted row's path unless it is still referenced by another child row or a parent's legacy columns. It fires during cascades, so **when the old app deletes a multi-picture reply, all paths are captured before the rows disappear**. Insert uses `on conflict (image_path) do nothing`.
-- The old app already deletes the first picture's object itself; that queue entry is harmless (drain treats "not found" as done).
-- Drain: the new app, when Saved Replies opens, deletes queued objects the user may delete (own folder; admins all) and removes a queue row **only after Storage confirms deletion**. Failures stay queued and retry next time.
-- Admin audit query: queue rows older than 24 hours.
 
-### Atomic save function — concurrency design
-`public.set_saved_reply_images(p_reply_id uuid, p_images jsonb) returns void` — plpgsql, **SECURITY INVOKER**, `set search_path = public, pg_temp`; revoked from public/anon, granted to authenticated.
-1. `select ... from saved_replies where id = p_reply_id for update` — locks the parent; simultaneous edits of the same reply run one after another.
-2. Authorization through RLS: a no-op `update saved_replies set shortcut = shortcut where id = p_reply_id` must affect 1 row (parent UPDATE policy = creator or admin); otherwise raise "not authorized".
-3. Validate 0–4 items, required fields, path prefix `{creator}/{reply}/`, no duplicates.
-4. `set_config('app.saved_reply_images_sync','on', true)` (transaction-local).
-5. Delete current children (removed paths are queued by the trigger), insert the new set at positions 0..n-1.
-6. Mirror position 0 into the parent legacy columns, or null all four when empty.
-Any error rolls back everything → parent and children always match.
+### Shared internal helper `_saved_reply_apply_images(p_reply_id, p_images jsonb)`
+SECURITY DEFINER, fixed search_path, **no execute grant to anyone** (only called by the functions below). Caller must already hold the parent lock.
+1. `set_config('app.saved_reply_images_sync','on', true)` — set **before** any child delete.
+2. Capture `old_paths` = current child paths ∪ parent legacy path.
+3. Delete children; insert the complete final set at positions 0..n-1.
+4. Mirror position 0 into the parent's four legacy columns (or null all four when empty).
+5. Queue only `old_paths − final_paths` (`on conflict do nothing`).
 
-### Legacy-sync trigger (old app editing after release) — SECURITY INVOKER
-AFTER INSERT / AFTER UPDATE OF image_path, image_name, image_mime_type, image_size on `saved_replies`; `search_path = public, pg_temp`; execute revoked.
-- If the sync flag is on → return immediately (no recursion). Otherwise set the flag, then:
-- **Old app adds/replaces the picture** → replace child position 0 with the legacy values; positions 1–3 kept; old path queued if unreferenced.
-- **Old app removes the picture** → delete only child position 0, shift remaining children down (deferrable unique makes the one-statement shift safe), promote the new position 0 into the parent legacy columns. Legacy columns stay null only when no children remain.
-- Runs as the caller; child RLS (creator/admin) matches who the parent policy already lets edit. The triggering update already holds the parent row lock, so it serialises with `set_saved_reply_images`.
+### Public functions (all SECURITY DEFINER, `search_path = public, pg_temp`, static SQL, revoked from public/anon, granted to authenticated)
+**`create_saved_reply(p_id uuid, p_shortcut text, p_message text, p_keywords text[], p_images jsonb)`**
+- `auth.uid()` not null; approved role.
+- Validates shortcut (3–50, normalised), message (≤1000), keywords, 0–4 images (fields, mime, size, path prefix `{auth.uid()}/{p_id}/`, no duplicates).
+- Inserts the parent (created_by = auth.uid()), then the helper. One transaction.
 
-### Backfill + count check (same migration, idempotent)
+**`update_saved_reply(p_id uuid, p_shortcut text, p_message text, p_keywords text[], p_images jsonb)`**
+1. `auth.uid()` not null; approved role.
+2. `select ... from saved_replies where id = p_id for update` — locks the parent; concurrent edits wait.
+3. Creator (`created_by = auth.uid()`) or admin, else raise "not authorized".
+4. Validates text fields and the full 0–4 image array (path prefix uses the reply's creator id, so admin edits keep pictures in the creator folder).
+5. Updates text fields; calls the helper (replace set, mirror, queue removed only).
+6. Any error rolls back text and pictures together.
+
+**`delete_saved_reply(p_id uuid)`** — same lock + checks; queues every child and legacy path; deletes the row (cascade). Used by the new app.
+
+**`claim_saved_reply_cleanup()` returns setof text** — approved role; for queue rows the caller may delete (own creator_id, or admin): **rechecks** `saved_reply_images.image_path` and `saved_replies.image_path`; still-referenced rows are deleted from the queue as stale and **not returned**; returns only unreferenced paths.
+**`complete_saved_reply_cleanup(p_path text)`** — removes the queue row only if the path is still unreferenced; called after Storage confirms deletion (or "not found").
+
+### Child-delete cleanup trigger (internal)
+AFTER DELETE on `saved_reply_images`; SECURITY DEFINER, fixed search_path, no execute grant.
+- If the sync flag is on → skip (controlled replacement queues its own diff).
+- Otherwise (e.g. the old app deleting the parent → cascade) → queue the path if unreferenced. This captures pictures 2–4 when the old app deletes a multi-picture reply.
+
+### Legacy-sync trigger (old app editing after release)
+AFTER INSERT / AFTER UPDATE OF image_path, image_name, image_mime_type, image_size on `saved_replies`; SECURITY DEFINER, fixed search_path, no execute grant. The old app's own parent update already passed the parent RLS (creator/admin) and holds the row lock.
+- Sync flag on → return (no recursion). Otherwise set the flag, then:
+- **Old app adds/replaces the picture** → replace child position 0 with the legacy values; positions 1–3 kept; the replaced path queued.
+- **Old app removes the picture** → delete only child position 0 and queue it; shift remaining children down; promote the new position 0 into the legacy columns. Legacy columns stay null only when no pictures remain.
+
+### Backfill + count check (same migration, before triggers are created)
 ```sql
 insert into public.saved_reply_images (saved_reply_id, position, image_path, image_name, image_mime_type, image_size)
 select r.id, 0, r.image_path, r.image_name, r.image_mime_type, r.image_size
@@ -112,49 +125,49 @@ do $$ declare parents int; children int; begin
   if parents <> children then raise exception 'Backfill mismatch: % vs %', parents, children; end if;
 end $$;
 ```
-Backfill runs before the triggers are created, so it queues nothing. Parent columns and object paths are never modified. Expected: 32 = 32; any mismatch rolls back the whole migration.
+Idempotent; parent columns and object paths unchanged; mismatch rolls back the whole migration. Expected 32 = 32.
 
 ## 3. Frontend compatibility
-- New app reads child rows by position; falls back to parent legacy picture when none exist.
-- Old (published) app reads only parent columns — unaffected because position 0 is always mirrored.
+- New app reads child rows by position; falls back to the legacy picture when none exist.
+- Old (published) app reads/writes only parent columns — still works; its edits are synced by the trigger.
 
 ## 4. Interface
-- Edit dialog: thumbnail grid, "2 / 4 pictures", Add (disabled at 4), Replace/Remove per picture, "Move left"/"Move right" buttons with labels (disabled at the ends). Text-only still allowed.
-- List: first picture plus "+N" badge.
+Edit dialog: thumbnail grid, "2 / 4 pictures", Add (disabled at 4), Replace/Remove, labelled "Move left"/"Move right". List: first picture plus "+N" badge. Text-only still allowed.
 
 ## 5. Composer selection
 Load images (child rows, else legacy) → download all → Files. Any failure: toast, draft unchanged. All succeed: existing draft-replace confirm, set text, one `processFiles(files)` call. Never sends.
 
-## 6. Atomic edit, delete and cleanup
-1. Upload each new picture to `{creator}/{reply}/{image_id}.{ext}` (creator folder even for admin edits).
-2. Create: insert parent text row, then `set_saved_reply_images`. Failure → delete the parent and all newly uploaded objects.
-3. Edit: update text + `set_saved_reply_images` with the full final set. Failure → delete only newly uploaded objects; old set untouched.
-4. Delete (new app): delete the row; the cascade queues every path; then drain.
-5. After success, drain the queue (removed/replaced objects). Cleanup failures are logged, stay queued, and show a non-blocking warning.
-6. Invalidate list and thumbnail queries for changed paths.
+## 6. Client save flow
+1. Upload only new pictures to `{creator}/{reply}/{image_id}.{ext}`.
+2. One call: `create_saved_reply` or `update_saved_reply` with text + full ordered image list.
+3. Failure → delete only the newly uploaded objects; nothing in the database changed.
+4. Success → drain: `claim_saved_reply_cleanup()` → delete each returned object → `complete_saved_reply_cleanup(path)`. Failures stay queued; non-blocking warning. Drain also runs when the panel opens.
+5. Delete → `delete_saved_reply`, then drain.
 
 ## 7. Source files
-- New migration (child table, cleanup queue, triggers, save function, backfill) + regenerated types.
+- New migration + regenerated types.
 - `src/hooks/useSavedReplies.ts`, `src/lib/savedReplies.ts` (+ tests), `src/components/SavedReplyDialog.tsx`, `src/components/SavedRepliesPanel.tsx`, `src/components/ChatPanel.tsx` (`handleSavedReplySelect` only).
 - Not touched: edge functions, `useChatMessages.ts`, send code, old migration, storage policies.
 
-## 8. Tests
-- Unit: fallback, reorder mirroring, 5th rejected, removal shifts first, object diff.
-- Database (rolled-back blocks, real role identities):
-  - Column grants: updating id / saved_reply_id / created_at → denied (42501); inserting created_at → denied; allowed columns succeed.
-  - Backfill exactly once; re-run adds 0; text-only stay text-only.
-  - RLS matrix: staff read; creator/admin write; other staff, unapproved, anon denied.
-  - 5th picture rejected.
-  - Save function mirrors first / clears all; non-creator call raises "not authorized".
-  - Two concurrent sessions calling the save function → final parent equals child position 0.
-  - Old-app style: replace syncs position 0; removing the first promotes picture 2 and keeps 3–4; legacy null only when none left; no recursion.
-  - Old-app delete of a 4-picture reply → 4 queue rows; queue rows only removable by creator/admin.
-- **Production compatibility:** (a) read-only check of the existing 32 replies in the published app plus SQL check of one matching child row each — no business reply is edited. (b) one temporary reply `zz-test-multipic-DELETE-ME` used for all edit/replace/remove/delete tests (old and new app). (c) afterwards delete it, drain its queue, confirm no objects remain in its folder.
-- Signed-in Preview: 1–4 pictures, reorder, remove first, remove all, partial download failure, desktop and mobile; Telegram album and Messenger Page 1/Page 2 to internal test customers only.
+## 8. Failure and permission tests (database, rolled-back blocks with real role identities)
+- Direct child insert / update / delete by authenticated → denied (42501); direct queue writes → denied.
+- Reorder four existing pictures → all 4 paths still referenced, **0 queued, 0 claimed, 0 deleted**.
+- Replace one → only the replaced path queued.
+- Remove one → only that path queued.
+- Remove all → every removed path queued; legacy columns null.
+- Drain safety: manually queued path that is still referenced → `claim` returns nothing and removes the stale row; `complete` refuses to remove a referenced path.
+- Forced image failure (bad mime / 5 items / wrong path prefix) in `update_saved_reply` → text **and** pictures unchanged.
+- Concurrency: two sessions run `update_saved_reply` on one reply; second waits on the lock; final parent legacy = child position 0, no mismatch.
+- Authorization: null uid, unapproved, other staff → rejected; creator and admin succeed; admin edit keeps creator folder.
+- Old-app behaviour: replace syncs position 0; removing the first promotes picture 2 and keeps 3–4; legacy null only when none left; no recursion; deleting a 4-picture reply queues all 4.
+- Backfill exactly once; re-run adds 0; text-only stay text-only.
+- Unit tests: fallback, reorder, 5th rejected, diff of removed paths.
+- **Production compatibility:** read-only check of the existing 32 replies (published app + SQL one child row each) — no business reply edited. All edit/replace/remove/delete tests (old and new app) use one temporary reply `zz-test-multipic-DELETE-ME`, deleted afterwards with its objects and queue rows verified gone.
+- Signed-in Preview: 1–4 pictures, desktop and mobile; Telegram album and Messenger Page 1/Page 2 to internal test customers only.
 - Build, TypeScript, `bun run test`, security scan.
 
 ## 9. Rollback test
-In Preview, load the currently published version against migrated data using the temporary test reply: its first picture shows and sends; text-only unchanged. Rollback = republish previous version; keep new tables/rows; nothing deleted. Removing tables or legacy columns only via a separately reviewed future migration.
+Using the temporary test reply, load the currently published version against migrated data: first picture shows and sends; text-only unchanged. Rollback = republish previous version; keep new tables/rows; nothing deleted. Removing tables or legacy columns only via a separately reviewed future migration.
 
 ## Deployment order
 Bookmark → audit → migration + backfill → production compatibility test → types → frontend → Preview tests → rollback test → publish only after your approval.
