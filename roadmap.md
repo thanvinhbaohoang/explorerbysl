@@ -24,6 +24,7 @@
 - [x] Private `saved-reply-media` bucket (10 MB) + additive migration (table, column grants, RLS, usage function, storage policies)
 - [x] Hook, panel, dialog, thumbnail; button after Voice; draft-replace confirm; never auto-sends
 - [x] 28 rule tests (`bun run test`); database permission checks passed in a rolled-back transaction
-- [ ] Signed-in click-through + Telegram / Messenger Page 1 / Page 2 sends (blocked: no preview session)
+- [x] Release verification part 1: updated_at across separate transactions PASS (edit bumps 05:52:36.970→05:52:39.042; usage leaves it unchanged); bucket private + 10 MB + 3 storage policies verified; 28/28 tests; tsgo clean; build OK; lint matches baseline; linter 13 pre-existing, none new
+- [ ] Signed-in click-through + Telegram / Messenger Page 1 / Page 2 sends (blocked: no preview session; minting as specific user not permitted, --self has no matching account)
 - [ ] Storage policy checks with real uploads (needs signed-in session)
 - [ ] Publish (waiting on your approval)
