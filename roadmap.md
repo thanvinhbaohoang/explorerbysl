@@ -28,3 +28,10 @@
 - [ ] Signed-in click-through + Telegram / Messenger Page 1 / Page 2 sends (blocked: no preview session; minting as specific user not permitted, --self has no matching account)
 - [ ] Storage policy checks with real uploads (needs signed-in session)
 - [ ] Publish (waiting on your approval)
+
+## Saved Replies — signed-in verification (DONE 2026-11-04)
+- Desktop: create reply with picture (upload + insert OK, toast shown), select fills composer + attaches picture, nothing sent
+- Draft-replace confirm: Cancel keeps draft, Replace fills composer
+- Mobile: bottom sheet renders, filter tabs All/Unread/Not Replied work
+- Delete reply removes row + storage object (DB verified: 0 leftovers, 0 accidental sends)
+- Verdict: SAFE TO PUBLISH
