@@ -594,6 +594,68 @@ export type Database = {
         }
         Relationships: []
       }
+      saved_reply_image_cleanup: {
+        Row: {
+          creator_id: string
+          id: string
+          image_path: string
+          queued_at: string
+        }
+        Insert: {
+          creator_id: string
+          id?: string
+          image_path: string
+          queued_at?: string
+        }
+        Update: {
+          creator_id?: string
+          id?: string
+          image_path?: string
+          queued_at?: string
+        }
+        Relationships: []
+      }
+      saved_reply_images: {
+        Row: {
+          created_at: string
+          id: string
+          image_mime_type: string
+          image_name: string
+          image_path: string
+          image_size: number
+          position: number
+          saved_reply_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_mime_type: string
+          image_name: string
+          image_path: string
+          image_size: number
+          position: number
+          saved_reply_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_mime_type?: string
+          image_name?: string
+          image_path?: string
+          image_size?: number
+          position?: number
+          saved_reply_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_reply_images_saved_reply_id_fkey"
+            columns: ["saved_reply_id"]
+            isOneToOne: false
+            referencedRelation: "saved_replies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       telegram_leads: {
         Row: {
           ad_id: string | null
@@ -753,6 +815,36 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _saved_reply_apply_images: {
+        Args: { p_images: Json; p_reply_id: string }
+        Returns: undefined
+      }
+      _saved_reply_is_staff: { Args: never; Returns: boolean }
+      _saved_reply_path_referenced: {
+        Args: { p_path: string }
+        Returns: boolean
+      }
+      _saved_reply_queue_path: { Args: { p_path: string }; Returns: undefined }
+      _saved_reply_validate_images: {
+        Args: { p_creator: string; p_images: Json; p_reply_id: string }
+        Returns: undefined
+      }
+      claim_saved_reply_cleanup: { Args: never; Returns: string[] }
+      complete_saved_reply_cleanup: {
+        Args: { p_path: string }
+        Returns: boolean
+      }
+      create_saved_reply: {
+        Args: {
+          p_id: string
+          p_images: Json
+          p_keywords: string[]
+          p_message: string
+          p_shortcut: string
+        }
+        Returns: undefined
+      }
+      delete_saved_reply: { Args: { p_id: string }; Returns: undefined }
       execute_unknown_messenger_cleanup: { Args: never; Returns: Json }
       get_filtered_customer_ids: {
         Args: {
@@ -798,6 +890,16 @@ export type Database = {
       }
       preview_unknown_messenger_cleanup: { Args: never; Returns: Json }
       record_saved_reply_use: { Args: { p_id: string }; Returns: undefined }
+      update_saved_reply: {
+        Args: {
+          p_id: string
+          p_images: Json
+          p_keywords: string[]
+          p_message: string
+          p_shortcut: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
