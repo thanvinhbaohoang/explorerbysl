@@ -546,6 +546,54 @@ export type Database = {
         }
         Relationships: []
       }
+      saved_replies: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          image_mime_type: string | null
+          image_name: string | null
+          image_path: string | null
+          image_size: number | null
+          keywords: string[]
+          last_used_at: string | null
+          message: string
+          shortcut: string
+          updated_at: string
+          use_count: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          image_mime_type?: string | null
+          image_name?: string | null
+          image_path?: string | null
+          image_size?: number | null
+          keywords?: string[]
+          last_used_at?: string | null
+          message: string
+          shortcut: string
+          updated_at?: string
+          use_count?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          image_mime_type?: string | null
+          image_name?: string | null
+          image_path?: string | null
+          image_size?: number | null
+          keywords?: string[]
+          last_used_at?: string | null
+          message?: string
+          shortcut?: string
+          updated_at?: string
+          use_count?: number
+        }
+        Relationships: []
+      }
       telegram_leads: {
         Row: {
           ad_id: string | null
@@ -749,6 +797,7 @@ export type Database = {
         Returns: boolean
       }
       preview_unknown_messenger_cleanup: { Args: never; Returns: Json }
+      record_saved_reply_use: { Args: { p_id: string }; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
