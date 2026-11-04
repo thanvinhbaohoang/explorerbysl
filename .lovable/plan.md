@@ -21,7 +21,7 @@ Not touched: messages, customer, existing RPCs/RLS/policies, edge functions, aut
 
 ```sql
 create table public.saved_replies (
-  id uuid primary key default gen_random_uuid(),
+  id uuid primary key default gen_random_uuid(),   -- client supplies it on create
   shortcut text not null,
   message text not null,
   keywords text[] not null default '{}',
@@ -31,55 +31,83 @@ create table public.saved_replies (
   last_used_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint saved_replies_shortcut_len check (char_length(btrim(shortcut)) between 3 and 50 and shortcut = btrim(shortcut)),
+  constraint saved_replies_shortcut_len check (shortcut = btrim(shortcut) and char_length(shortcut) between 3 and 50),
   constraint saved_replies_message_len check (char_length(btrim(message)) >= 1 and char_length(message) <= 1000),
-  constraint saved_replies_image_size check (image_size is null or (image_size >= 0 and image_size <= 10485760)),
-  constraint saved_replies_image_mime check (image_mime_type is null or image_mime_type in ('image/jpeg','image/png','image/webp')),
-  constraint saved_replies_image_consistent check ((image_path is null) = (image_mime_type is null))
+  constraint saved_replies_image_all_or_none check (
+    (image_path is null and image_name is null and image_mime_type is null and image_size is null)
+    or
+    (image_path is not null and image_name is not null and image_mime_type in ('image/jpeg','image/png','image/webp')
+     and image_size between 1 and 10485760)
+  )
 );
 create unique index saved_replies_shortcut_lower_uidx on public.saved_replies (lower(shortcut));
-create index saved_replies_use_count_idx on public.saved_replies (use_count desc, id);
-create index saved_replies_last_used_idx on public.saved_replies (last_used_at desc nulls last, id);
-create index saved_replies_created_idx on public.saved_replies (created_at desc, id);
+create index saved_replies_use_count_idx  on public.saved_replies (use_count desc, id);
+create index saved_replies_last_used_idx  on public.saved_replies (last_used_at desc nulls last, id);
+create index saved_replies_created_idx    on public.saved_replies (created_at desc, id);
 ```
 
-Triggers (BEFORE UPDATE):
-- `updated_at = now()` (only when shortcut/message/keywords/image fields change, so usage tracking doesn't bump it).
-- `created_by` immutable: `new.created_by := old.created_by`.
-- `use_count`/`last_used_at` can't be changed by a normal UPDATE: reset to old values unless the session flag `app.saved_reply_usage = 'on'` is set (set only inside the usage function).
+Trigger `saved_replies_set_updated_at` (BEFORE UPDATE): sets `updated_at = now()` only when shortcut, message, keywords or image fields change (so usage tracking doesn't bump it). No session flags, no created_by logic — protection comes from column privileges below.
 
-Grants: `revoke all from anon, public; grant select, insert, update, delete to authenticated`.
+### Grants (column-level)
 
-### Usage tracking (the one exception)
-Any approved staff can use any reply, but only the creator/admin may UPDATE rows. To count uses without loosening UPDATE, one narrow function:
+```sql
+revoke all on public.saved_replies from public, anon, authenticated;
+grant select on public.saved_replies to authenticated;
+grant insert (id, shortcut, message, keywords, image_path, image_name, image_mime_type, image_size)
+  on public.saved_replies to authenticated;
+grant update (shortcut, message, keywords, image_path, image_name, image_mime_type, image_size)
+  on public.saved_replies to authenticated;
+grant delete on public.saved_replies to authenticated;
+grant all on public.saved_replies to service_role;
+```
+Result: `created_by`, `use_count`, `last_used_at`, `created_at`, `updated_at` always come from defaults/trigger and can't be written by the app.
 
-`public.record_saved_reply_use(p_id uuid) returns void` — SECURITY DEFINER, `search_path = public`, first checks `has_role(auth.uid(),'admin'|'user'|'moderator')` (else raises), then only does `use_count = use_count + 1, last_used_at = now()` for that id. Execute revoked from PUBLIC/anon, granted to authenticated. Called fire-and-forget after the draft is filled; failure is ignored.
+### Usage function
 
-(Alternative if you reject any SECURITY DEFINER: a separate insert-only `saved_reply_uses` table with counts computed client-side. More moving parts; I recommend the function.)
+```sql
+create function public.record_saved_reply_use(p_id uuid) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  if not (public.has_role(auth.uid(),'admin') or public.has_role(auth.uid(),'user')
+          or public.has_role(auth.uid(),'moderator')) then
+    raise exception 'not authorized';
+  end if;
+  update public.saved_replies
+     set use_count = use_count + 1, last_used_at = now()
+   where id = p_id;
+end $$;
+revoke all on function public.record_saved_reply_use(uuid) from public, anon;
+grant execute on function public.record_saved_reply_use(uuid) to authenticated;
+```
+Static SQL only; touches only the two usage columns. Only path for usage updates.
 
 ## 3. Table RLS policies
 
 ```text
 SELECT  : has_role admin OR user OR moderator
-INSERT  : (approved role) AND created_by = auth.uid()
-UPDATE  : USING  (approved role) AND (created_by = auth.uid() OR has_role admin)
-          CHECK  same, plus created_by unchanged (trigger enforces)
-DELETE  : (approved role) AND (created_by = auth.uid() OR has_role admin)
+INSERT  : WITH CHECK (approved role) AND created_by = auth.uid()   -- default, belt-and-braces
+UPDATE  : USING / WITH CHECK (approved role) AND (created_by = auth.uid() OR has_role admin)
+DELETE  : USING (approved role) AND (created_by = auth.uid() OR has_role admin)
 ```
 anon: no grants, no policies. Unapproved signed-in user: fails role check everywhere.
 
 ## 4. Storage bucket policies
 
-Bucket `saved-reply-media`: private, `file_size_limit = 10485760`, `allowed_mime_types = {image/jpeg,image/png,image/webp}`.
-Path: `{creator_user_id}/{saved_reply_id}/{uuid}.{ext}`.
+Bucket `saved-reply-media`: private, 10 MB limit, allowed types JPEG/PNG/WebP.
+Path: `{reply_creator_id}/{saved_reply_id}/{uuid}.{ext}` — every picture of a reply stays in the original creator's folder, including admin replacements.
 
 ```text
 SELECT : bucket = saved-reply-media AND approved role
-INSERT : bucket AND approved role AND (storage.foldername(name))[1] = auth.uid()::text
-UPDATE : not granted (replace = upload new + delete old)
-DELETE : bucket AND approved role AND (folder[1] = auth.uid()::text OR has_role admin)
+INSERT : bucket AND approved role AND ((storage.foldername(name))[1] = auth.uid()::text OR has_role admin)
+UPDATE : not granted (replace = upload new object + delete old)
+DELETE : bucket AND approved role AND ((storage.foldername(name))[1] = auth.uid()::text OR has_role admin)
 ```
-Admin editing someone else's reply uploads the new image to the creator's folder? No — admin uploads into their own folder; `image_path` just points to it. Delete policy lets admin remove the old one.
+
+### How private thumbnails are shown
+- `SavedReplyThumbnail` requests a short-lived signed URL (`createSignedUrl`, 10 min) only when its row is visible (IntersectionObserver), cached in memory by path via React Query; never written to the table.
+- Fallback placeholder icon on error.
+- Selecting a reply always does a fresh authenticated `download()` (not the thumbnail URL); any Blob/object URL created for previews is revoked on unmount/replace.
 
 ## 5. Desktop interaction
 
@@ -138,14 +166,32 @@ Text is never applied without its picture when the picture fails (all-or-nothing
 
 UI hides Edit/Delete unless `created_by === me || isAdmin`; the database enforces it regardless.
 
-## 11. Create/edit form rules
+## 11. Create/edit form rules and atomic save flows
 
 - Shortcut: trimmed, 3–50, unique ignoring case (DB index authoritative).
 - Message: required after trim, ≤1000, line breaks kept, counter.
 - Keywords: chip input; trim + collapse whitespace, case-insensitive dedupe, Khmer OK.
-- Picture: one; JPEG/PNG/WebP; ≤10 MB; checks MIME and magic bytes (FF D8 FF / 89 50 4E 47 / RIFF..WEBP); preview, Replace, Remove.
-- Save new: insert row → upload to `{me}/{id}/…` → update image fields; if upload fails, row kept text-only and error shown with retry option.
-- Replace: upload new → update row → then delete old object. Remove/Delete reply: update/delete row → then delete object (failure only logged).
+- Picture: one; JPEG/PNG/WebP; 1 byte–10 MB; checks MIME and magic bytes (FF D8 FF / 89 50 4E 47 / RIFF..WEBP); preview, Replace, Remove.
+- Save button disabled from click until the whole flow finishes.
+
+Create (atomic, no text-only leftovers):
+```text
+id = crypto.randomUUID()
+if picture: upload to {me}/{id}/{uuid}.{ext}
+   upload fails -> stop, show error, nothing in the table
+insert full row {id, shortcut, message, keywords, image_*}
+   insert fails -> delete the uploaded object, show error (e.g. duplicate shortcut)
+success -> invalidate list
+```
+
+Edit with new picture (always in the reply creator's folder, also when an admin edits):
+```text
+upload to {reply.created_by}/{reply.id}/{uuid}.{ext}
+update row (content + new image_*)
+   update fails -> delete the new object; old picture untouched
+success -> delete old object (failure only logged)
+```
+Remove picture: update image_* to null → then delete object. Delete reply: delete row → then delete object.
 
 ## 12. Search, sort, freshness
 
@@ -175,7 +221,13 @@ Rollback: republish previous version; leave table/bucket/function in place unuse
 
 ## 17. Exact objects that change
 
-Database: table `public.saved_replies`; 4 indexes; functions `saved_replies_before_update()` (trigger) and `record_saved_reply_use(uuid)`; 1 trigger; 4 table policies; bucket `saved-reply-media`; 3 storage policies on `storage.objects` scoped to that bucket.
-Files: 5 new (hook, panel, dialog, helpers, helper tests), `ChatPanel.tsx` modified, `types.ts` regenerated, `package.json` (vitest dev dep + test script).
+Database (one additive migration): table `public.saved_replies`; unique index + 3 sort indexes; trigger function `saved_replies_set_updated_at()` + 1 BEFORE UPDATE trigger; function `record_saved_reply_use(uuid)`; table + column grants; 4 table policies; 3 storage policies on `storage.objects` scoped to `saved-reply-media`.
+Storage: bucket `saved-reply-media` (private, 10 MB, JPEG/PNG/WebP), created with the storage tool, not SQL.
+
+Files:
+- New: `src/hooks/useSavedReplies.ts`, `src/components/SavedRepliesPanel.tsx`, `src/components/SavedReplyDialog.tsx`, `src/components/SavedReplyThumbnail.tsx`, `src/lib/savedReplies.ts`, `src/lib/savedReplies.test.ts`, `vitest.config.ts`
+- Modified: `src/components/ChatPanel.tsx`, `package.json` (vitest dev dep + `test` script), `bun.lock` (authoritative lockfile, updated by `bun add -d vitest`)
+- Regenerated: `src/integrations/supabase/types.ts`
+- Not touched: `bun.lockb`, `package-lock.json` (stale/unrelated lockfiles), all edge functions, `useChatMessages.ts`, conversation-list files.
 
 Out of scope: personalization tokens (phase 2), realtime library sync, per-user private libraries.
