@@ -47,7 +47,7 @@ create index saved_replies_last_used_idx  on public.saved_replies (last_used_at 
 create index saved_replies_created_idx    on public.saved_replies (created_at desc, id);
 ```
 
-Trigger `saved_replies_set_updated_at` (BEFORE UPDATE): sets `updated_at = now()` only when shortcut, message, keywords or image fields change (so usage tracking doesn't bump it). No session flags, no created_by logic — protection comes from column privileges below.
+Trigger function `saved_replies_set_updated_at()` (plpgsql, `set search_path = public, pg_temp`, BEFORE UPDATE): sets `updated_at = now()` only when shortcut, message, keywords or image fields change, so usage tracking doesn't bump it. `revoke execute ... from public, anon, authenticated` — still runs via the trigger. No session flags; protection comes from column privileges below.
 
 ### Grants (column-level)
 
@@ -106,7 +106,10 @@ DELETE : bucket AND approved role AND ((storage.foldername(name))[1] = auth.uid(
 ```
 
 ### How private thumbnails are shown
-- `SavedReplyThumbnail` requests a short-lived signed URL (`createSignedUrl`, 10 min) only when its row is visible (IntersectionObserver), cached in memory by path via React Query; never written to the table.
+- `SavedReplyThumbnail` requests a signed URL only when its row is visible (IntersectionObserver); never written to the table.
+- Caching: signed URL valid 10 min; React Query `staleTime` 8 min, `gcTime` 10 min; key `['saved-reply-thumb', image_path]`.
+- Replace/remove picture → invalidate/remove that `image_path` key (new path also gets a new key).
+- `<img onError>`: refetch the URL once (covers expiry); if signing returns "not found", show placeholder and stop — `retry: false` for missing objects.
 - Fallback placeholder icon on error.
 - Selecting a reply always does a fresh authenticated `download()` (not the thumbnail URL); any Blob/object URL created for previews is revoked on unmount/replace.
 
@@ -211,7 +214,17 @@ RLS enabled; anon no grants; unapproved denied (table + storage); created_by, us
 ## 15. Test plan
 
 Automated (Vitest, pure helpers): shortcut length/trim, duplicate keyword removal, message limit, search by shortcut/message/keyword/Khmer, each sort order, draft detection, file type/size validation.
-Database (SQL as different roles via `set local role` + JWT claims): anon denied; unapproved denied; staff view/create; creator edit/delete own; staff cannot edit others; admin manages all; created_by spoof rejected; use_count edit via UPDATE ignored; storage policies match.
+Database (SQL as different roles via `set local role` + JWT claims, inside rolled-back transactions):
+- anon denied (select/insert/update/delete/function).
+- Unapproved user denied everywhere, including `record_saved_reply_use`.
+- Staff can view/create; creator edits/deletes own; staff can't edit/delete others' (0 rows); admin manages all.
+- Direct UPDATE of `use_count`, `last_used_at`, `created_by` → **permission denied** (42501).
+- INSERT with custom `created_by`, `use_count`, `last_used_at`, `created_at`, `updated_at` → **permission denied** (42501).
+- `record_saved_reply_use` increments `use_count` by 1 and sets `last_used_at`.
+- `updated_at` unchanged after `record_saved_reply_use`; changes after a content edit.
+- Image fields partially set → check violation; image_size 0 or > 10 MB → violation.
+- Direct call of `saved_replies_set_updated_at()` by authenticated → denied.
+- Storage: upload outside own folder denied for staff, allowed for admin; wrong file type denied; anon/unapproved can't read.
 Manual signed-in preview (internal test customers only): text-only and picture replies, nothing auto-sent, edit text, remove picture, draft confirm + cancel, send via existing Send on Telegram, Messenger Page 1, Page 2, expired-window block, desktop popover placement, mobile sheet, no overflow, focus return, keyboard-only.
 Build, TypeScript, lint (no new issues vs baseline).
 
@@ -222,8 +235,25 @@ Rollback: republish previous version; leave table/bucket/function in place unuse
 
 ## 17. Exact objects that change
 
-Database (one additive migration): table `public.saved_replies`; unique index + 3 sort indexes; trigger function `saved_replies_set_updated_at()` + 1 BEFORE UPDATE trigger; function `record_saved_reply_use(uuid)`; table + column grants; 4 table policies; 3 storage policies on `storage.objects` scoped to `saved-reply-media`.
-Storage: bucket `saved-reply-media` (private, 10 MB, JPEG/PNG/WebP), created with the storage tool, not SQL.
+Database (one additive migration, in this order):
+1. Bucket `saved-reply-media` — public=false, 10 MB limit, MIME allowlist image/jpeg, image/png, image/webp (see platform note below)
+2. Table `public.saved_replies` + checks
+3. Unique index + 3 sort indexes
+4. Trigger function `saved_replies_set_updated_at()` (search_path = public, pg_temp; EXECUTE revoked from PUBLIC, anon, authenticated) + BEFORE UPDATE trigger
+5. Table + column grants
+6. RLS enable + 4 table policies
+7. Function `record_saved_reply_use(uuid)` + its revoke/grant
+8. 3 storage policies on `storage.objects` scoped to `saved-reply-media`
+
+**Platform note on step 1:** Lovable Cloud's migration tool rejects `INSERT INTO storage.buckets`, so SQL can't create the bucket. Instead I'll create it with the built-in storage tool (private, 10 MB) right before the migration, in the same step, and the migration starts with a guard that stops everything if the bucket is missing or public:
+```sql
+do $$ begin
+  if not exists (select 1 from storage.buckets where id = 'saved-reply-media' and public = false) then
+    raise exception 'saved-reply-media bucket missing or public';
+  end if;
+end $$;
+```
+The storage tool can't set a MIME allowlist, so JPEG/PNG/WebP is enforced by the storage INSERT policy (`storage.extension(name) in ('jpg','jpeg','png','webp')` and `metadata->>'mimetype' in (...)`) plus client magic-byte checks. If this isn't acceptable, the alternative is to ask Lovable to add allowlist support; I can't get around the block.
 
 Files:
 - New: `src/hooks/useSavedReplies.ts`, `src/components/SavedRepliesPanel.tsx`, `src/components/SavedReplyDialog.tsx`, `src/components/SavedReplyThumbnail.tsx`, `src/lib/savedReplies.ts`, `src/lib/savedReplies.test.ts`, `vitest.config.ts`
