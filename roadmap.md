@@ -35,3 +35,9 @@
 - Mobile: bottom sheet renders, filter tabs All/Unread/Not Replied work
 - Delete reply removes row + storage object (DB verified: 0 leftovers, 0 accidental sends)
 - Verdict: SAFE TO PUBLISH
+
+## Saved Replies: 0–4 pictures
+- [x] Audit (33 replies / 33 pictures / 0 invalid at audit time — baseline grew from 32 because staff are adding replies live)
+- [x] Additive migration 0003_add_saved_reply_images applied (backfill check passed)
+- [ ] Waiting: user decision on baseline mismatch before continuing
+- [ ] Database safety tests (rolled back), frontend multi-picture UI, Preview + delivery checks, rollback test, release report
