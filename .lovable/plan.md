@@ -1,29 +1,31 @@
-# Saved Replies: 0–4 ordered pictures (backward-compatible upgrade)
+# Saved Replies: 0–4 ordered pictures (backward-compatible upgrade) — revised
 
 Plan only. The applied `0002_add_saved_replies` migration is untouched. Nothing publishes automatically. Telegram/Messenger delivery functions, `sendMediaBatch`, and the Send path are not changed.
 
 ## Current state (checked today)
-- 32 saved replies exist; all 32 have a picture; 0 have a partial/incomplete picture record (the existing all-or-none CHECK guarantees this).
-- Existing storage policies: upload/delete only in the uploader's own folder (or admin); extension allowlist jpg/jpeg/png/webp; read for approved roles. These already cover the new path shape, so no storage policy change is needed.
+- 32 saved replies exist; all 32 have a picture; 0 have a partial picture record (the existing all-or-none CHECK guarantees this).
+- Existing storage policies: upload/delete only in the uploader's own folder (or admin); extension allowlist jpg/jpeg/png/webp; read for approved roles. They already cover the new path shape — no storage policy change.
 
-## 1. Existing-data audit (run read-only before the migration)
+## 1. Existing-data audit (read-only, before the migration)
 ```sql
 select
-  count(*)                                                     as total_replies,
-  count(*) filter (where image_path is not null)               as with_picture,
-  count(*) filter (where image_path is null)                   as text_only,
+  count(*) as total_replies,
+  count(*) filter (where image_path is not null) as with_picture,
+  count(*) filter (where image_path is null) as text_only,
   count(*) filter (where (image_path is null) <> (image_name is null)
                       or (image_path is null) <> (image_mime_type is null)
                       or (image_path is null) <> (image_size is null)) as incomplete,
   count(*) filter (where image_path is not null and image_mime_type not in ('image/jpeg','image/png','image/webp')) as bad_mime,
   count(*) filter (where image_path is not null and (image_size < 1 or image_size > 10485760)) as bad_size,
-  count(*) - count(distinct image_path) filter (where image_path is not null) - count(*) filter (where image_path is null) as duplicate_paths
+  count(image_path) - count(distinct image_path) as duplicate_paths
 from public.saved_replies;
--- plus: list rows whose image_path has no object in storage.objects (bucket saved-reply-media)
+-- plus: rows whose image_path has no object in storage.objects (bucket saved-reply-media)
 ```
-Any non-zero `incomplete / bad_mime / bad_size / duplicate_paths` is reported and the migration is not applied until reviewed. Missing storage objects are reported (they don't block; the row stays as-is).
+Any non-zero incomplete / bad_mime / bad_size / duplicate_paths is reported and the migration waits for review. Missing objects are reported, not blocking.
 
-## 2. Exact forward migration `add_saved_reply_images` (additive)
+## 2. Forward migration `add_saved_reply_images` (additive)
+
+### Child table + column-level grants
 ```sql
 create table public.saved_reply_images (
   id uuid primary key default gen_random_uuid(),
@@ -39,41 +41,58 @@ create table public.saved_reply_images (
 );
 create index saved_reply_images_reply_position_idx on public.saved_reply_images (saved_reply_id, position);
 
-grant select, insert, update, delete on public.saved_reply_images to authenticated;
+grant select, delete on public.saved_reply_images to authenticated;
+grant insert (id, saved_reply_id, position, image_path, image_name, image_mime_type, image_size)
+  on public.saved_reply_images to authenticated;
+grant update (position, image_path, image_name, image_mime_type, image_size)
+  on public.saved_reply_images to authenticated;
+-- id, saved_reply_id, created_at: never client-updatable; created_at never client-insertable
 grant all on public.saved_reply_images to service_role;
 -- no anon grant
 alter table public.saved_reply_images enable row level security;
 ```
-Max-four rule: `position between 0 and 3` + unique (reply, position) makes a fifth row impossible. A BEFORE INSERT trigger also raises a clear error ("A saved reply can have at most 4 pictures") when 4 rows already exist (search_path = public, pg_temp; execute revoked from public/anon/authenticated).
+Max four: position 0–3 + unique (reply, position) makes a fifth row impossible; a BEFORE INSERT trigger also raises a clear "at most 4 pictures" message.
 
 ### RLS (authorization via parent row)
+- SELECT: approved role (admin/user/moderator).
+- INSERT (with check), UPDATE (using + with check), DELETE (using): approved role AND parent `saved_replies` row exists with `created_by = auth.uid()` or caller is admin.
+- anon: no grant/policy. Unapproved signed-in: no access.
+
+### Storage cleanup queue (no picture silently orphaned)
 ```sql
-create policy "Approved staff can view saved reply images" on public.saved_reply_images
-  for select to authenticated using (
-    public.has_role(auth.uid(),'admin') or public.has_role(auth.uid(),'user') or public.has_role(auth.uid(),'moderator'));
-
-create policy "Creator or admin can add saved reply images" on public.saved_reply_images
-  for insert to authenticated with check (exists (
-    select 1 from public.saved_replies r where r.id = saved_reply_id
-      and (r.created_by = auth.uid() or public.has_role(auth.uid(),'admin'))
-      and (public.has_role(auth.uid(),'admin') or public.has_role(auth.uid(),'user') or public.has_role(auth.uid(),'moderator'))));
--- same USING/WITH CHECK shape for UPDATE (reorder/replace) and DELETE
+create table public.saved_reply_image_cleanup (
+  id uuid primary key default gen_random_uuid(),
+  image_path text not null unique,
+  creator_id uuid not null,              -- first folder of the path
+  queued_at timestamptz not null default now()
+);
+grant select, delete on public.saved_reply_image_cleanup to authenticated;
+grant insert (image_path, creator_id) on public.saved_reply_image_cleanup to authenticated;
+grant all on public.saved_reply_image_cleanup to service_role;
+alter table public.saved_reply_image_cleanup enable row level security;
+-- select / insert / delete: approved role AND (creator_id = auth.uid() OR admin)
 ```
-anon: no grant, no policy. Unapproved signed-in users: every policy requires an approved role → 0 rows, writes denied.
+- AFTER DELETE trigger on `saved_reply_images` (SECURITY INVOKER, `search_path = public, pg_temp`, execute revoked) queues the deleted row's path unless it is still referenced by another child row or a parent's legacy columns. It fires during cascades, so **when the old app deletes a multi-picture reply, all paths are captured before the rows disappear**. Insert uses `on conflict (image_path) do nothing`.
+- The old app already deletes the first picture's object itself; that queue entry is harmless (drain treats "not found" as done).
+- Drain: the new app, when Saved Replies opens, deletes queued objects the user may delete (own folder; admins all) and removes a queue row **only after Storage confirms deletion**. Failures stay queued and retry next time.
+- Admin audit query: queue rows older than 24 hours.
 
-### Atomic save function (one transaction for parent + children)
-`public.set_saved_reply_images(p_reply_id uuid, p_images jsonb) returns void`, plpgsql, **SECURITY INVOKER** (RLS applies), search_path = public, pg_temp; revoked from public/anon, granted to authenticated.
-- Validates: array of 0–4 items, each with path/name/mime/size; path must start with `{reply creator id}/{reply id}/`.
-- Sets a transaction-local flag `app.saved_reply_images_sync = 'on'`.
-- Deletes the reply's child rows, inserts the new ordered set at positions 0..n-1.
-- Mirrors position 0 into the parent's four legacy columns, or sets all four to null when the set is empty.
-- Any failure rolls back everything → never a partial image set.
+### Atomic save function — concurrency design
+`public.set_saved_reply_images(p_reply_id uuid, p_images jsonb) returns void` — plpgsql, **SECURITY INVOKER**, `set search_path = public, pg_temp`; revoked from public/anon, granted to authenticated.
+1. `select ... from saved_replies where id = p_reply_id for update` — locks the parent; simultaneous edits of the same reply run one after another.
+2. Authorization through RLS: a no-op `update saved_replies set shortcut = shortcut where id = p_reply_id` must affect 1 row (parent UPDATE policy = creator or admin); otherwise raise "not authorized".
+3. Validate 0–4 items, required fields, path prefix `{creator}/{reply}/`, no duplicates.
+4. `set_config('app.saved_reply_images_sync','on', true)` (transaction-local).
+5. Delete current children (removed paths are queued by the trigger), insert the new set at positions 0..n-1.
+6. Mirror position 0 into the parent legacy columns, or null all four when empty.
+Any error rolls back everything → parent and children always match.
 
-### Legacy-sync trigger (protects against the old app editing after migration)
-AFTER INSERT / AFTER UPDATE OF image_path, image_name, image_mime_type, image_size on `saved_replies`, skipped when the sync flag is on (i.e. when the change came from the new function):
-- Old app creates/replaces a picture → position 0 child row is replaced with the legacy values (other positions kept).
-- Old app removes the picture → all child rows for that reply are deleted (matches what that user saw: a text-only reply).
-Function: security definer only if needed to bypass child RLS — otherwise invoker; search_path fixed; execute revoked.
+### Legacy-sync trigger (old app editing after release) — SECURITY INVOKER
+AFTER INSERT / AFTER UPDATE OF image_path, image_name, image_mime_type, image_size on `saved_replies`; `search_path = public, pg_temp`; execute revoked.
+- If the sync flag is on → return immediately (no recursion). Otherwise set the flag, then:
+- **Old app adds/replaces the picture** → replace child position 0 with the legacy values; positions 1–3 kept; old path queued if unreferenced.
+- **Old app removes the picture** → delete only child position 0, shift remaining children down (deferrable unique makes the one-statement shift safe), promote the new position 0 into the parent legacy columns. Legacy columns stay null only when no children remain.
+- Runs as the caller; child RLS (creator/admin) matches who the parent policy already lets edit. The triggering update already holds the parent row lock, so it serialises with `set_saved_reply_images`.
 
 ### Backfill + count check (same migration, idempotent)
 ```sql
@@ -90,50 +109,52 @@ do $$ declare parents int; children int; begin
     join public.saved_replies r on r.id = i.saved_reply_id
    where i.position = 0 and i.image_path = r.image_path and i.image_name = r.image_name
      and i.image_mime_type = r.image_mime_type and i.image_size = r.image_size;
-  if parents <> children then raise exception 'Backfill mismatch: % picture replies, % matching child rows', parents, children; end if;
+  if parents <> children then raise exception 'Backfill mismatch: % vs %', parents, children; end if;
 end $$;
 ```
-The exception rolls back the whole migration. Parent columns are never modified; object paths are not changed. Expected today: 32 = 32.
+Backfill runs before the triggers are created, so it queues nothing. Parent columns and object paths are never modified. Expected: 32 = 32; any mismatch rolls back the whole migration.
 
 ## 3. Frontend compatibility
-- New app reads child rows ordered by position; if a reply has none, it falls back to the parent's legacy picture.
-- Old (published) app keeps reading only the parent columns — unaffected because position 0 is always mirrored.
+- New app reads child rows by position; falls back to parent legacy picture when none exist.
+- Old (published) app reads only parent columns — unaffected because position 0 is always mirrored.
 
 ## 4. Interface
-- Edit dialog: thumbnail grid, "2 / 4 pictures" count, Add (disabled at 4), Replace and Remove per picture, "Move left" / "Move right" buttons with aria-labels (disabled at the ends). Text-only replies still allowed.
-- List: first picture as thumbnail plus "+N" badge for extras.
+- Edit dialog: thumbnail grid, "2 / 4 pictures", Add (disabled at 4), Replace/Remove per picture, "Move left"/"Move right" buttons with labels (disabled at the ends). Text-only still allowed.
+- List: first picture plus "+N" badge.
 
 ## 5. Composer selection
-Load images (child rows, else legacy) → download all → convert to Files. If any download fails: toast, draft unchanged. If all succeed: existing draft-replace confirm, set message text, call existing `processFiles(files)` once with the full array. Never sends; Send/`sendMediaBatch` unchanged.
+Load images (child rows, else legacy) → download all → Files. Any failure: toast, draft unchanged. All succeed: existing draft-replace confirm, set text, one `processFiles(files)` call. Never sends.
 
-## 6. Atomic edit and cleanup
-1. Generate `image_id` per new picture; upload to `{creator}/{reply}/{image_id}.{ext}` (creator folder even when admin edits).
-2. Create: insert parent row text fields, then call `set_saved_reply_images`. If either fails → delete the parent (create only) and every newly uploaded object.
-3. Edit: update text fields + call `set_saved_reply_images` with the full final ordered set. If it fails → delete only the newly uploaded objects; old set untouched.
-4. After success → delete objects that are no longer referenced (removed/replaced). Failures here are logged and shown as a non-blocking warning.
-5. Invalidate list and thumbnail queries for changed paths.
+## 6. Atomic edit, delete and cleanup
+1. Upload each new picture to `{creator}/{reply}/{image_id}.{ext}` (creator folder even for admin edits).
+2. Create: insert parent text row, then `set_saved_reply_images`. Failure → delete the parent and all newly uploaded objects.
+3. Edit: update text + `set_saved_reply_images` with the full final set. Failure → delete only newly uploaded objects; old set untouched.
+4. Delete (new app): delete the row; the cascade queues every path; then drain.
+5. After success, drain the queue (removed/replaced objects). Cleanup failures are logged, stay queued, and show a non-blocking warning.
+6. Invalidate list and thumbnail queries for changed paths.
 
 ## 7. Source files
-- New migration (via the migration tool) + regenerated types.
-- `src/hooks/useSavedReplies.ts` — fetch images with replies, new create/update flow, multi-download.
-- `src/lib/savedReplies.ts` (+ tests) — pure helpers: resolveImages (child vs legacy fallback), reorder, max-4 validation, diff of objects to delete.
-- `src/components/SavedReplyDialog.tsx` — picture grid and controls.
-- `src/components/SavedRepliesPanel.tsx` — +N badge.
-- `src/components/ChatPanel.tsx` — `handleSavedReplySelect` only (all-or-nothing downloads, one `processFiles` call).
+- New migration (child table, cleanup queue, triggers, save function, backfill) + regenerated types.
+- `src/hooks/useSavedReplies.ts`, `src/lib/savedReplies.ts` (+ tests), `src/components/SavedReplyDialog.tsx`, `src/components/SavedRepliesPanel.tsx`, `src/components/ChatPanel.tsx` (`handleSavedReplySelect` only).
 - Not touched: edge functions, `useChatMessages.ts`, send code, old migration, storage policies.
 
 ## 8. Tests
-- Unit (Vitest): fallback, reorder mirroring, 5th rejected, removal shifts first, delete-diff.
-- Database (rolled-back block, real role identities): backfill exactly once and rerun adds 0; text-only stay text-only; RLS matrix (staff read, creator/admin write, other staff denied, unapproved/anon 0/denied); 5th row rejected; function mirrors first / clears all; old-app style parent update syncs child row 0; old-app removal clears children; failure leaves set unchanged.
-- **Production compatibility test:** after the migration, open the published app signed-in: all 32 replies listed, pictures show, selecting fills the box with the picture, editing text and replacing the picture still work.
-- Signed-in Preview: existing 1-picture replies, new 2/3/4-picture replies, reorder, remove first, remove all, partial download failure, desktop and mobile; Telegram album and Messenger Page 1 / Page 2 sends to internal test customers only.
-- Build, TypeScript, `bun run test`, security linter/scan.
+- Unit: fallback, reorder mirroring, 5th rejected, removal shifts first, object diff.
+- Database (rolled-back blocks, real role identities):
+  - Column grants: updating id / saved_reply_id / created_at → denied (42501); inserting created_at → denied; allowed columns succeed.
+  - Backfill exactly once; re-run adds 0; text-only stay text-only.
+  - RLS matrix: staff read; creator/admin write; other staff, unapproved, anon denied.
+  - 5th picture rejected.
+  - Save function mirrors first / clears all; non-creator call raises "not authorized".
+  - Two concurrent sessions calling the save function → final parent equals child position 0.
+  - Old-app style: replace syncs position 0; removing the first promotes picture 2 and keeps 3–4; legacy null only when none left; no recursion.
+  - Old-app delete of a 4-picture reply → 4 queue rows; queue rows only removable by creator/admin.
+- **Production compatibility:** (a) read-only check of the existing 32 replies in the published app plus SQL check of one matching child row each — no business reply is edited. (b) one temporary reply `zz-test-multipic-DELETE-ME` used for all edit/replace/remove/delete tests (old and new app). (c) afterwards delete it, drain its queue, confirm no objects remain in its folder.
+- Signed-in Preview: 1–4 pictures, reorder, remove first, remove all, partial download failure, desktop and mobile; Telegram album and Messenger Page 1/Page 2 to internal test customers only.
+- Build, TypeScript, `bun run test`, security scan.
 
 ## 9. Rollback test
-In Preview, temporarily load the currently published frontend version against the migrated data: a 3-picture reply made by the new app shows and sends its first picture; text-only replies unchanged. Rollback procedure: republish the previous version; leave the new table and rows in place; no data deleted. Removing the table or legacy columns only via a separately reviewed future migration.
+In Preview, load the currently published version against migrated data using the temporary test reply: its first picture shows and sends; text-only unchanged. Rollback = republish previous version; keep new tables/rows; nothing deleted. Removing tables or legacy columns only via a separately reviewed future migration.
 
 ## Deployment order
-Bookmark current version → audit (§1) → apply migration + backfill → production compatibility test → types → frontend → Preview tests → rollback test → publish only after your approval.
-
-## One decision to confirm
-If someone using the old app removes a reply's picture after this ships, the plan deletes all of that reply's pictures (matching what they saw). Alternative: only remove the first and promote the next one.
+Bookmark → audit → migration + backfill → production compatibility test → types → frontend → Preview tests → rollback test → publish only after your approval.
