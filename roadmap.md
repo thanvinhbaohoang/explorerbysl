@@ -19,3 +19,11 @@
 - [x] Filtered tabs re-check server on return; no previous-tab flash; aria-pressed
 - [ ] Signed-in click-through (blocked: no preview session for your account)
 - [ ] Publish (waiting on your approval)
+
+## Saved Replies (approved plan, not published)
+- [x] Private `saved-reply-media` bucket (10 MB) + additive migration (table, column grants, RLS, usage function, storage policies)
+- [x] Hook, panel, dialog, thumbnail; button after Voice; draft-replace confirm; never auto-sends
+- [x] 28 rule tests (`bun run test`); database permission checks passed in a rolled-back transaction
+- [ ] Signed-in click-through + Telegram / Messenger Page 1 / Page 2 sends (blocked: no preview session)
+- [ ] Storage policy checks with real uploads (needs signed-in session)
+- [ ] Publish (waiting on your approval)
