@@ -12,7 +12,8 @@ Selecting a saved reply only fills the existing message box (and attachment prev
 | `src/components/SavedRepliesPanel.tsx` (new) | Popover (desktop) / bottom Sheet (mobile) with search, sort, list, states, row actions. Emits `onSelect(reply)` only. |
 | `src/components/SavedReplyDialog.tsx` (new) | Create/edit form (Dialog desktop, full-height Sheet mobile). |
 | `src/lib/savedReplies.ts` (new) | Pure helpers: normalize shortcut/keywords, validate fields, match search, sort. Unit-testable. |
-| `src/lib/savedReplies.test.ts` (new) + minimal Vitest setup (`vitest` dev dep, `test` script) | The project has no test runner today; this adds one for the pure rules only. |
+| `src/components/SavedReplyThumbnail.tsx` (new) | Lazy signed-URL thumbnail, only for visible rows. |
+| `src/lib/savedReplies.test.ts`, `vitest.config.ts` (new); `package.json`, `bun.lock` | Vitest dev dep + `test` script. The project has no test runner today; tests cover the pure rules only. |
 | `src/components/ChatPanel.tsx` | Add trigger button after Mic; open state; draft-replace confirmation; image-to-File resolution; populate `replyText` and call existing `processFiles`. No change to existing handlers. |
 
 Not touched: messages, customer, existing RPCs/RLS/policies, edge functions, auth, useChatMessages, conversation filters.
@@ -161,7 +162,7 @@ Text is never applied without its picture when the picture fails (all-or-nothing
 | Create | no | no | yes (own) | yes (own) |
 | Edit / delete own | no | no | yes | yes |
 | Edit / delete others' | no | no | no | yes |
-| Upload image | no | no | own folder | own folder |
+| Upload image | no | no | own folder | any reply's creator folder |
 | Delete image | no | no | own folder | any |
 
 UI hides Edit/Delete unless `created_by === me || isAdmin`; the database enforces it regardless.
@@ -205,7 +206,7 @@ Unchanged: input typing, Enter send, Shift+Enter, attachment menu, paste, drag-d
 
 ## 14. Security checklist
 
-RLS enabled; anon no grants; unapproved denied (table + storage); created_by forced and immutable; usage columns locked except via role-checked function; bucket private with size/MIME limits; folder-scoped uploads; Supabase security linter clean; no service key in client.
+RLS enabled; anon no grants; unapproved denied (table + storage); created_by, usage and timestamp columns not writable (column-level grants); usage only via hardened role-checked function; image fields all-or-none; bucket private with size/MIME limits; uploads limited to own folder (admin: any); no orphaned uploads on failed insert; Supabase security linter clean; no service key in client.
 
 ## 15. Test plan
 
