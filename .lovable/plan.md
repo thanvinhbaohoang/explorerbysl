@@ -127,6 +127,17 @@ end $$;
 ```
 Idempotent; parent columns and object paths unchanged; mismatch rolls back the whole migration. Expected 32 = 32.
 
+### Mandatory safeguards (approved conditions)
+**Cleanup-function authorization** — `claim_saved_reply_cleanup` and `complete_saved_reply_cleanup` both: require non-null `auth.uid()`; require admin/user/moderator; act only on rows where `creator_id = auth.uid()` or the caller is admin (`complete` raises "not authorized" otherwise, so one staff member can never remove another's record); `search_path = public, pg_temp`; static SQL; revoked from PUBLIC and anon; granted only to authenticated.
+
+**No reuse of queued paths** — `create_saved_reply` and `update_saved_reply` reject any image path present in `saved_reply_image_cleanup` ("This picture is being removed; please upload it again"). New uploads always get new UUID paths, and retained pictures are never queued, so reordering is unaffected. This closes the race where a claimed path is reattached and then deleted.
+
+Extra tests:
+- Creator cannot claim or complete another creator's entry; ordinary approved user cannot remove another creator's queue row.
+- Admin can claim and complete any entry.
+- `update_saved_reply` rejects a queued path; a path returned by `claim` cannot be reattached before completion.
+- Reorder: retained paths not queued and still display/download.
+
 ## 3. Frontend compatibility
 - New app reads child rows by position; falls back to the legacy picture when none exist.
 - Old (published) app reads/writes only parent columns — still works; its edits are synced by the trigger.
