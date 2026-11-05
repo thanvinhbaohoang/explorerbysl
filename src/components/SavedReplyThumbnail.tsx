@@ -13,6 +13,8 @@ export const SavedReplyThumbnail = ({ path, className }: { path: string | null; 
   const [retried, setRetried] = useState(false);
   const [failed, setFailed] = useState(false);
 
+  useEffect(() => { setRetried(false); setFailed(false); }, [path]);
+
   useEffect(() => {
     if (!path || !ref.current) return;
     const el = ref.current;
@@ -33,7 +35,8 @@ export const SavedReplyThumbnail = ({ path, className }: { path: string | null; 
     gcTime: 10 * 60_000,
     retry: (count, err) => !(err instanceof MissingObjectError) && count < 1,
     queryFn: async () => {
-      const { data, error } = await supabase.storage.from(SAVED_REPLY_BUCKET).createSignedUrl(path!, 600);
+      if (!path) throw new MissingObjectError("missing");
+      const { data, error } = await supabase.storage.from(SAVED_REPLY_BUCKET).createSignedUrl(path, 600);
       if (error || !data?.signedUrl) {
         if (/not.?found/i.test(error?.message ?? "")) throw new MissingObjectError("missing");
         throw new Error(error?.message || "sign failed");

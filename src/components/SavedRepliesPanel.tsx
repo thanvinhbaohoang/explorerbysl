@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageSquareText, Plus, Search, X, MoreVertical, Pencil, Trash2, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,10 +16,10 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserRole } from "@/hooks/useUserRole";
-import { useSavedRepliesList, useSavedReplyMutations, friendlySavedReplyError } from "@/hooks/useSavedReplies";
+import { useSavedRepliesList, useSavedReplyMutations, friendlySavedReplyError, drainSavedReplyCleanup } from "@/hooks/useSavedReplies";
 import { SavedReplyThumbnail } from "@/components/SavedReplyThumbnail";
 import { SavedReplyDialog } from "@/components/SavedReplyDialog";
-import { matchesSearch, sortReplies, type SavedReply, type SavedReplySort } from "@/lib/savedReplies";
+import { getSavedReplyImages, matchesSearch, sortReplies, type SavedReply, type SavedReplySort } from "@/lib/savedReplies";
 
 interface Props {
   /** True when the Messenger 24h window has expired: browsing allowed, using disabled. */
@@ -46,6 +46,10 @@ export const SavedRepliesPanel = ({ useDisabled, onSelect, onClosed }: Props) =>
 
   const { data, isLoading, isError, refetch, isFetching } = useSavedRepliesList(open);
   const { remove } = useSavedReplyMutations();
+
+  useEffect(() => {
+    if (open) void drainSavedReplyCleanup().catch(() => toast.warning("Some removed pictures are awaiting cleanup"));
+  }, [open]);
 
   const results = useMemo(
     () => sortReplies((data ?? []).filter((r) => matchesSearch(r, query)), sort),
@@ -154,7 +158,13 @@ export const SavedRepliesPanel = ({ useDisabled, onSelect, onClosed }: Props) =>
                 onClick={() => choose(r)}
                 aria-label={`Use reply ${r.shortcut}`}
                 className="flex flex-1 min-w-0 items-start gap-3 px-2 py-2 text-left rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 disabled:cursor-not-allowed min-h-[44px]">
-                <SavedReplyThumbnail path={r.image_path} />
+                <div className="relative shrink-0">
+                  <SavedReplyThumbnail path={getSavedReplyImages(r)[0]?.image_path ?? null} />
+                  {getSavedReplyImages(r).length > 1 && (
+                    <span className="absolute -bottom-1 -right-1 rounded bg-secondary px-1 text-[10px] font-semibold text-secondary-foreground"
+                      aria-label={`${getSavedReplyImages(r).length} pictures`}>+{getSavedReplyImages(r).length - 1}</span>
+                  )}
+                </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{r.shortcut}</span>

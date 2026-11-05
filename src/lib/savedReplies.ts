@@ -1,3 +1,14 @@
+export interface SavedReplyImage {
+  image_path: string;
+  image_name: string;
+  image_mime_type: string;
+  image_size: number;
+  position: number;
+}
+
+export type SavedReplyPicture = SavedReplyImage | File;
+export const PICTURE_MAX = 4;
+
 export interface SavedReply {
   id: string;
   shortcut: string;
@@ -12,6 +23,41 @@ export interface SavedReply {
   last_used_at: string | null;
   created_at: string;
   updated_at: string;
+  images?: SavedReplyImage[];
+}
+
+/** Prefer ordered child records; preserve the old application's first picture as fallback. */
+export function getSavedReplyImages(reply: SavedReply): SavedReplyImage[] {
+  if (reply.images?.length) return [...reply.images].sort((a, b) => a.position - b.position);
+  if (reply.image_path && reply.image_name && reply.image_mime_type && reply.image_size) {
+    return [{ image_path: reply.image_path, image_name: reply.image_name,
+      image_mime_type: reply.image_mime_type, image_size: reply.image_size, position: 0 }];
+  }
+  return [];
+}
+
+export function validatePictureCount(count: number): string | null {
+  return count > PICTURE_MAX ? "A saved reply can have at most 4 pictures" : null;
+}
+
+export function movePicture<T>(pictures: T[], from: number, to: number): T[] {
+  const result = [...pictures];
+  if (from < 0 || to < 0 || from >= result.length || to >= result.length) return result;
+  const [picture] = result.splice(from, 1);
+  result.splice(to, 0, picture);
+  return result;
+}
+
+export function removedPicturePaths(before: SavedReplyImage[], after: SavedReplyImage[]): string[] {
+  const retained = new Set(after.map((image) => image.image_path));
+  return before.map((image) => image.image_path).filter((path) => !retained.has(path));
+}
+
+/** Resolve every file before the caller changes any composer state. */
+export async function loadSavedReplyFiles(
+  images: SavedReplyImage[], download: (image: SavedReplyImage) => Promise<File>,
+): Promise<File[]> {
+  return Promise.all(images.map(download));
 }
 
 export type SavedReplySort = "frequent" | "recent_used" | "recent_created" | "alpha";
