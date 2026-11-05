@@ -44,6 +44,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateFilteredCustomerCaches } from "@/hooks/useCustomersData";
 import { SavedRepliesPanel } from "@/components/SavedRepliesPanel";
+import { SavedVoicePanel } from "@/components/SavedVoicePanel";
+import { downloadSavedVoice, recordSavedVoiceUse } from "@/hooks/useSavedVoices";
+import type { SavedVoice } from "@/lib/savedVoices";
 import { downloadSavedReplyImages, recordSavedReplyUse } from "@/hooks/useSavedReplies";
 import { hasDraft, type SavedReply } from "@/lib/savedReplies";
 import {
@@ -197,6 +200,8 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
     cancelRecording,
     discardRecording,
     sendVoiceClip,
+    loadVoiceDraft,
+    isSendingSavedVoice,
     togglePreviewPlayback,
     formatDuration,
   } = useChatMessages(customer);
@@ -478,6 +483,28 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
     setReplyText(reply.message);
     if (files.length) processFiles(files);
     void recordSavedReplyUse(reply.id);
+    return true;
+  };
+
+  // ---- Saved voice: only loads the voice preview, never sends ----
+  const handleSavedVoiceSelect = async (voice: SavedVoice): Promise<boolean> => {
+    if (isMessengerOutsideWindow) return false;
+    let file: File;
+    try {
+      file = await downloadSavedVoice(voice);
+    } catch {
+      toast.error("Couldn't load this saved voice. Nothing was changed.");
+      return false;
+    }
+    if (hasDraft({ text: replyText, fileCount: selectedFiles.length, hasRecordedAudio: !!recordedAudio })) {
+      const ok = await new Promise<boolean>((resolve) => setReplaceConfirm(() => resolve));
+      setReplaceConfirm(null);
+      if (!ok) return false;
+    }
+    clearAllFiles();
+    setReplyText("");
+    loadVoiceDraft(file, voice.duration_sec);
+    void recordSavedVoiceUse(voice.id);
     return true;
   };
 
@@ -821,10 +848,10 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
                 </div>
                 <span className="text-sm font-medium tabular-nums">{formatDuration(recordingDuration)}</span>
               </div>
-              <Button variant="outline" size="icon" onClick={discardRecording}>
+              <Button variant="outline" size="icon" onClick={discardRecording} disabled={isSendingSavedVoice}>
                 <Trash2 className="h-4 w-4" />
               </Button>
-              <Button size="icon" onClick={sendVoiceClip}>
+              <Button size="icon" onClick={sendVoiceClip} disabled={isSendingSavedVoice || isMessengerOutsideWindow} aria-label="Send voice message">
                 <Send className="h-4 w-4" />
               </Button>
             </>
@@ -864,6 +891,8 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
                 onSelect={handleSavedReplySelect}
                 onClosed={() => setTimeout(() => replyInputRef.current?.focus(), 0)}
               />
+
+              <SavedVoicePanel useDisabled={isMessengerOutsideWindow} onSelect={handleSavedVoiceSelect} />
               
               <Textarea
                 ref={replyInputRef}
@@ -873,7 +902,7 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 disabled={isMessengerOutsideWindow}
-                className="flex-1 min-h-[40px] max-h-[120px] resize-none py-2"
+                className="flex-1 min-w-0 min-h-[40px] max-h-[120px] resize-none py-2"
                 rows={1}
                 autoFocus
               />
