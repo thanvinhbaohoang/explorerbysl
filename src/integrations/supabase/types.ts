@@ -656,6 +656,51 @@ export type Database = {
           },
         ]
       }
+      saved_voices: {
+        Row: {
+          audio_mime_type: string
+          audio_path: string
+          audio_size: number
+          created_at: string
+          created_by: string
+          duration_sec: number
+          id: string
+          keywords: string[]
+          last_used_at: string | null
+          title: string
+          updated_at: string
+          use_count: number
+        }
+        Insert: {
+          audio_mime_type: string
+          audio_path: string
+          audio_size: number
+          created_at?: string
+          created_by: string
+          duration_sec: number
+          id: string
+          keywords?: string[]
+          last_used_at?: string | null
+          title: string
+          updated_at?: string
+          use_count?: number
+        }
+        Update: {
+          audio_mime_type?: string
+          audio_path?: string
+          audio_size?: number
+          created_at?: string
+          created_by?: string
+          duration_sec?: number
+          id?: string
+          keywords?: string[]
+          last_used_at?: string | null
+          title?: string
+          updated_at?: string
+          use_count?: number
+        }
+        Relationships: []
+      }
       telegram_leads: {
         Row: {
           ad_id: string | null
@@ -829,6 +874,10 @@ export type Database = {
         Args: { p_creator: string; p_images: Json; p_reply_id: string }
         Returns: undefined
       }
+      _saved_voice_validate: {
+        Args: { p_creator: string; p_id: string; p_path: string }
+        Returns: undefined
+      }
       claim_saved_reply_cleanup: { Args: never; Returns: string[] }
       complete_saved_reply_cleanup: {
         Args: { p_path: string }
@@ -844,7 +893,19 @@ export type Database = {
         }
         Returns: undefined
       }
+      create_saved_voice: {
+        Args: {
+          p_duration: number
+          p_id: string
+          p_keywords: string[]
+          p_path: string
+          p_size: number
+          p_title: string
+        }
+        Returns: undefined
+      }
       delete_saved_reply: { Args: { p_id: string }; Returns: undefined }
+      delete_saved_voice: { Args: { p_id: string }; Returns: string }
       execute_unknown_messenger_cleanup: { Args: never; Returns: Json }
       get_filtered_customer_ids: {
         Args: {
@@ -890,6 +951,7 @@ export type Database = {
       }
       preview_unknown_messenger_cleanup: { Args: never; Returns: Json }
       record_saved_reply_use: { Args: { p_id: string }; Returns: undefined }
+      record_saved_voice_use: { Args: { p_id: string }; Returns: undefined }
       update_saved_reply: {
         Args: {
           p_id: string
@@ -899,6 +961,17 @@ export type Database = {
           p_shortcut: string
         }
         Returns: undefined
+      }
+      update_saved_voice: {
+        Args: {
+          p_duration: number
+          p_id: string
+          p_keywords: string[]
+          p_path: string
+          p_size: number
+          p_title: string
+        }
+        Returns: string
       }
     }
     Enums: {
