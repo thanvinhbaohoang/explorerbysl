@@ -1034,7 +1034,11 @@ async function sendVoice(chatId: number, voiceUrl: string, caption?: string, str
       return await sendAudioWithFile(chatId, fileBlob, caption);
     }
 
-    return await response.json();
+    const result = await response.json();
+    if (strict && !result?.result?.voice) {
+      throw new Error("Telegram accepted the file but did not show it as a voice message");
+    }
+    return result;
   } catch (error) {
     console.error("Error in sendVoice:", error);
     throw error;
