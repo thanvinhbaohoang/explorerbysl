@@ -49,9 +49,12 @@
 - [x] Baseline verification: 42 business pictures/objects unchanged; 41/42 whole reply hashes unchanged, one staff usage increment observed.
 - [x] Final release report and screenshots delivered: NOT SAFE TO PUBLISH.
 - [x] User accepts current baseline: 42 business replies/pictures, zero cleanup entries; usage is mutable; do not recreate processed entries.
-- [ ] Targeted release: single-picture delivery through both Messenger pages (only within reply windows).
-- [ ] Targeted release: creator/admin/other-staff/signed-out permissions and measured concurrent lock wait.
-- [ ] Targeted release: thumbnail recovery; temporary cleanup failure/retry; referenced-picture protection.
-- [ ] Targeted release: tests, harness build/TypeScript evidence, focused lint, final fingerprints and temporary-data cleanup.
-- [ ] Targeted release: screenshots/evidence report and final verdict; production unchanged.
+- [x] Targeted release: both single-picture Messenger deliveries provider-successful inside reply windows; one photo plus one caption follow-up each; all four app-side test rows removed.
+- [x] Targeted release: creator/admin/other-staff/signed-out metadata permissions passed in expected rolled-back transaction.
+- [ ] Measured concurrent serialization remains unverified: long lock caused request timeout; short attempts did not overlap reliably. No test data remains.
+- [ ] Thumbnail recovery FAILED: transient image 404 restored access, one request only, broken thumbnail remained. Verification-only scope; no application fix made.
+- [x] Temporary cleanup failure kept queue/object; successful retry removed both (fresh listing/catalog verified); referenced picture drain made zero delete calls.
+- [x] 37 unit tests and focused lint pass; harness build OK; all business hashes and 42 actual picture byte hashes unchanged; usage unchanged; zero temporary remnants.
+- [ ] Fresh standalone production-build and TypeScript runs unavailable under harness-only build rule; current build OK is observed, not a separate fresh TypeScript result.
+- [x] Targeted evidence report/screenshots delivered; production asset URLs unchanged; no publication. Verdict NOT SAFE TO PUBLISH.
 - [ ] Publish: blocked until explicit user approval.
