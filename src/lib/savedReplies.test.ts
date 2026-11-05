@@ -1,13 +1,57 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   validateShortcut, validateMessage, normalizeKeywords, matchesSearch, sortReplies,
-  hasDraft, sniffImageType, validateImageMeta, type SavedReply,
+  hasDraft, sniffImageType, validateImageMeta, getSavedReplyImages, movePicture, removedPicturePaths,
+  validatePictureCount, loadSavedReplyFiles, type SavedReply, type SavedReplyImage,
 } from "./savedReplies";
 
 const r = (o: Partial<SavedReply>): SavedReply => ({
   id: "x", shortcut: "abc", message: "m", keywords: [], image_path: null, image_name: null,
   image_mime_type: null, image_size: null, created_by: "u", use_count: 0, last_used_at: null,
   created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z", ...o,
+});
+
+describe("0–4 ordered pictures", () => {
+  const image = (path: string, position: number): SavedReplyImage => ({ image_path: path,
+    image_name: `${path}.png`, image_mime_type: "image/png", image_size: 100, position });
+  it("keeps text-only entries empty", () => expect(getSavedReplyImages(r({}))).toEqual([]));
+  it("falls back to the unchanged legacy picture at position zero", () => {
+    expect(getSavedReplyImages(r({ image_path: "original", image_name: "original.png",
+      image_mime_type: "image/png", image_size: 100, images: [] }))).toEqual([image("original", 0)]);
+  });
+  it("prefers child records in position order", () => {
+    expect(getSavedReplyImages(r({ image_path: "legacy", images: [image("b", 1), image("a", 0)] }))
+      .map((i) => i.image_path)).toEqual(["a", "b"]);
+  });
+  it("accepts four pictures", () => expect(validatePictureCount(4)).toBeNull());
+  it("rejects a fifth picture", () => expect(validatePictureCount(5)).not.toBeNull());
+  it("reorders without dropping or mutating retained pictures", () => {
+    const before = [image("a", 0), image("b", 1), image("c", 2), image("d", 3)];
+    const after = movePicture(before, 0, 3);
+    expect(after.map((i) => i.image_path)).toEqual(["b", "c", "d", "a"]);
+    expect(before.map((i) => i.image_path)).toEqual(["a", "b", "c", "d"]);
+    expect(removedPicturePaths(before, after)).toEqual([]);
+  });
+  it("queues only the removed/replaced path", () => {
+    expect(removedPicturePaths([image("a", 0), image("b", 1)], [image("a", 0), image("new", 1)]))
+      .toEqual(["b"]);
+  });
+  it("keeps downloaded files ordered even when completion order differs", async () => {
+    const download = vi.fn(async (i: SavedReplyImage) => {
+      if (i.position === 0) await new Promise((resolve) => setTimeout(resolve, 10));
+      return { name: i.image_name } as File;
+    });
+    expect((await loadSavedReplyFiles([image("a", 0), image("b", 1)], download)).map((f) => f.name))
+      .toEqual(["a.png", "b.png"]);
+  });
+  it("rejects the whole selection when any download fails", async () => {
+    const apply = vi.fn();
+    await expect(loadSavedReplyFiles([image("a", 0), image("b", 1)], async (i) => {
+      if (i.position === 1) throw new Error("missing");
+      return { name: i.image_name } as File;
+    }).then(apply)).rejects.toThrow("missing");
+    expect(apply).not.toHaveBeenCalled();
+  });
 });
 
 describe("shortcut", () => {

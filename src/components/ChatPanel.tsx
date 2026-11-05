@@ -44,7 +44,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateFilteredCustomerCaches } from "@/hooks/useCustomersData";
 import { SavedRepliesPanel } from "@/components/SavedRepliesPanel";
-import { downloadSavedReplyImage, recordSavedReplyUse } from "@/hooks/useSavedReplies";
+import { downloadSavedReplyImages, recordSavedReplyUse } from "@/hooks/useSavedReplies";
 import { hasDraft, type SavedReply } from "@/lib/savedReplies";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
@@ -461,24 +461,22 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
 
   const handleSavedReplySelect = async (reply: SavedReply): Promise<boolean> => {
     if (isMessengerOutsideWindow) return false;
+    let files: File[];
+    try {
+      files = await downloadSavedReplyImages(reply);
+    } catch {
+      toast.error("Couldn't load this reply's pictures. Nothing was changed.");
+      return false;
+    }
     if (hasDraft({ text: replyText, fileCount: selectedFiles.length, hasRecordedAudio: !!recordedAudio })) {
       const ok = await new Promise<boolean>((resolve) => setReplaceConfirm(() => resolve));
       setReplaceConfirm(null);
       if (!ok) return false;
     }
-    let file: File | null = null;
-    if (reply.image_path) {
-      try {
-        file = await downloadSavedReplyImage(reply);
-      } catch {
-        toast.error("Couldn't load this reply's picture. Nothing was changed.");
-        return false;
-      }
-    }
     clearAllFiles();
     if (recordedAudio) discardRecording();
     setReplyText(reply.message);
-    if (file) processFiles([file]);
+    if (files.length) processFiles(files);
     void recordSavedReplyUse(reply.id);
     return true;
   };
