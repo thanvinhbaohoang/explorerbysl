@@ -40,5 +40,10 @@
 - [x] Audit (33 replies / 33 pictures / 0 invalid at audit time — baseline grew from 32 because staff are adding replies live)
 - [x] Additive migration 0003_add_saved_reply_images applied (backfill check passed)
 - [x] Baseline re-recorded: 39 replies, 39 pictures, 39 matching entries, 0 invalid
-- [ ] BLOCKED: database safety tests — preflight requires empty cleanup queue, it holds 1 row (user decision needed)
-- [ ] Frontend multi-picture UI, frontend multi-picture UI, Preview + delivery checks, rollback test, release report
+- [x] Previous rolled-back database safety tests passed; pre-existing queue preserved.
+- [x] User approved current baseline of 42 replies / 42 pictures; preserve two existing queue entries.
+- [ ] Frontend multi-picture UI and rule tests.
+- [ ] Desktop/mobile/storage/failure checks using only zz-test-multipic-DELETE-ME.
+- [ ] Delivery to three approved internal chats; clean temporary messages where possible.
+- [ ] Published frontend compatibility/rollback verification, baseline verification, final release report.
+- [ ] Publish: blocked until explicit user approval.
