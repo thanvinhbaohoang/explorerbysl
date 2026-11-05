@@ -48,6 +48,13 @@
 - [x] Temporary replies/child rows/objects/queue entries and 15 app-side test messages removed; external delivered messages may remain.
 - [x] Baseline verification: 42 business pictures/objects unchanged; 41/42 whole reply hashes unchanged, one staff usage increment observed.
 - [x] Final release report and screenshots delivered: NOT SAFE TO PUBLISH.
-- [ ] Release review blocker: panel-open drain removed two pre-existing queue entries, violating test preservation.
-- [ ] Remaining release checks: single-picture Messenger deliveries; deterministic lock-wait; fresh complete role/failure matrix.
+- [x] User accepts current baseline: 42 business replies/pictures, zero cleanup entries; usage is mutable; do not recreate processed entries.
+- [x] Targeted release: both single-picture Messenger deliveries provider-successful inside reply windows; one photo plus one caption follow-up each; all four app-side test rows removed.
+- [x] Targeted release: creator/admin/other-staff/signed-out metadata permissions passed in expected rolled-back transaction.
+- [ ] Measured concurrent serialization remains unverified: long lock caused request timeout; short attempts did not overlap reliably. No test data remains.
+- [ ] Thumbnail recovery FAILED: transient image 404 restored access, one request only, broken thumbnail remained. Verification-only scope; no application fix made.
+- [x] Temporary cleanup failure kept queue/object; successful retry removed both (fresh listing/catalog verified); referenced picture drain made zero delete calls.
+- [x] 37 unit tests and focused lint pass; harness build OK; all business hashes and 42 actual picture byte hashes unchanged; usage unchanged; zero temporary remnants.
+- [ ] Fresh standalone production-build and TypeScript runs unavailable under harness-only build rule; current build OK is observed, not a separate fresh TypeScript result.
+- [x] Targeted evidence report/screenshots delivered; production asset URLs unchanged; no publication. Verdict NOT SAFE TO PUBLISH.
 - [ ] Publish: blocked until explicit user approval.
