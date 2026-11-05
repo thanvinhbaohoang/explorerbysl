@@ -1,0 +1,2 @@
+CREATE POLICY "Approved staff can view chat attachment records" ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'chat-attachments' AND (public.has_role(auth.uid(),'admin') OR public.has_role(auth.uid(),'user') OR public.has_role(auth.uid(),'moderator')));
