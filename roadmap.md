@@ -42,8 +42,12 @@
 - [x] Baseline re-recorded: 39 replies, 39 pictures, 39 matching entries, 0 invalid
 - [x] Previous rolled-back database safety tests passed; pre-existing queue preserved.
 - [x] User approved current baseline of 42 replies / 42 pictures; preserve two existing queue entries.
-- [ ] Frontend multi-picture UI and rule tests.
-- [ ] Desktop/mobile/storage/failure checks using only zz-test-multipic-DELETE-ME.
-- [ ] Delivery to three approved internal chats; clean temporary messages where possible.
-- [ ] Published frontend compatibility/rollback verification, baseline verification, final release report.
+- [x] Frontend multi-picture UI; 37 unit tests pass; harness build/TypeScript OK; focused lint clean.
+- [x] Desktop/mobile 0–4 pictures, reorder/replace/remove, failed upload/save/download, draft protection verified with temporary reply.
+- [x] Four-picture delivery to all three approved internal chats; old published frontend single-picture Telegram delivery verified.
+- [x] Temporary replies/child rows/objects/queue entries and 15 app-side test messages removed; external delivered messages may remain.
+- [x] Baseline verification: 42 business pictures/objects unchanged; 41/42 whole reply hashes unchanged, one staff usage increment observed.
+- [x] Final release report and screenshots delivered: NOT SAFE TO PUBLISH.
+- [ ] Release review blocker: panel-open drain removed two pre-existing queue entries, violating test preservation.
+- [ ] Remaining release checks: single-picture Messenger deliveries; deterministic lock-wait; fresh complete role/failure matrix.
 - [ ] Publish: blocked until explicit user approval.
