@@ -6,3 +6,4 @@
 - Unit tests run with `bun run test` (Vitest 2, pinned to stay compatible with Vite 5).
 - Multi-picture Saved Replies read ordered child rows with legacy fallback, save complete sets through atomic RPCs, and drain the protected cleanup queue; download every picture before changing a draft to prevent partial albums.
 - Saved Voice stores one canonical MP3 per entry in the private `saved-voice-media` bucket (`{creator}/{id}/`), writes only via RPCs; selecting loads a local copy into the voice draft and Telegram sends it with `strict_voice` (no sendAudio fallback) — keeps the library private and delivery voice-style.
+- `chat-attachments` stays a public bucket so customers can open sent media by link, but its records can only be listed, added, replaced or deleted by approved staff (has_role); server functions write with service access — no anonymous listing.
