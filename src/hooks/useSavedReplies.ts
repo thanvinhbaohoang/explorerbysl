@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { extForMime, type SavedReply } from "@/lib/savedReplies";
+import { extForMime, getSavedReplyImages, loadSavedReplyFiles, validateImageFile, validatePictureCount,
+  type SavedReply, type SavedReplyImage, type SavedReplyPicture } from "@/lib/savedReplies";
 
 export const SAVED_REPLIES_KEY = ["saved-replies"] as const;
 export const SAVED_REPLY_BUCKET = "saved-reply-media";
@@ -14,7 +15,7 @@ export function useSavedRepliesList(enabled: boolean) {
     queryFn: async (): Promise<SavedReply[]> => {
       const { data, error } = await supabase
         .from("saved_replies")
-        .select("*")
+        .select("*, images:saved_reply_images(*)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as SavedReply[];
@@ -28,9 +29,6 @@ export interface SavedReplyInput {
   keywords: string[];
 }
 
-/** "keep" = unchanged, null = remove, File = new picture */
-export type ImageChange = "keep" | null | File;
-
 const uploadImage = async (folderOwner: string, replyId: string, file: File) => {
   const path = `${folderOwner}/${replyId}/${crypto.randomUUID()}.${extForMime(file.type)}`;
   const { error } = await supabase.storage
@@ -42,8 +40,50 @@ const uploadImage = async (folderOwner: string, replyId: string, file: File) => 
 
 const removeObject = async (path: string) => {
   const { error } = await supabase.storage.from(SAVED_REPLY_BUCKET).remove([path]);
-  if (error) console.warn("[saved-replies] could not remove object", path, error.message);
+  if (error) throw new Error(`Picture cleanup failed: ${error.message}`);
 };
+
+/** Failures remain queued, and never roll back an already successful save. */
+export async function drainSavedReplyCleanup() {
+  const { data, error } = await supabase.rpc("claim_saved_reply_cleanup");
+  if (error) throw error;
+  for (const path of data ?? []) {
+    await removeObject(path);
+    const { error: completeError } = await supabase.rpc("complete_saved_reply_cleanup", { p_path: path });
+    if (completeError) throw completeError;
+  }
+}
+
+const imagePayload = (image: SavedReplyImage) => ({
+  path: image.image_path, name: image.image_name, mime_type: image.image_mime_type, size: image.image_size,
+});
+
+/** Only new uploads are undone on failure; retained business objects are never touched. */
+async function savePictures(owner: string, id: string, pictures: SavedReplyPicture[], save: (images: SavedReplyImage[]) => Promise<void>) {
+  const countError = validatePictureCount(pictures.length);
+  if (countError) throw new Error(countError);
+  const uploaded: string[] = [];
+  try {
+    const images: SavedReplyImage[] = [];
+    for (const [position, picture] of pictures.entries()) {
+      if (picture instanceof File) {
+        const invalid = await validateImageFile(picture);
+        if (invalid) throw new Error(invalid);
+        const path = await uploadImage(owner, id, picture);
+        uploaded.push(path);
+        images.push({ image_path: path, image_name: picture.name, image_mime_type: picture.type,
+          image_size: picture.size, position });
+      } else images.push({ ...picture, position });
+    }
+    await save(images);
+  } catch (error) {
+    for (const path of uploaded) {
+      try { await removeObject(path); }
+      catch (cleanupError) { console.warn("[saved-replies] failed upload cleanup", cleanupError); }
+    }
+    throw error;
+  }
+}
 
 export function friendlySavedReplyError(e: unknown): string {
   const err = e as { code?: string; message?: string };
@@ -56,63 +96,51 @@ export function friendlySavedReplyError(e: unknown): string {
 export function useSavedReplyMutations() {
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: SAVED_REPLIES_KEY });
+  const afterSave = async () => {
+    await invalidate();
+    try { await drainSavedReplyCleanup(); }
+    catch (error) { console.warn("[saved-replies] cleanup pending", error); }
+  };
+  const invalidateImages = (reply: SavedReply) => {
+    for (const image of getSavedReplyImages(reply)) qc.removeQueries({ queryKey: thumbKey(image.image_path) });
+  };
 
   const create = useMutation({
-    mutationFn: async ({ input, image, userId }: { input: SavedReplyInput; image: File | null; userId: string }) => {
+    mutationFn: async ({ input, pictures, userId }: { input: SavedReplyInput; pictures: SavedReplyPicture[]; userId: string }) => {
       const id = crypto.randomUUID();
-      let path: string | null = null;
-      if (image) path = await uploadImage(userId, id, image);
-      const { error } = await supabase.from("saved_replies").insert({
-        id,
-        ...input,
-        image_path: path,
-        image_name: image ? image.name : null,
-        image_mime_type: image ? image.type : null,
-        image_size: image ? image.size : null,
+      await savePictures(userId, id, pictures, async (images) => {
+        const { error } = await supabase.rpc("create_saved_reply", {
+          p_id: id, p_shortcut: input.shortcut, p_message: input.message, p_keywords: input.keywords,
+          p_images: images.map(imagePayload),
+        });
+        if (error) throw error;
       });
-      if (error) {
-        if (path) await removeObject(path);
-        throw error;
-      }
     },
-    onSuccess: invalidate,
+    onSuccess: afterSave,
   });
 
   const update = useMutation({
-    mutationFn: async ({ reply, input, image }: { reply: SavedReply; input: SavedReplyInput; image: ImageChange }) => {
-      let newPath: string | null = null;
-      const patch: Record<string, unknown> = { ...input };
-      if (image instanceof File) {
-        // Always keep pictures in the original creator's folder
-        newPath = await uploadImage(reply.created_by, reply.id, image);
-        Object.assign(patch, { image_path: newPath, image_name: image.name, image_mime_type: image.type, image_size: image.size });
-      } else if (image === null) {
-        Object.assign(patch, { image_path: null, image_name: null, image_mime_type: null, image_size: null });
-      }
-      const { data, error } = await supabase.from("saved_replies").update(patch).eq("id", reply.id).select("id");
-      if (error || !data?.length) {
-        if (newPath) await removeObject(newPath);
-        throw error ?? new Error("This reply was deleted or you don't have permission to change it");
-      }
-      if (image !== "keep" && reply.image_path) {
-        await removeObject(reply.image_path);
-        qc.removeQueries({ queryKey: thumbKey(reply.image_path) });
-      }
+    mutationFn: async ({ reply, input, pictures }: { reply: SavedReply; input: SavedReplyInput; pictures: SavedReplyPicture[] }) => {
+      await savePictures(reply.created_by, reply.id, pictures, async (images) => {
+        const { error } = await supabase.rpc("update_saved_reply", {
+          p_id: reply.id, p_shortcut: input.shortcut, p_message: input.message, p_keywords: input.keywords,
+          p_images: images.map(imagePayload),
+        });
+        if (error) throw error;
+      });
+      invalidateImages(reply);
     },
-    onSuccess: invalidate,
+    onSuccess: afterSave,
   });
 
   const remove = useMutation({
     mutationFn: async (reply: SavedReply) => {
-      const { data, error } = await supabase.from("saved_replies").delete().eq("id", reply.id).select("id");
+      const { error } = await supabase.rpc("delete_saved_reply", { p_id: reply.id });
       if (error) throw error;
-      if (!data?.length) throw new Error("This reply was already deleted or you don't have permission");
-      if (reply.image_path) {
-        await removeObject(reply.image_path);
-        qc.removeQueries({ queryKey: thumbKey(reply.image_path) });
-      }
+      invalidateImages(reply);
     },
-    onSettled: invalidate,
+    onSuccess: afterSave,
+    onError: invalidate,
   });
 
   return { create, update, remove };
@@ -128,11 +156,18 @@ export async function recordSavedReplyUse(id: string) {
 }
 
 /** Fresh authenticated download → File, for the composer. */
-export async function downloadSavedReplyImage(reply: SavedReply): Promise<File> {
-  if (!reply.image_path || !reply.image_mime_type) throw new Error("No picture");
+async function downloadSavedReplyImage(reply: SavedReplyImage): Promise<File> {
   const { data, error } = await supabase.storage.from(SAVED_REPLY_BUCKET).download(reply.image_path);
   if (error || !data) throw new Error(error?.message || "Picture not found");
   return new File([data], reply.image_name || `saved-reply.${extForMime(reply.image_mime_type)}`, {
     type: reply.image_mime_type,
   });
+}
+
+export async function downloadSavedReplyImages(reply: SavedReply): Promise<File[]> {
+  // Re-read pictures so a stale list cannot silently insert an incomplete album.
+  const { data, error } = await supabase.from("saved_replies")
+    .select("*, images:saved_reply_images(*)").eq("id", reply.id).single();
+  if (error || !data) throw new Error(error?.message || "This reply was deleted");
+  return loadSavedReplyFiles(getSavedReplyImages(data as SavedReply), downloadSavedReplyImage);
 }
