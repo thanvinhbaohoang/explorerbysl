@@ -12,7 +12,14 @@ No code edits, data changes, test messages, migrations or publishing. The only w
 - Deployed functions: confirm only `telegram-bot` changed. Diff it to show that `strict_voice` affects only the Saved Voice path, and that the normal voice fallback and text, photo and video paths are byte-identical.
 - Regression review by diff: normal voice recording, Saved Replies, inbox filters, auth, customer data, existing send paths.
 
+## 2b. Telegram strict_voice deep check
+- Compare the deployed `telegram-bot` source with the repo version (hash and line diff).
+- Who can set `strict_voice`: trace how the function authenticates callers (signed-in staff token versus anyone) and whether a non-staff or unauthenticated caller could set it or reach `send_media`.
+- Failure behavior: if `sendVoice` errors or returns no `result.voice`, there is no `sendAudio` call, no message row is saved, the error goes back to the app, and the draft is kept for retry.
+- Ordinary voice recordings: show that a request without the flag still follows the existing path, including the old fallback. Confirm with the code path and the existing log evidence (for example, the earlier normal webm voice send). No new sends.
+
 ## 3. Security (read-only queries plus scans)
+- Rule: a finding that existed before Saved Voice still blocks release if Saved Voice makes it reachable through private recordings, sending, or customer data. Each finding gets a reachability note.
 - Permission matrix, checked through privilege and policy inspection and existing evidence: approved staff can read and use; only the creator or an admin can edit or delete; signed-out users are denied; direct table writes are blocked; `use_count` can't be tampered with; storage path prefix is validated; no cross-tenant reads (single organization, so this will be noted as not applicable).
 - Run the security scan and linter. Split findings into new and pre-existing. Any new exploitable Saved Voice or customer-data finding blocks release.
 
