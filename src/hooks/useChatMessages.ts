@@ -139,6 +139,10 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
   const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [recordedAudio, setRecordedAudio] = useState<{ file: File; url: string } | null>(null);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  // Saved Voice drafts: kept until the platform confirms, locked against double sends.
+  const [isSavedVoiceDraft, setIsSavedVoiceDraft] = useState(false);
+  const [isSendingSavedVoice, setIsSendingSavedVoice] = useState(false);
+  const savedVoiceInFlightRef = useRef(false);
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
@@ -903,15 +907,65 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     setRecordingDuration(0);
   };
 
+  /** Load a Saved Voice MP3 into the existing voice preview. Never sends. */
+  const loadVoiceDraft = (file: File, durationSec: number) => {
+    if (recordedAudio) URL.revokeObjectURL(recordedAudio.url);
+    setRecordedAudio({ file, url: URL.createObjectURL(file) });
+    setRecordingDuration(durationSec);
+    setIsPlayingPreview(false);
+    setPlaybackProgress(0);
+    setIsSavedVoiceDraft(true);
+  };
+
   const discardRecording = () => {
     if (recordedAudio) URL.revokeObjectURL(recordedAudio.url);
+    setIsSavedVoiceDraft(false);
     setRecordedAudio(null);
     setRecordingDuration(0);
     setIsPlayingPreview(false);
     setPlaybackProgress(0);
   };
 
+  const sendSavedVoiceClip = async () => {
+    if (!recordedAudio || savedVoiceInFlightRef.current) return;
+    const customerToReply = replyCustomer || selectedCustomer;
+    if (!customerToReply) return;
+    savedVoiceInFlightRef.current = true;
+    setIsSendingSavedVoice(true);
+    const platform = customerToReply.messenger_id ? 'messenger' : 'telegram';
+    let response: any;
+    try {
+      const mediaUrl = await uploadFileToStorage(recordedAudio.file);
+      response = platform === 'messenger'
+        ? await supabase.functions.invoke("messenger-webhook", { body: {
+            psid: customerToReply.messenger_id, media_url: mediaUrl, media_type: 'audio',
+            sent_by_name: currentUserName, page_id: customerToReply.page_id } })
+        : await supabase.functions.invoke("telegram-bot", { body: {
+            action: "send_media", telegram_id: customerToReply.telegram_id, customer_id: customerToReply.id,
+            media_url: mediaUrl, media_type: 'voice', sent_by_name: currentUserName, strict_voice: true } });
+      if (response.error) throw response.error;
+      if (response.data?.error) throw new Error(response.data.error);
+      URL.revokeObjectURL(recordedAudio.url);
+      setRecordedAudio(null);
+      setIsSavedVoiceDraft(false);
+      setRecordingDuration(0);
+      setIsPlayingPreview(false);
+      setPlaybackProgress(0);
+      toast.success("Voice message sent");
+    } catch (error: any) {
+      console.error("Error sending saved voice:", error);
+      if (error?.message?.includes('24-hour messaging window')) {
+        setExpiredWindowCustomers(prev => new Set(prev).add(customerToReply.id));
+      }
+      toast.error(await formatSendError(error, response?.data, 'Voice message not sent — it is still ready to retry'), { duration: 8000 });
+    } finally {
+      savedVoiceInFlightRef.current = false;
+      setIsSendingSavedVoice(false);
+    }
+  };
+
   const sendVoiceClip = async () => {
+    if (isSavedVoiceDraft) return sendSavedVoiceClip();
     if (!recordedAudio) return;
     
     const customerToReply = replyCustomer || selectedCustomer;
@@ -1198,6 +1252,9 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
     cancelRecording,
     discardRecording,
     sendVoiceClip,
+    loadVoiceDraft,
+    isSavedVoiceDraft,
+    isSendingSavedVoice,
     togglePreviewPlayback,
     formatDuration,
     setMessages,
