@@ -71,7 +71,7 @@ export const SavedReplyDialog = ({ open, onOpenChange, reply }: Props) => {
   };
 
   const save = async () => {
-    if (saving) return;
+    if (saving || picking) return;
     const allKeywords = normalizeKeywords([...keywords, ...kwInput.split(",")]);
     const errs = { shortcut: validateShortcut(shortcut), message: validateMessage(message) };
     setErrors((e) => ({ ...e, ...errs }));
@@ -126,7 +126,7 @@ export const SavedReplyDialog = ({ open, onOpenChange, reply }: Props) => {
             ))}
           </div>
         )}
-        <Input id="sr-keywords" value={kwInput} onChange={(e) => setKwInput(e.target.value)}
+        <Input id="sr-keywords" value={kwInput} disabled={saving || picking} onChange={(e) => setKwInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addKeywords(kwInput); } }}
           onBlur={() => kwInput.trim() && addKeywords(kwInput)}
           placeholder="Type a keyword and press Enter" />
@@ -180,7 +180,7 @@ export const SavedReplyDialog = ({ open, onOpenChange, reply }: Props) => {
 
   if (isMobile) {
     return (
-      <Sheet open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
+      <Sheet open={open} onOpenChange={(o) => !saving && !picking && onOpenChange(o)}>
         <SheetContent side="bottom" className="h-[100dvh] flex flex-col">
           <SheetHeader><SheetTitle>{title}</SheetTitle><SheetDescription className="sr-only">{title}</SheetDescription></SheetHeader>
           <div className="flex-1 overflow-y-auto py-4">{body}</div>
@@ -190,7 +190,7 @@ export const SavedReplyDialog = ({ open, onOpenChange, reply }: Props) => {
     );
   }
   return (
-    <Dialog open={open} onOpenChange={(o) => !saving && onOpenChange(o)}>
+    <Dialog open={open} onOpenChange={(o) => !saving && !picking && onOpenChange(o)}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription className="sr-only">{title}</DialogDescription></DialogHeader>
         {body}

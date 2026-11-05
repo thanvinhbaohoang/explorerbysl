@@ -47,11 +47,18 @@ const removeObject = async (path: string) => {
 export async function drainSavedReplyCleanup() {
   const { data, error } = await supabase.rpc("claim_saved_reply_cleanup");
   if (error) throw error;
+  let failed = false;
   for (const path of data ?? []) {
-    await removeObject(path);
-    const { error: completeError } = await supabase.rpc("complete_saved_reply_cleanup", { p_path: path });
-    if (completeError) throw completeError;
+    try {
+      await removeObject(path);
+      const { error: completeError } = await supabase.rpc("complete_saved_reply_cleanup", { p_path: path });
+      if (completeError) throw completeError;
+    } catch (cleanupError) {
+      failed = true;
+      console.warn("[saved-replies] cleanup pending", cleanupError);
+    }
   }
+  if (failed) throw new Error("Some removed pictures are awaiting cleanup");
 }
 
 const imagePayload = (image: SavedReplyImage) => ({
