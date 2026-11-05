@@ -851,6 +851,7 @@ export const useChatMessages = (selectedCustomer: Customer | null) => {
           { type: blobType }
         );
         const audioUrl = URL.createObjectURL(audioBlob);
+        setIsSavedVoiceDraft(false);
         setRecordedAudio({ file: audioFile, url: audioUrl });
       };
 
