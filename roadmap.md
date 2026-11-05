@@ -48,6 +48,10 @@
 - [x] Temporary replies/child rows/objects/queue entries and 15 app-side test messages removed; external delivered messages may remain.
 - [x] Baseline verification: 42 business pictures/objects unchanged; 41/42 whole reply hashes unchanged, one staff usage increment observed.
 - [x] Final release report and screenshots delivered: NOT SAFE TO PUBLISH.
-- [ ] Release review blocker: panel-open drain removed two pre-existing queue entries, violating test preservation.
-- [ ] Remaining release checks: single-picture Messenger deliveries; deterministic lock-wait; fresh complete role/failure matrix.
+- [x] User accepts current baseline: 42 business replies/pictures, zero cleanup entries; usage is mutable; do not recreate processed entries.
+- [ ] Targeted release: single-picture delivery through both Messenger pages (only within reply windows).
+- [ ] Targeted release: creator/admin/other-staff/signed-out permissions and measured concurrent lock wait.
+- [ ] Targeted release: thumbnail recovery; temporary cleanup failure/retry; referenced-picture protection.
+- [ ] Targeted release: tests, harness build/TypeScript evidence, focused lint, final fingerprints and temporary-data cleanup.
+- [ ] Targeted release: screenshots/evidence report and final verdict; production unchanged.
 - [ ] Publish: blocked until explicit user approval.
