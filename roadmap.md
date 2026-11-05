@@ -58,3 +58,7 @@
 - [ ] Fresh standalone production-build and TypeScript runs unavailable under harness-only build rule; current build OK is observed, not a separate fresh TypeScript result.
 - [x] Targeted evidence report/screenshots delivered; production asset URLs unchanged; no publication. Verdict NOT SAFE TO PUBLISH.
 - [ ] Publish: blocked until explicit user approval.
+
+## Saved Voice (preview only)
+- [x] Library, button, panel, retry-safe send, Telegram strict voice
+- [ ] Recipient-side screenshots on Telegram and both Messenger pages — blocked: needs the user's phones/accounts

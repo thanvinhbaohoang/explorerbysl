@@ -5,3 +5,4 @@
 - Saved-reply pictures live in the private `saved-reply-media` bucket under `{reply_creator_id}/{reply_id}/`; upload before insert and delete on failure — avoids orphaned files and text-only leftovers.
 - Unit tests run with `bun run test` (Vitest 2, pinned to stay compatible with Vite 5).
 - Multi-picture Saved Replies read ordered child rows with legacy fallback, save complete sets through atomic RPCs, and drain the protected cleanup queue; download every picture before changing a draft to prevent partial albums.
+- Saved Voice stores one canonical MP3 per entry in the private `saved-voice-media` bucket (`{creator}/{id}/`), writes only via RPCs; selecting loads a local copy into the voice draft and Telegram sends it with `strict_voice` (no sendAudio fallback) — keeps the library private and delivery voice-style.
