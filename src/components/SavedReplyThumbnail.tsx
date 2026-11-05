@@ -50,13 +50,17 @@ export const SavedReplyThumbnail = ({ path, className }: { path: string | null; 
     },
   });
 
-  const retry = (e: React.MouseEvent) => {
+  const [retrying, setRetrying] = useState(false);
+  const retry = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!path) return;
+    if (!path || retrying) return;
+    setRetrying(true);
+    // Get a fresh signed URL first, then remount the image once with a cache-busting src.
+    await qc.invalidateQueries({ queryKey: thumbKey(path) }).catch(() => undefined);
+    setRetrying(false);
     setNonce((n) => n + 1);
     setFailed(false);
-    void qc.invalidateQueries({ queryKey: thumbKey(path) });
   };
 
   return (
@@ -78,6 +82,7 @@ export const SavedReplyThumbnail = ({ path, className }: { path: string | null; 
           aria-label="Retry loading picture"
           title="Retry loading picture"
           onClick={retry}
+          disabled={retrying}
           className="absolute inset-0 flex items-center justify-center bg-background/70 text-foreground hover:bg-background/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <RotateCw className="h-4 w-4" aria-hidden />
