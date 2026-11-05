@@ -29,6 +29,27 @@
       "when": 1793783986007,
       "tag": "0003_add_saved_reply_images",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793864895139,
+      "tag": "0004_add_saved_voices",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793865225477,
+      "tag": "0005_fix_saved_voice_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793865680568,
+      "tag": "0006_lock_saved_voice_writes",
+      "breakpoints": true
     }
   ]
 }
