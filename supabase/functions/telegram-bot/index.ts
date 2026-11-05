@@ -998,7 +998,7 @@ async function sendDocument(chatId: number, documentUrl: string, caption?: strin
 
 // Send voice message to Telegram (voice note bubble)
 // Downloads the file and uploads as form-data for better format handling
-async function sendVoice(chatId: number, voiceUrl: string, caption?: string) {
+async function sendVoice(chatId: number, voiceUrl: string, caption?: string, strict = false) {
   try {
     // Download the audio file first
     console.log("Downloading voice file from:", voiceUrl);
@@ -1014,7 +1014,7 @@ async function sendVoice(chatId: number, voiceUrl: string, caption?: string) {
     const formData = new FormData();
     formData.append("chat_id", chatId.toString());
     // Send as .ogg file to hint Telegram to treat it as voice
-    formData.append("voice", fileBlob, "voice.ogg");
+    formData.append("voice", fileBlob, strict ? "voice.mp3" : "voice.ogg");
     if (caption) {
       formData.append("caption", caption);
     }
@@ -1027,6 +1027,8 @@ async function sendVoice(chatId: number, voiceUrl: string, caption?: string) {
     if (!response.ok) {
       const error = await response.text();
       console.error("Telegram API error (sendVoice):", error);
+      // Saved Voice must arrive as a voice note — never silently downgrade to an audio file.
+      if (strict) throw new Error(`Telegram could not deliver this as a voice message: ${error}`);
       // Fall back to sendAudio if voice format not supported
       console.log("Falling back to sendAudio...");
       return await sendAudioWithFile(chatId, fileBlob, caption);
@@ -1397,7 +1399,7 @@ serve(async (req) => {
           } else if (media_type === 'video') {
             await sendVideo(telegram_id, media_url, caption);
           } else if (media_type === 'voice' || media_type === 'audio') {
-            await sendVoice(telegram_id, media_url, caption);
+            await sendVoice(telegram_id, media_url, caption, body.strict_voice === true);
             messageType = 'voice';
           } else {
             await sendDocument(telegram_id, media_url, caption);
