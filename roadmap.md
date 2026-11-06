@@ -1,11 +1,11 @@
 # Roadmap
 
 ## Message reaction controls (requested 2026-11-06)
-- [ ] Enforce separate Phase 2 approval: finish Phase 1 restoration and matrix, then stop for exact channel-by-channel scope approval before UI, migration or permanent function changes.
-- [ ] Finish and report channel-specific capability evidence; restore Phase 1 subscriptions and remove temporary diagnostics.
-- [ ] Review plan for desktop hover picker, mobile long press, and exact-message incoming reaction badges.
-- [ ] Implement and test only verified channel directions; Telegram private-chat inbound remains unverified.
-- [ ] No automatic publication.
+- [x] Separate Phase 2 gate recorded and approved; no reaction UI, migration or permanent function/subscription authorized.
+- [x] Phase 1 closed: expired Travel Agency window stopped tests; exact Messenger subscriptions restored; temporary Telegram probe removed/deployed; diagnostic rows zero; result matrix in `.lovable/reaction-phase-1-results.md`.
+- [x] Interaction design approved: hover picker, mobile long press, keyboard alternative and exact-message badges.
+- [ ] Exact channel-by-channel Phase 2 approval — waiting on user decision; only Telegram staff-add has recipient confirmation, other lifecycle directions untested.
+- [x] Nothing published automatically.
 
 ## Done: Inbox filters (All / Unread / Not Replied)
 - [x] Migration: `get_filtered_customer_ids` RPC (SECURITY INVOKER, REVOKE PUBLIC/anon, GRANT authenticated)
