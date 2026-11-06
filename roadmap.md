@@ -1,6 +1,7 @@
 # Roadmap
 
 ## Message reaction controls (requested 2026-11-06)
+- [ ] Enforce separate Phase 2 approval: finish Phase 1 restoration and matrix, then stop for exact channel-by-channel scope approval before UI, migration or permanent function changes.
 - [ ] Finish and report channel-specific capability evidence; restore Phase 1 subscriptions and remove temporary diagnostics.
 - [ ] Review plan for desktop hover picker, mobile long press, and exact-message incoming reaction badges.
 - [ ] Implement and test only verified channel directions; Telegram private-chat inbound remains unverified.
