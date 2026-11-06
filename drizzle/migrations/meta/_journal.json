@@ -64,6 +64,13 @@
       "when": 1793868059008,
       "tag": "0008_chat_attachments_staff_select",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793952300153,
+      "tag": "0009_confirmed_message_reactions",
+      "breakpoints": true
     }
   ]
 }

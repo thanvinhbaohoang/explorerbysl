@@ -370,6 +370,57 @@ export type Database = {
         }
         Relationships: []
       }
+      message_reactions: {
+        Row: {
+          actor_type: string
+          customer_id: string
+          emoji: string | null
+          id: string
+          lease_id: string | null
+          lease_until: string | null
+          message_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          actor_type?: string
+          customer_id: string
+          emoji?: string | null
+          id?: string
+          lease_id?: string | null
+          lease_until?: string | null
+          message_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          actor_type?: string
+          customer_id?: string
+          emoji?: string | null
+          id?: string
+          lease_id?: string | null
+          lease_until?: string | null
+          message_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_reactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           created_at: string
@@ -878,6 +929,14 @@ export type Database = {
         Args: { p_creator: string; p_id: string; p_path: string }
         Returns: undefined
       }
+      claim_message_reaction: {
+        Args: {
+          p_customer_id: string
+          p_lease_id: string
+          p_message_id: string
+        }
+        Returns: boolean
+      }
       claim_saved_reply_cleanup: { Args: never; Returns: string[] }
       complete_saved_reply_cleanup: {
         Args: { p_path: string }
@@ -907,6 +966,16 @@ export type Database = {
       delete_saved_reply: { Args: { p_id: string }; Returns: undefined }
       delete_saved_voice: { Args: { p_id: string }; Returns: string }
       execute_unknown_messenger_cleanup: { Args: never; Returns: Json }
+      finish_message_reaction: {
+        Args: {
+          p_emoji: string
+          p_lease_id: string
+          p_message_id: string
+          p_success: boolean
+          p_user_id: string
+        }
+        Returns: boolean
+      }
       get_filtered_customer_ids: {
         Args: {
           p_filter: string
