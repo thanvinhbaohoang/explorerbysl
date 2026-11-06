@@ -78,7 +78,7 @@
 - [ ] Recipient-side screenshots on Telegram and both Messenger pages — blocked: needs the user's phones/accounts
 
 ## Reaction emojis expansion (approved 2026-11-06)
-- [ ] Test 👍 😆 😮 😢 😠 🙏 one at a time on Explorer by SL Messenger (Huth Sakda), phone-confirmed, record code points
-- [ ] Test 🙏 on Huth Sakda Telegram
+- [x] Test 👍 😆 😮 😢 😠 🙏 one at a time on Explorer by SL Messenger (Huth Sakda), phone-confirmed on exact message; code points in evidence record
+- [ ] Test 🙏 on Huth Sakda Telegram: provider accepted U+1F64F on message 114945; awaiting phone confirmation
 - [ ] Per-platform allowlists (picker + server), server derives platform from stored message
 - [ ] Tests, build, desktop/mobile picker checks, release report (no publish)
