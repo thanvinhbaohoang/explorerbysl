@@ -39,7 +39,7 @@ Deno.serve(async req => {
     endpoint = `https://api.telegram.org/bot${botToken}/setMessageReaction`;
     payload = { chat_id: customer.telegram_id, message_id: message.telegram_message_id, reaction: emoji ? [{ type: 'emoji', emoji }] : [] };
   } else if (message.platform === 'messenger') {
-    if (customer.page_id !== '109469038735899' || !customer.messenger_id || !message.messenger_mid || /-\d+$/.test(message.messenger_mid)) return respond({ error: 'Only heart reactions on Explorer by SL Messenger are verified at present' }, 400);
+    if (customer.page_id !== '109469038735899' || !customer.messenger_id || !message.messenger_mid || /-\d+$/.test(message.messenger_mid)) return respond({ error: 'Reactions are only verified on Explorer by SL Messenger at present' }, 400);
     const { data: last } = await db.from('messages').select('timestamp').eq('customer_id', customer.id).eq('sender_type', 'customer').order('timestamp', { ascending: false }).limit(1).maybeSingle();
     if (!last || Date.now() - new Date(last.timestamp).getTime() >= 86400000) return respond({ error: 'Messenger’s 24-hour reply window has expired' }, 403);
     const { data: page } = await db.from('facebook_pages').select('access_token').eq('page_id', customer.page_id).eq('is_active', true).maybeSingle();
