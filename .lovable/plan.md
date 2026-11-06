@@ -1,19 +1,24 @@
-# More Messenger reaction emojis
+# More reaction emojis (Messenger and Telegram)
 
 ## Why only the heart shows now
-Messenger currently allows only ❤ because it is the only emoji we've confirmed on Huth Sakda's phone. Telegram already allows ❤ and 👍. This keeps the earlier rule: we only offer what we've confirmed works.
+Messenger currently allows only ❤ because it is the only emoji we've confirmed on Huth Sakda's phone. Telegram allows ❤ and 👍.
 
 ## Plan
-1. **Test each new emoji on Messenger first** (Explorer by SL page, Huth Sakda's chat, while the 24-hour reply window is open). Emojis to test: 👍 😆 😮 😢 😠, the standard Messenger set. I send one at a time. You confirm on the phone that each one appears and replaces the previous one.
-2. **Add only the confirmed emojis** to the Messenger picker and the server's allowed list. Any emoji Messenger rejects or that doesn't show up is left out, and I'll tell you which.
-3. **Add the same emojis to Telegram** if you want. Telegram supports them, but I'd test each on Huth Sakda's Telegram the same way.
-4. Run all tests and the build, and check the picker on desktop and mobile. Nothing gets published.
+1. **Messenger tests** (Explorer by SL page, Huth Sakda's chat, only while the 24-hour window is open). Emojis to test, one at a time: 👍 😆 😮 😢 😠 🙏. After each one, you confirm on the receiving phone that it appears on the exact message and replaces the previous reaction.
+2. **Telegram test**: try 🙏 on Huth Sakda's Telegram chat the same way.
+3. **Evidence**: for each emoji, record the exact characters sent and returned (Unicode code points, including any hidden variation marks), the provider's response, and your phone confirmation. The picker and the server use these exact characters.
+4. **Add only what passed**, using separate Messenger and Telegram lists in both the picker and the server. Any emoji that failed is left out and reported.
+5. **Checks**: existing tests, new list tests, build, type check, and the picker on desktop and mobile. Nothing gets published.
+6. **Release report**: lists the verified emojis per platform and the current limitations (incoming customer reactions aren't shown, removing a reaction isn't available on Messenger, and Travel Agency has no reactions).
 
 ## Not changing
-Removing reactions on Messenger, showing customers' reactions, the Travel Agency page, sending, Saved Replies and Saved Voice.
+Sending, Saved Replies, Saved Voice, and the limitations above.
 
 ## Technical
-- `REACTION_CHOICES` becomes per-platform in `src/lib/messageReactions.ts`. Update the picker to match.
-- `message-reaction` function: widen the zod enum and replace the Messenger `emoji !== '❤'` check with a verified-list check. Redeploy.
-- Add unit tests: Messenger accepts only the verified list, and an unlisted emoji is rejected.
-- This partly resumes the paused reaction work, limited to this scope.
+- `src/lib/messageReactions.ts`: replace `REACTION_CHOICES` with per-platform lists `{ telegram: [...], messenger: [...] }`, holding the exact recorded strings. The picker reads the list for the current platform.
+- `message-reaction` function: per-platform allowlists hold the same exact strings. Validate against the list for the request's platform, replacing the `emoji !== '❤'` check. Redeploy.
+- Unit tests:
+  - Messenger accepts only its list, and Telegram accepts only its own.
+  - A missing or extra variation mark (❤ vs ❤️, for example) is rejected.
+  - The picker and server lists match.
+- The roadmap gets this task when work starts. This partly resumes the paused reaction work, limited to this scope.
