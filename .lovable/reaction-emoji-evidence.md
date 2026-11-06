@@ -32,3 +32,16 @@ No webhook, subscription or deployed code change. Messenger and Telegram allowli
 | 👍 | U+1F44D | HTTP 200, ok:true | confirmed replaced ❤ | PASS |
 | (removal) | empty reaction list | HTTP 200, ok:true | confirmed badge disappeared | PASS |
 | 🙏 | U+1F64F | HTTP 200, ok:true, result:true | confirmed on exact message, 2026-11-06 09:41 UTC | PASS |
+
+## Implementation verification (2026-11-06)
+- Picker (desktop): Messenger conversation shows exactly ❤ 👍 😆 😮 😢 😠 🙏 (7); Telegram conversation shows exactly ❤ 👍 🙏 (3).
+- Picker (mobile 390x844, touch): the visible react button opens the 7-emoji Messenger picker; holding a customer bubble opens the same 7-emoji picker.
+- Server (deployed message-reaction, staff session):
+  - Telegram message + 😆 → 400 "That reaction is not verified on this channel"
+  - Messenger message + 🎉 → 400 same
+  - Messenger message + removal (null) → 400 same
+  - Messenger message + 😆 (window expired) → 400 "Reactions are only verified on Explorer by SL Messenger at present" (allowlist passed, later check blocked)
+  - Telegram message + 🙏 (no stored provider id) → 400 "This older Telegram message has no verified message ID..." (allowlist passed, later check blocked)
+- Platform, Page and customer are taken from the stored message row; the request body carries only message_id and emoji.
+- 59 unit tests pass; build OK; the three reaction files are lint-clean.
+- Nothing published. Business libraries untouched.
