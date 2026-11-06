@@ -72,6 +72,7 @@ export interface Message {
   is_read: boolean;
   platform: string;
   messenger_mid: string | null;
+  telegram_message_id?: number | null;
   sent_by_name: string | null;
   media_group_id: string | null;
   latitude?: number | null;

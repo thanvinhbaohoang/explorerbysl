@@ -1,6 +1,8 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useChatMessages, Customer, Message } from "@/hooks/useChatMessages";
+import { useMessageReactions } from "@/hooks/useMessageReactions";
+import { MessageReactionControl } from "@/components/MessageReactionControl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -205,6 +207,7 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
     togglePreviewPlayback,
     formatDuration,
   } = useChatMessages(customer);
+  const reactions = useMessageReactions([customer.id, ...linkedCustomerIds]);
 
   // Group messages by media_group_id
   type GroupedMessage = { type: 'single'; message: Message } | { type: 'group'; messages: Message[]; id: string };
@@ -741,13 +744,14 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
                   formatDuration={formatDuration}
                 />
               ) : (
+                <MessageReactionControl key={item.message.id} message={item.message} rows={reactions.rows} react={reactions.react}>
                 <MessageBubble 
-                  key={item.message.id} 
                   message={item.message} 
                   customer={customer}
                   formatDateGMT7={formatDateGMT7}
                   formatDuration={formatDuration}
                 />
+                </MessageReactionControl>
               )
             ))}
             <div ref={messagesEndRef} />
