@@ -15,9 +15,8 @@ Deno.serve(async req => {
   if (!token) return respond({ error: 'Sign in required' }, 401);
   const { data: auth, error: authError } = await db.auth.getUser(token);
   if (authError || !auth.user) return respond({ error: 'Sign in required' }, 401);
-  const caller = createClient(url, Deno.env.get('SUPABASE_ANON_KEY') || '', { global: { headers: { Authorization: `Bearer ${token}` } } });
-  const { data: staff, error: staffError } = await caller.rpc('_saved_reply_is_staff');
-  if (staffError || staff !== true) return respond({ error: 'Approved staff only' }, 403);
+  const { data: staff, error: staffError } = await db.from('user_roles').select('role').eq('user_id', auth.user.id).in('role', ['admin', 'user', 'moderator']).limit(1).maybeSingle();
+  if (staffError || !staff) return respond({ error: 'Approved staff only' }, 403);
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return respond({ error: 'Invalid reaction request' }, 400);
   const { message_id, emoji } = parsed.data;
