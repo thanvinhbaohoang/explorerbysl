@@ -76,3 +76,9 @@
 ## Saved Voice (preview only)
 - [x] Library, button, panel, retry-safe send, Telegram strict voice
 - [ ] Recipient-side screenshots on Telegram and both Messenger pages — blocked: needs the user's phones/accounts
+
+## Reaction emojis expansion (approved 2026-11-06)
+- [ ] Test 👍 😆 😮 😢 😠 🙏 one at a time on Explorer by SL Messenger (Huth Sakda), phone-confirmed, record code points
+- [ ] Test 🙏 on Huth Sakda Telegram
+- [ ] Per-platform allowlists (picker + server), server derives platform from stored message
+- [ ] Tests, build, desktop/mobile picker checks, release report (no publish)
