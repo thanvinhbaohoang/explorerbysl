@@ -1,7 +1,7 @@
 # Roadmap
 
 ## Message reaction controls (requested 2026-11-06)
-- [ ] Renewed capability-first scope: stopped for user choice because Telegram incoming message_reaction requires bot administrator status, unavailable in current private user-to-bot chats. Both Messenger lifecycles need coordinated actual events/recipient confirmation. No further implementation or publishing.
+- [ ] Reaction work PAUSED by user choice: no further testing, implementation, deployment or publishing until explicitly resumed. Current partial Preview remains unapproved; Telegram private-chat incoming limitation and Messenger evidence gaps remain unresolved.
 - [x] Release audit/correction: deployment inventory, evidence matrix, restoration read-back, narrow Preview fixes, 54 tests and preservation recorded in `.lovable/message-reactions-release-audit.md`. No new backend writes/publication during audit.
 - [ ] Exact partial scope approval: waiting on user; original Phase 1 gate was not completed before partial implementation. Do not call complete or safe to publish.
 - [ ] Provider-origin authentication and lease/reconciliation correction: separate approval needed; completed deep scan reports 51 findings (40 errors/11 warnings), no findings suppressed. No expansion authorized.
