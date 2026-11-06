@@ -6,19 +6,26 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { canReact, movedTooFar, REACTION_CHOICES } from '@/lib/messageReactions';
 import type { Message } from '@/hooks/useChatMessages';
 
-export function MessageReactionControl({ message, rows, react, children }: {
+export function MessageReactionControl({ message, rows, react, children, pageId, latestCustomerTimestamp, ready }: {
   message: Message; children: ReactNode;
   rows: { message_id: string; actor_type: string; emoji: string | null }[];
   react: (message: Message, emoji: string) => Promise<boolean>;
+  pageId?: string | null; latestCustomerTimestamp?: string | null; ready: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const start = useRef({ x: 0, y: 0 });
   const fired = useRef(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [now, setNow] = useState(Date.now());
   const cancel = () => { clearTimeout(timer.current); };
-  useEffect(() => cancel, []);
-  const eligible = canReact(message);
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000);
+    return () => { cancel(); clearTimeout(resetTimer.current); clearInterval(interval); };
+  }, []);
+  const release = () => { cancel(); resetTimer.current = setTimeout(() => { fired.current = false; }, 0); };
+  const eligible = ready && canReact(message, pageId, latestCustomerTimestamp, now);
   const reactions = rows.filter(row => row.message_id === message.id && row.emoji);
   const choices = message.platform === 'messenger' ? REACTION_CHOICES.slice(0, 1) : REACTION_CHOICES;
   return <div className={`group/reaction relative [&>div:first-child]:ml-0 [&>div:first-child]:mr-0 ${message.sender_type === 'employee' ? 'ml-12' : 'mr-12'}`} data-message-id={message.id}
@@ -28,8 +35,8 @@ export function MessageReactionControl({ message, rows, react, children }: {
       timer.current = setTimeout(() => { fired.current = true; setOpen(true); }, 500);
     }}
     onPointerMove={e => { if (movedTooFar(start.current, e.clientX, e.clientY)) cancel(); }}
-    onPointerUp={cancel} onPointerCancel={cancel} onPointerLeave={cancel} onContextMenu={e => { if (eligible && fired.current) e.preventDefault(); }}
-    onClickCapture={e => { if (fired.current) { e.preventDefault(); e.stopPropagation(); fired.current = false; } }}>
+    onPointerUp={release} onPointerCancel={release} onPointerLeave={cancel} onContextMenu={e => { if (eligible && fired.current) e.preventDefault(); }}
+    onClickCapture={e => { if (fired.current && e.target instanceof Node && e.currentTarget.contains(e.target)) { e.preventDefault(); e.stopPropagation(); fired.current = false; } }}>
     {children}
     {eligible && <Popover open={open} onOpenChange={setOpen}>
       <Tooltip><TooltipTrigger asChild><PopoverTrigger asChild>

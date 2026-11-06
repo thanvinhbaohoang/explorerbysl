@@ -1,11 +1,13 @@
 # Roadmap
 
 ## Message reaction controls (requested 2026-11-06)
-- [x] User authorized implementation at 15:03 GMT+7: staff controls/badges implemented; Telegram heart/thumbs-up/change/remove on new identified single messages, Explorer by SL Messenger heart only. No publication.
+- [x] Release audit/correction: deployment inventory, evidence matrix, restoration read-back, narrow Preview fixes, 54 tests and preservation recorded in `.lovable/message-reactions-release-audit.md`. No new backend writes/publication during audit.
+- [ ] Exact partial scope approval: waiting on user; original Phase 1 gate was not completed before partial implementation. Do not call complete or safe to publish.
+- [ ] Provider-origin authentication and lease/reconciliation correction: separate approval needed; deep security scan pending. No expansion authorized.
 - [x] Messenger Huth Sakda signed-in picker → provider success → exact-message Team badge read-back verified. Mobile long press opens picker; 51 tests passed; build OK.
 - [ ] Customer reactions: blocked pending incoming capability evidence and safe subscription approval; no incoming subscriptions or handlers activated. Messenger change/remove remains unverified. No customer badge is simulated.
 - [ ] Telegram new-message end-to-end test: needs a new inbound Huth Sakda message with stored provider ID; historical IDs are not guessed. Albums remain excluded because Telegram redirects album reactions to another item.
-- [x] Separate Phase 2 gate respected until user explicitly authorized implementation.
+- [x] User's corrected separate approval boundary recorded; premature implementation acknowledged.
 - [x] Phase 1 closed: expired Travel Agency window stopped tests; exact Messenger subscriptions restored; temporary Telegram probe removed/deployed; diagnostic rows zero; result matrix in `.lovable/reaction-phase-1-results.md`.
 - [x] Interaction design approved: hover picker, mobile long press, keyboard alternative and exact-message badges.
 - [x] Exact verified outgoing scope implemented; unverified directions withheld.
