@@ -1,6 +1,7 @@
 # Roadmap
 
 ## Message reaction controls (requested 2026-11-06)
+- [ ] User authorized implementation at 15:03 GMT+7: Telegram verified staff lifecycle and Explorer by SL Messenger confirmed staff heart; add exact-message controls/badges without publishing. Incoming directions and Messenger change/remove remain unverified, not claimed supported without evidence.
 - [ ] Implement requested app-side reactions after resolving exact supported scope: Telegram add/change recipient-confirmed; incoming reactions and Messenger lifecycle remain unverified. User requested implementation at 14:44 GMT+7.
 - [ ] Run renewed Phase 1 tests only with Huth Sakda on Telegram and Explorer by SL Messenger; user chose tests before implementation. Telegram add/change/remove recipient-confirmed; Messenger incoming/outgoing lifecycle needs coordinated recipient steps. No temporary subscriptions/code currently active.
 - [x] Separate Phase 2 gate recorded and approved; no reaction UI, migration or permanent function/subscription authorized.
