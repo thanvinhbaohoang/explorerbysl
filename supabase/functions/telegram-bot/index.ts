@@ -1305,6 +1305,21 @@ serve(async (req) => {
         }
       }
       
+      // TEMP-REACTION-PROBE (Phase 1): staff reaction on the approved test chat only. Remove after test.
+      if (body.action === "reaction_probe") {
+        const mid = Number(body.message_id);
+        const emoji = typeof body.emoji === "string" ? body.emoji : "";
+        if (!Number.isInteger(mid) || mid <= 0 || emoji.length > 8) {
+          return new Response(JSON.stringify({ error: "bad input" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 });
+        }
+        const r = await fetch(`${TELEGRAM_API}/setMessageReaction`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: 803364676, message_id: mid, reaction: emoji ? [{ type: "emoji", emoji }] : [] }),
+        });
+        const d = await r.json();
+        return new Response(JSON.stringify({ http: r.status, ok: d.ok, description: d.description ?? null }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
+      }
+
       // Check if this is a send message request from frontend
       if (body.action === "send_message") {
         const { telegram_id, customer_id, message_text, sent_by_name } = body;
@@ -1557,6 +1572,14 @@ serve(async (req) => {
 
       // Save all messages to database (safe to replay — idempotent via
       // messages_telegram_update_id_key unique index).
+      // TEMP-REACTION-PROBE (Phase 1): record only chat type + message_id for the approved test chat. Remove after test.
+      if (body.message?.chat?.id === 803364676 && !isReplay) {
+        await supabase.from("telegram_webhook_failures").insert({
+          stage: "reaction_probe", message_type: "inbound_id", error: "probe",
+          raw_update: { chat_type: body.message.chat.type, message_id: body.message.message_id },
+        });
+      }
+
       if (body.message) {
         await saveMessage(body.message);
       }
