@@ -16,6 +16,6 @@ every PASS below needs the user's phone confirmation on the exact message.
 | 😮 | U+1F62E | HTTP 200 | confirmed replaced 😆 | PASS |
 | 😢 | U+1F622 | HTTP 200 | confirmed replaced 😮 | PASS |
 | 😠 | U+1F620 | HTTP 200 | confirmed replaced 😢 | PASS |
-| 🙏 | U+1F64F | HTTP 200 | awaiting phone confirmation | PENDING |
+| 🙏 | U+1F64F | HTTP 200 | confirmed replaced 😠 on exact message, 2026-11-06 09:38 UTC | PASS |
 
 Telegram 🙏 test: not started. Messenger and Telegram allowlists stay separate.
