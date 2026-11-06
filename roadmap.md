@@ -1,6 +1,7 @@
 # Roadmap
 
 ## Message reaction controls (requested 2026-11-06)
+- [ ] Renewed 15:28 GMT+7 request: prove incoming exact-ID add/change/remove and recipient-visible outgoing lifecycle for Telegram and both Messenger Pages before further implementation; stop with options on any unsupported direction, no partial shipment or publishing.
 - [x] Release audit/correction: deployment inventory, evidence matrix, restoration read-back, narrow Preview fixes, 54 tests and preservation recorded in `.lovable/message-reactions-release-audit.md`. No new backend writes/publication during audit.
 - [ ] Exact partial scope approval: waiting on user; original Phase 1 gate was not completed before partial implementation. Do not call complete or safe to publish.
 - [ ] Provider-origin authentication and lease/reconciliation correction: separate approval needed; deep security scan pending. No expansion authorized.
