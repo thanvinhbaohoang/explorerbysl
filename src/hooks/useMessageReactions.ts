@@ -21,6 +21,7 @@ export function useMessageReactions(customerIds: string[]) {
     return () => { void supabase.removeChannel(channel); };
   }, [ids, client]);
   const react = async (message: Message, emoji: string) => {
+    if (query.isPending || query.isError) { toast.error('Reaction state is unavailable. Please retry loading it first.'); return false; }
     if (locks.current.has(message.id)) return false;
     locks.current.add(message.id);
     const current = query.data?.find(row => row.message_id === message.id && row.actor_type === 'staff')?.emoji ?? null;
@@ -37,5 +38,5 @@ export function useMessageReactions(customerIds: string[]) {
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Reaction failed. Please try again.'); return false; }
     finally { locks.current.delete(message.id); }
   };
-  return { rows: query.data ?? [], react };
+  return { rows: query.data ?? [], react, ready: !query.isPending && !query.isError, error: query.isError, retry: () => query.refetch() };
 }

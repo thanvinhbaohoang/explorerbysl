@@ -208,6 +208,13 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
     formatDuration,
   } = useChatMessages(customer);
   const reactions = useMessageReactions([customer.id, ...linkedCustomerIds]);
+  const reactionLatestMessages = useMemo(() => {
+    const latest: Record<string, string> = {};
+    for (const message of filteredMessages) {
+      if (message.sender_type === 'customer' && (!latest[message.customer_id] || message.timestamp > latest[message.customer_id])) latest[message.customer_id] = message.timestamp;
+    }
+    return latest;
+  }, [filteredMessages]);
 
   // Group messages by media_group_id
   type GroupedMessage = { type: 'single'; message: Message } | { type: 'group'; messages: Message[]; id: string };
@@ -734,6 +741,7 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
               </div>
             )}
             
+            {reactions.error && <div className="flex items-center gap-2 text-xs text-destructive" role="alert">Reactions unavailable<Button variant="ghost" size="sm" onClick={() => reactions.retry()}>Retry</Button></div>}
             {groupedMessages.map((item) => (
               item.type === 'group' ? (
                 <MediaGroupBubble
@@ -744,7 +752,9 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
                   formatDuration={formatDuration}
                 />
               ) : (
-                <MessageReactionControl key={item.message.id} message={item.message} rows={reactions.rows} react={reactions.react}>
+                <MessageReactionControl key={item.message.id} message={item.message} rows={reactions.rows} react={reactions.react} ready={reactions.ready}
+                  pageId={item.message.customer_id === customer.id ? customer.page_id : linkedCustomersMap[item.message.customer_id]?.page_id}
+                  latestCustomerTimestamp={reactionLatestMessages[item.message.customer_id]}>
                 <MessageBubble 
                   message={item.message} 
                   customer={customer}
