@@ -1,6 +1,7 @@
 # Roadmap
 
 ## Message reaction controls (requested 2026-11-06)
+- [ ] Release audit/correction requested 15:15 GMT+7: report shared deployments and preview changes; complete evidence matrix; restore temporary tests; audit permissions/IDs/gestures/failures/regressions; no expansion or publication. Exact partial scope requires new approval.
 - [x] User authorized implementation at 15:03 GMT+7: staff controls/badges implemented; Telegram heart/thumbs-up/change/remove on new identified single messages, Explorer by SL Messenger heart only. No publication.
 - [x] Messenger Huth Sakda signed-in picker → provider success → exact-message Team badge read-back verified. Mobile long press opens picker; 51 tests passed; build OK.
 - [ ] Customer reactions: blocked pending incoming capability evidence and safe subscription approval; no incoming subscriptions or handlers activated. Messenger change/remove remains unverified. No customer badge is simulated.
