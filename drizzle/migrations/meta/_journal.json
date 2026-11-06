@@ -71,6 +71,13 @@
       "when": 1793952300153,
       "tag": "0009_confirmed_message_reactions",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793952509157,
+      "tag": "0010_message_reactions_staff_read_only",
+      "breakpoints": true
     }
   ]
 }
