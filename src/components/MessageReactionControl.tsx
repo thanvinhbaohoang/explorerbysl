@@ -21,14 +21,14 @@ export function MessageReactionControl({ message, rows, react, children }: {
   const eligible = canReact(message);
   const reactions = rows.filter(row => row.message_id === message.id && row.emoji);
   const choices = message.platform === 'messenger' ? REACTION_CHOICES.slice(0, 1) : REACTION_CHOICES;
-  return <div className="group/reaction relative" data-message-id={message.id}
+  return <div className={`group/reaction relative [&>div:first-child]:ml-0 [&>div:first-child]:mr-0 ${message.sender_type === 'employee' ? 'ml-12' : 'mr-12'}`} data-message-id={message.id}
     onPointerDown={e => {
       if (!eligible || e.pointerType === 'mouse' || (e.target instanceof Element && e.target.closest('button,a,audio,video,input'))) return;
       cancel(); fired.current = false; start.current = { x: e.clientX, y: e.clientY };
       timer.current = setTimeout(() => { fired.current = true; setOpen(true); }, 500);
     }}
     onPointerMove={e => { if (movedTooFar(start.current, e.clientX, e.clientY)) cancel(); }}
-    onPointerUp={cancel} onPointerCancel={cancel} onContextMenu={e => { if (eligible && fired.current) e.preventDefault(); }}
+    onPointerUp={cancel} onPointerCancel={cancel} onPointerLeave={cancel} onContextMenu={e => { if (eligible && fired.current) e.preventDefault(); }}
     onClickCapture={e => { if (fired.current) { e.preventDefault(); e.stopPropagation(); fired.current = false; } }}>
     {children}
     {eligible && <Popover open={open} onOpenChange={setOpen}>

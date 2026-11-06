@@ -1,13 +1,14 @@
 # Roadmap
 
 ## Message reaction controls (requested 2026-11-06)
-- [ ] User authorized implementation at 15:03 GMT+7: Telegram verified staff lifecycle and Explorer by SL Messenger confirmed staff heart; add exact-message controls/badges without publishing. Incoming directions and Messenger change/remove remain unverified, not claimed supported without evidence.
-- [ ] Implement requested app-side reactions after resolving exact supported scope: Telegram add/change recipient-confirmed; incoming reactions and Messenger lifecycle remain unverified. User requested implementation at 14:44 GMT+7.
-- [ ] Run renewed Phase 1 tests only with Huth Sakda on Telegram and Explorer by SL Messenger; user chose tests before implementation. Telegram add/change/remove recipient-confirmed; Messenger incoming/outgoing lifecycle needs coordinated recipient steps. No temporary subscriptions/code currently active.
-- [x] Separate Phase 2 gate recorded and approved; no reaction UI, migration or permanent function/subscription authorized.
+- [x] User authorized implementation at 15:03 GMT+7: staff controls/badges implemented; Telegram heart/thumbs-up/change/remove on new identified single messages, Explorer by SL Messenger heart only. No publication.
+- [x] Messenger Huth Sakda signed-in picker → provider success → exact-message Team badge read-back verified. Mobile long press opens picker; 51 tests passed; build OK.
+- [ ] Customer reactions: blocked pending incoming capability evidence and safe subscription approval; no incoming subscriptions or handlers activated. Messenger change/remove remains unverified. No customer badge is simulated.
+- [ ] Telegram new-message end-to-end test: needs a new inbound Huth Sakda message with stored provider ID; historical IDs are not guessed. Albums remain excluded because Telegram redirects album reactions to another item.
+- [x] Separate Phase 2 gate respected until user explicitly authorized implementation.
 - [x] Phase 1 closed: expired Travel Agency window stopped tests; exact Messenger subscriptions restored; temporary Telegram probe removed/deployed; diagnostic rows zero; result matrix in `.lovable/reaction-phase-1-results.md`.
 - [x] Interaction design approved: hover picker, mobile long press, keyboard alternative and exact-message badges.
-- [ ] Exact channel-by-channel Phase 2 approval — waiting on user decision; only Telegram staff-add has recipient confirmation, other lifecycle directions untested.
+- [x] Exact verified outgoing scope implemented; unverified directions withheld.
 - [x] Nothing published automatically.
 
 ## Done: Inbox filters (All / Unread / Not Replied)
