@@ -2,7 +2,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { z } from 'https://esm.sh/zod@3.25.76';
 
-const schema = z.object({ message_id: z.string().uuid(), emoji: z.enum(['❤','👍']).nullable() }).strict();
+// Per-platform allowlists. The platform is resolved from the stored target message, never
+// from the request body, so a browser cannot pick which allowlist applies.
+const TELEGRAM_ALLOWED = ['❤','👍','🙏'];
+const MESSENGER_ALLOWED = ['❤','👍','😆','😮','😢','😠','🙏'];
+const schema = z.object({ message_id: z.string().uuid(), emoji: z.string().max(8).nullable() }).strict();
 Deno.serve(async req => {
   const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   if (req.method === 'OPTIONS') return respond({ ok: true });
