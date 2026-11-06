@@ -1,5 +1,11 @@
 # Roadmap
 
+## Message reaction controls (requested 2026-11-06)
+- [ ] Finish and report channel-specific capability evidence; restore Phase 1 subscriptions and remove temporary diagnostics.
+- [ ] Review plan for desktop hover picker, mobile long press, and exact-message incoming reaction badges.
+- [ ] Implement and test only verified channel directions; Telegram private-chat inbound remains unverified.
+- [ ] No automatic publication.
+
 ## Done: Inbox filters (All / Unread / Not Replied)
 - [x] Migration: `get_filtered_customer_ids` RPC (SECURITY INVOKER, REVOKE PUBLIC/anon, GRANT authenticated)
 - [x] Types regenerated; RPC verified present
