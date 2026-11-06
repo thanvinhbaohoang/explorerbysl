@@ -1,6 +1,7 @@
 # Roadmap
 
 ## Message reaction controls (requested 2026-11-06)
+- [ ] Run renewed Phase 1 tests only with Huth Sakda on Telegram and Explorer by SL Messenger; restore every temporary change, then stop for Phase 2 approval. Recipient-side step confirmation needed.
 - [x] Separate Phase 2 gate recorded and approved; no reaction UI, migration or permanent function/subscription authorized.
 - [x] Phase 1 closed: expired Travel Agency window stopped tests; exact Messenger subscriptions restored; temporary Telegram probe removed/deployed; diagnostic rows zero; result matrix in `.lovable/reaction-phase-1-results.md`.
 - [x] Interaction design approved: hover picker, mobile long press, keyboard alternative and exact-message badges.
