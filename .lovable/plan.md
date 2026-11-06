@@ -1,25 +1,19 @@
-# Message Reactions — separate partial-scope approval
+# More Messenger reaction emojis
 
-## Status
-The current feature is partial and was implemented before the required capability gate was completed. It is not complete or safe to publish. The audit is recorded in `.lovable/message-reactions-release-audit.md`.
+## Why only the heart shows now
+Messenger currently allows only ❤ because it is the only emoji we've confirmed on Huth Sakda's phone. Telegram already allows ❤ and 👍. This keeps the earlier rule: we only offer what we've confirmed works.
 
-## Capability matrix
-| Channel | Customer add | Customer change/remove | Staff add | Staff change/remove |
-|---|---|---|---|---|
-| Telegram private chat | UNTESTED | UNTESTED | PASS | PASS |
-| Explorer by SL Messenger | UNTESTED | UNTESTED | PASS: heart | UNTESTED |
-| Travel Agency Messenger | UNTESTED | UNTESTED | UNTESTED | UNTESTED |
+## Plan
+1. **Test each new emoji on Messenger first** (Explorer by SL page, Huth Sakda's chat, while the 24-hour reply window is open). Emojis to test: 👍 😆 😮 😢 😠, the standard Messenger set. I send one at a time. You confirm on the phone that each one appears and replaces the previous one.
+2. **Add only the confirmed emojis** to the Messenger picker and the server's allowed list. Any emoji Messenger rejects or that doesn't show up is left out, and I'll tell you which.
+3. **Add the same emojis to Telegram** if you want. Telegram supports them, but I'd test each on Huth Sakda's Telegram the same way.
+4. Run all tests and the build, and check the picker on desktop and mobile. Nothing gets published.
 
-## Exact partial feature proposed for approval
-- Telegram outbound-only heart/thumbs-up add, change and removal on new individually identified customer messages.
-- Explorer by SL Messenger outbound heart-add only, inside its reply window.
-- Desktop hover/focus picker, mobile long press and accessible touch button.
-- Exact-message Team badges persisted only after provider acceptance; receiving-side evidence remains required for capability claims.
-- No incoming customer reactions, Travel reactions, Messenger change/removal, album reactions, guessed historical IDs or new subscriptions.
-- Keep the current partial Preview feature pending your decision; do not publish.
+## Not changing
+Removing reactions on Messenger, showing customers' reactions, the Travel Agency page, sending, Saved Replies and Saved Voice.
 
-## Unresolved prerequisites
-Approval of this partial scope is not a release approval. Provider-origin authentication, lease expiry/reconciliation risks, deep security review and genuine new-message Telegram end-to-end verification remain unresolved. Full two-way testing requires coordinated incoming reactions and safe subscription authorization; Travel requires a fresh inbound message and approved recipient testing.
-
-## Technical boundaries
-Existing shared migrations and deployed sending/Telegram ID-capture functions remain in place. This audit corrected only Preview eligibility, loading-failure visibility and long-press handling. Any further backend change requires a separately described corrective scope.
+## Technical
+- `REACTION_CHOICES` becomes per-platform in `src/lib/messageReactions.ts`. Update the picker to match.
+- `message-reaction` function: widen the zod enum and replace the Messenger `emoji !== '❤'` check with a verified-list check. Redeploy.
+- Add unit tests: Messenger accepts only the verified list, and an unlisted emoji is rejected.
+- This partly resumes the paused reaction work, limited to this scope.
