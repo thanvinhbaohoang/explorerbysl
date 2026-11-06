@@ -673,6 +673,7 @@ async function saveMessage(message: any) {
           .insert({
             customer_id: customer.id,
             telegram_id: message.from.id,
+            telegram_message_id: message.message_id,
             message_text: messageText,
             message_type: messageType,
             photo_file_id: photoFileId,
@@ -710,6 +711,7 @@ async function saveMessage(message: any) {
           .insert({
             customer_id: customer.id,
             telegram_id: message.from.id,
+            telegram_message_id: message.message_id,
             message_text: messageText,
             message_type: messageType,
             video_file_id: videoFileId,
@@ -746,6 +748,7 @@ async function saveMessage(message: any) {
           .insert({
             customer_id: customer.id,
             telegram_id: message.from.id,
+            telegram_message_id: message.message_id,
             message_text: messageText,
             message_type: messageType,
             video_file_id: videoFileId,
@@ -791,6 +794,7 @@ async function saveMessage(message: any) {
           .insert({
             customer_id: customer.id,
             telegram_id: message.from.id,
+            telegram_message_id: message.message_id,
             message_text: messageText,
             message_type: messageType,
             document_url: docUrl,
@@ -851,6 +855,7 @@ async function saveMessage(message: any) {
           .insert({
             customer_id: customer.id,
             telegram_id: message.from.id,
+            telegram_message_id: message.message_id,
             message_text: messageText,
             message_type: messageType,
             latitude: lat,
@@ -876,6 +881,7 @@ async function saveMessage(message: any) {
         .insert({
           customer_id: customer.id,
           telegram_id: message.from.id,
+            telegram_message_id: message.message_id,
           message_text: messageText,
           message_type: messageType,
           photo_file_id: photoFileId,
@@ -1336,7 +1342,7 @@ serve(async (req) => {
           console.log("Sending message to:", telegram_id, "Text:", message_text);
           
           // Send message to Telegram user
-          await sendMessage(telegram_id, message_text);
+          const sentMessage = await sendMessage(telegram_id, message_text);
           
           // Save message to database
           const { error: dbError } = await supabase
@@ -1346,6 +1352,7 @@ serve(async (req) => {
               telegram_id,
               message_text,
               message_type: 'text',
+              telegram_message_id: sentMessage?.result?.message_id ?? null,
               sender_type: 'employee',
               sent_by_name: sent_by_name || null,
               timestamp: new Date().toISOString(),
@@ -1396,17 +1403,18 @@ serve(async (req) => {
           console.log("Sending media to:", telegram_id, "Type:", media_type, "URL:", media_url);
           
           let messageType = media_type;
+          let sentMedia;
           
           // Send media based on type
           if (media_type === 'photo') {
-            await sendPhoto(telegram_id, media_url, caption);
+            sentMedia = await sendPhoto(telegram_id, media_url, caption);
           } else if (media_type === 'video') {
-            await sendVideo(telegram_id, media_url, caption);
+            sentMedia = await sendVideo(telegram_id, media_url, caption);
           } else if (media_type === 'voice' || media_type === 'audio') {
-            await sendVoice(telegram_id, media_url, caption, body.strict_voice === true);
+            sentMedia = await sendVoice(telegram_id, media_url, caption, body.strict_voice === true);
             messageType = 'voice';
           } else {
-            await sendDocument(telegram_id, media_url, caption);
+            sentMedia = await sendDocument(telegram_id, media_url, caption);
             messageType = 'document';
           }
           
@@ -1416,6 +1424,7 @@ serve(async (req) => {
             telegram_id,
             message_text: caption || `[${messageType.charAt(0).toUpperCase() + messageType.slice(1)}]`,
             message_type: messageType,
+            telegram_message_id: sentMedia?.result?.message_id ?? null,
             sender_type: 'employee',
             sent_by_name: sent_by_name || null,
             timestamp: new Date().toISOString(),
@@ -1492,7 +1501,7 @@ serve(async (req) => {
           }));
           
           // Send media group to Telegram
-          await sendMediaGroup(telegram_id, mediaForTelegram);
+          const sentAlbum = await sendMediaGroup(telegram_id, mediaForTelegram);
           
           // Save each media item as a separate message in DB with shared media_group_id
           for (let i = 0; i < media_items.length; i++) {
@@ -1502,6 +1511,7 @@ serve(async (req) => {
               telegram_id,
               message_text: i === 0 && caption ? caption : `[${item.type.charAt(0).toUpperCase() + item.type.slice(1)}]`,
               message_type: item.type,
+              telegram_message_id: sentAlbum?.result?.[i]?.message_id ?? null,
               sender_type: 'employee',
               sent_by_name: sent_by_name || null,
               timestamp: new Date().toISOString(),
