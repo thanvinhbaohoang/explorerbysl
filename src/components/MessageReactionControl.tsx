@@ -3,7 +3,7 @@ import { SmilePlus, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { canReact, movedTooFar, REACTION_CHOICES } from '@/lib/messageReactions';
+import { canReact, movedTooFar, reactionChoices } from '@/lib/messageReactions';
 import type { Message } from '@/hooks/useChatMessages';
 
 export function MessageReactionControl({ message, rows, react, children, pageId, latestCustomerTimestamp, ready }: {
