@@ -16,9 +16,11 @@ Sending, Saved Replies, Saved Voice, and the limitations above.
 
 ## Technical
 - `src/lib/messageReactions.ts`: replace `REACTION_CHOICES` with per-platform lists `{ telegram: [...], messenger: [...] }`, holding the exact recorded strings. The picker reads the list for the current platform.
-- `message-reaction` function: per-platform allowlists hold the same exact strings. Validate against the list for the request's platform, replacing the `emoji !== '❤'` check. Redeploy.
+- `message-reaction` function: per-platform allowlists hold the same exact strings. The request body stays strictly `{ message_id, emoji }`, and any `platform`, `page_id` or `customer_id` field is rejected. The server loads the stored message, then its customer. From those stored records it determines the platform, the Page and the recipient, then picks the allowlist and route. This replaces the `emoji !== '❤'` check. The approved-staff check and the exact-message checks stay as they are: customer sender, not part of an album, real provider ID, Explorer by SL Page only, and the 24-hour window. Redeploy.
 - Unit tests:
   - Messenger accepts only its list, and Telegram accepts only its own.
   - A missing or extra variation mark (❤ vs ❤️, for example) is rejected.
   - The picker and server lists match.
+  - A Telegram-only emoji sent to a stored Messenger message is rejected.
+  - A request with an extra `platform` field is rejected.
 - The roadmap gets this task when work starts. This partly resumes the paused reaction work, limited to this scope.
