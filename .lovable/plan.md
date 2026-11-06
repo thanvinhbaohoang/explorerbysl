@@ -25,16 +25,19 @@ Do not expose a control or claim two-way support for an unverified direction. Hi
 3. Record every provider rejection as FAIL, including the earlier Messenger reaction-name rejection; do not silently reinterpret it as a pass. Distinguish any separately accepted emoji request.
 4. If any cell fails, stop testing, restore the exact subscription snapshots unconditionally, remove temporary Telegram logging/test actions, verify restoration, and report a channel-specific proposal.
 5. On normal completion, perform the same unconditional restoration and diagnostic cleanup. Restore no configuration from guesses. Telegram subscription changes remain forbidden unless URL, secret configuration and allowed updates can be reproduced and restored exactly; unknown secret configuration means incoming Telegram reactions are UNTESTED, not FAIL.
-6. Present the completed 3×4 matrix. Build only proved capabilities; do not permanently enable an unverified reaction subscription.
+6. Finish Phase 1, restore all temporary subscriptions and code, and give the user the completed 3×4 capability matrix. Stop there and wait for approval of the exact channel-by-channel scope before any reaction UI, migration or permanent function change. A provider-accepted request alone is not recipient-side confirmation.
 
-## 2. Implement supported directions
+## Separate Phase 2 approval gate
+The interaction design is approved, but implementation is not. Phase 1 completion does not authorize Phase 2, even for capabilities that pass. Present a precise channel-by-channel proposal distinguishing send, change/remove and incoming reaction support, then wait for explicit approval. No reaction UI, migration, permanent function change or permanent subscription change occurs before that approval.
+
+## 2. Proposed implementation — only after separate Phase 2 approval
 - Add the hover/long-press picker and reaction badges as focused chat components. Use existing buttons, popovers, tokens and mobile layout conventions.
 - Scope picker eligibility to actual message items, including individual album items; never apply one item's reaction to an entire album.
 - Keep one in-flight reaction change per target. Show the confirmed result only after provider success, preserve the prior state on error, and allow explicit retry without automatic duplicate sends.
 - For channels with verified incoming events, persist customer changes/removals idempotently and update the correct bubble across staff devices.
 - Hide unsupported send controls and report unavailable incoming support explicitly in the release report.
 
-## Technical scope
+## Proposed Phase 2 technical scope — not authorized yet
 - Frontend: new reaction picker/badge components and a focused reaction hook/helper; minimal integration in `src/components/ChatPanel.tsx` and message typing/loading in `src/hooks/useChatMessages.ts` as necessary.
 - Functions: validated staff-only reaction action using the real stored message/customer/page IDs, not caller-supplied recipient IDs; enforce existing channel windows and approval checks. Provider errors remain visible; no optimistic fake success.
 - Telegram: start populating the existing `telegram_message_id` field on new incoming and outgoing messages without changing ordinary send behavior. No guessed backfill for older messages.
@@ -43,7 +46,7 @@ Do not expose a control or claim two-way support for an unverified direction. Hi
 - Live updates: effect-scoped subscription with teardown and conversation-scoped reads; no per-bubble subscriptions or repeated full-history queries.
 - Preview and published app share live functions/database: disclose and record any deployment or subscription change. No automatic publication.
 
-## Verification and delivery
+## Proposed Phase 2 verification and delivery — after approval
 - Unit tests for eligibility, exact-message routing, add/change/remove state, duplicate events, long-press cancellation and provider-failure preservation.
 - Signed-in desktop/mobile screenshots demonstrating picker opening, emoji selection, reaction display and touch scrolling/media playback without accidental reactions.
 - Approved staff succeeds; signed-out/unapproved accounts cannot send or write reactions; forged customer/Page/message targets fail.
