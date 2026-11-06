@@ -17,7 +17,7 @@ For each of the 3 channels, record PASS / FAIL for:
    - Audit how we store provider message IDs today: incoming Telegram `telegram_message_id`, Messenger `messenger_mid`, and whether outgoing sends store them (needed later for staff-sent messages).
 2. Snapshot, then temporary subscription changes (live backend — preview and production share it)
    - First save the exact current Telegram `allowed_updates` and each Page's subscribed fields.
-   - Telegram: add `message_reaction` to the existing list only. Same webhook URL, no `drop_pending_updates`, no fields removed. `getWebhookInfo` does not reveal the secret, and the current Telegram handler checks no secret header — so before re-registering I confirm the current registration has no secret in use (e.g. a webhook delivery succeeding with no header present). If a secret might be in use and cannot be reproduced exactly, the Telegram subscription change is skipped and Telegram A/B are reported as untested.
+   - Telegram: add `message_reaction` to the existing list only. Same webhook URL, no `drop_pending_updates`, no fields removed. `getWebhookInfo` does not reveal the secret, and the current Telegram handler checks no secret header — An absent secret header on a delivered request is supporting evidence only, not sole proof of the registration's configuration. If the secret configuration cannot be verified, the Telegram change is skipped and Telegram A/B are reported as UNTESTED, not FAIL.
    - Messenger: add `message_reactions` to each Page; no existing fields removed.
    - When testing ends, restore the saved snapshot exactly, whether results are PASS or FAIL, and re-read it to prove restoration.
 3. Evidence capture, minimal and bounded
@@ -44,4 +44,4 @@ If any cell fails, stop testing, restore the exact subscription snapshots uncond
 
 ## Technical notes
 - Phase 1 changes are limited to webhook subscriptions and a log-only branch for reaction events; no schema changes.
-- Telegram `allowed_updates` change is made through the existing connector gateway with the same secret token.
+- Telegram subscription changes are made only if the current webhook URL, secret-token configuration and allowed_updates can be reproduced and later restored exactly. If the secret configuration cannot be verified, skip the change and report Telegram customer-to-webapp reactions as UNTESTED, not FAIL.
