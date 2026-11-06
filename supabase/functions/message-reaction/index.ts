@@ -2,7 +2,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { z } from 'https://esm.sh/zod@3.25.76';
 
-const schema = z.object({ message_id: z.string().uuid(), emoji: z.enum(['❤','👍']).nullable() }).strict();
+// Per-platform allowlists. The platform is resolved from the stored target message, never
+// from the request body, so a browser cannot pick which allowlist applies.
+const TELEGRAM_ALLOWED = ['❤','👍','🙏'];
+const MESSENGER_ALLOWED = ['❤','👍','😆','😮','😢','😠','🙏'];
+const schema = z.object({ message_id: z.string().uuid(), emoji: z.string().max(8).nullable() }).strict();
 Deno.serve(async req => {
   const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   if (req.method === 'OPTIONS') return respond({ ok: true });
@@ -22,6 +26,9 @@ Deno.serve(async req => {
   const { message_id, emoji } = parsed.data;
   const { data: message } = await db.from('messages').select('id,customer_id,platform,sender_type,telegram_message_id,messenger_mid,media_group_id').eq('id', message_id).maybeSingle();
   if (!message || message.sender_type !== 'customer' || message.media_group_id) return respond({ error: 'This message cannot receive a reaction' }, 400);
+  const allowed = message.platform === 'telegram' ? TELEGRAM_ALLOWED : message.platform === 'messenger' ? MESSENGER_ALLOWED : [];
+  // Removal was only proven on Telegram; Messenger unreact stays closed.
+  if (emoji === null ? message.platform !== 'telegram' : !allowed.includes(emoji)) return respond({ error: 'That reaction is not verified on this channel' }, 400);
   const { data: customer } = await db.from('customer').select('id,telegram_id,messenger_id,page_id').eq('id', message.customer_id).maybeSingle();
   if (!customer) return respond({ error: 'Conversation unavailable' }, 404);
   let endpoint: string;
@@ -33,7 +40,7 @@ Deno.serve(async req => {
     endpoint = `https://api.telegram.org/bot${botToken}/setMessageReaction`;
     payload = { chat_id: customer.telegram_id, message_id: message.telegram_message_id, reaction: emoji ? [{ type: 'emoji', emoji }] : [] };
   } else if (message.platform === 'messenger') {
-    if (customer.page_id !== '109469038735899' || !customer.messenger_id || !message.messenger_mid || /-\d+$/.test(message.messenger_mid) || emoji !== '❤') return respond({ error: 'Only heart reactions on Explorer by SL Messenger are verified at present' }, 400);
+    if (customer.page_id !== '109469038735899' || !customer.messenger_id || !message.messenger_mid || /-\d+$/.test(message.messenger_mid)) return respond({ error: 'Reactions are only verified on Explorer by SL Messenger at present' }, 400);
     const { data: last } = await db.from('messages').select('timestamp').eq('customer_id', customer.id).eq('sender_type', 'customer').order('timestamp', { ascending: false }).limit(1).maybeSingle();
     if (!last || Date.now() - new Date(last.timestamp).getTime() >= 86400000) return respond({ error: 'Messenger’s 24-hour reply window has expired' }, 403);
     const { data: page } = await db.from('facebook_pages').select('access_token').eq('page_id', customer.page_id).eq('is_active', true).maybeSingle();

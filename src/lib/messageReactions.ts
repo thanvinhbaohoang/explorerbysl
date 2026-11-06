@@ -1,4 +1,37 @@
-export const REACTION_CHOICES = [{ emoji: '❤', label: 'Heart' }, { emoji: '👍', label: 'Thumbs up' }] as const;
+// Per-platform allowlists. Each entry was proven recipient-side on the approved test chat
+// before it was listed here, and the code points must match the provider's exact emoji
+// representation (no variation selectors). Keep the two lists separate: a reaction that
+// works on one channel is not assumed to work on the other.
+export const TELEGRAM_REACTION_CHOICES = [
+  { emoji: '❤', label: 'Heart' },
+  { emoji: '👍', label: 'Thumbs up' },
+  { emoji: '🙏', label: 'Folded hands' },
+] as const;
+
+export const MESSENGER_REACTION_CHOICES = [
+  { emoji: '❤', label: 'Heart' },
+  { emoji: '👍', label: 'Thumbs up' },
+  { emoji: '😆', label: 'Laughing' },
+  { emoji: '😮', label: 'Surprised' },
+  { emoji: '😢', label: 'Crying' },
+  { emoji: '😠', label: 'Angry' },
+  { emoji: '🙏', label: 'Folded hands' },
+] as const;
+
+export const REACTION_CHOICES = MESSENGER_REACTION_CHOICES;
+
+export function reactionChoices(platform: string) {
+  if (platform === 'telegram') return TELEGRAM_REACTION_CHOICES;
+  if (platform === 'messenger') return MESSENGER_REACTION_CHOICES;
+  return [];
+}
+
+export function isAllowedReaction(platform: string, emoji: string | null): boolean {
+  // Removal (null) was only proven on Telegram; Messenger unreact is unverified.
+  if (emoji === null) return platform === 'telegram';
+  return reactionChoices(platform).some(choice => choice.emoji === emoji);
+}
+
 export interface ReactionTarget {
   id: string; platform: string; sender_type: string; telegram_message_id?: number | null;
   messenger_mid: string | null; media_group_id: string | null; isPending?: boolean;

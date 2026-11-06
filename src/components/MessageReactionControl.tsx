@@ -3,7 +3,7 @@ import { SmilePlus, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { canReact, movedTooFar, REACTION_CHOICES } from '@/lib/messageReactions';
+import { canReact, movedTooFar, reactionChoices } from '@/lib/messageReactions';
 import type { Message } from '@/hooks/useChatMessages';
 
 export function MessageReactionControl({ message, rows, react, children, pageId, latestCustomerTimestamp, ready }: {
@@ -27,7 +27,7 @@ export function MessageReactionControl({ message, rows, react, children, pageId,
   const release = () => { cancel(); resetTimer.current = setTimeout(() => { fired.current = false; }, 0); };
   const eligible = ready && canReact(message, pageId, latestCustomerTimestamp, now);
   const reactions = rows.filter(row => row.message_id === message.id && row.emoji);
-  const choices = message.platform === 'messenger' ? REACTION_CHOICES.slice(0, 1) : REACTION_CHOICES;
+  const choices = reactionChoices(message.platform);
   return <div className={`group/reaction relative [&>div:first-child]:ml-0 [&>div:first-child]:mr-0 ${message.sender_type === 'employee' ? 'ml-12' : 'mr-12'}`} data-message-id={message.id}
     onPointerDown={e => {
       if (!eligible || e.pointerType === 'mouse' || (e.target instanceof Element && e.target.closest('button,a,audio,video,input'))) return;
