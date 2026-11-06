@@ -27,7 +27,8 @@ export function reactionChoices(platform: string) {
 }
 
 export function isAllowedReaction(platform: string, emoji: string | null): boolean {
-  if (emoji === null) return true;
+  // Removal (null) was only proven on Telegram; Messenger unreact is unverified.
+  if (emoji === null) return platform === 'telegram';
   return reactionChoices(platform).some(choice => choice.emoji === emoji);
 }
 

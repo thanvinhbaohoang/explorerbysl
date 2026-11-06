@@ -27,7 +27,8 @@ Deno.serve(async req => {
   const { data: message } = await db.from('messages').select('id,customer_id,platform,sender_type,telegram_message_id,messenger_mid,media_group_id').eq('id', message_id).maybeSingle();
   if (!message || message.sender_type !== 'customer' || message.media_group_id) return respond({ error: 'This message cannot receive a reaction' }, 400);
   const allowed = message.platform === 'telegram' ? TELEGRAM_ALLOWED : message.platform === 'messenger' ? MESSENGER_ALLOWED : [];
-  if (emoji !== null && !allowed.includes(emoji)) return respond({ error: 'That reaction is not verified on this channel' }, 400);
+  // Removal was only proven on Telegram; Messenger unreact stays closed.
+  if (emoji === null ? message.platform !== 'telegram' : !allowed.includes(emoji)) return respond({ error: 'That reaction is not verified on this channel' }, 400);
   const { data: customer } = await db.from('customer').select('id,telegram_id,messenger_id,page_id').eq('id', message.customer_id).maybeSingle();
   if (!customer) return respond({ error: 'Conversation unavailable' }, 404);
   let endpoint: string;
