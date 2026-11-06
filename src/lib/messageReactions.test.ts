@@ -17,3 +17,26 @@ describe('verified reaction rules', () => {
   it('rejects synthetic Messenger IDs', () => expect(canReact({ ...target, platform: 'messenger', messenger_mid: 'm_real-1' }, '109469038735899', '2026-11-06T07:13:01Z', Date.parse('2026-11-06T08:15:00Z'))).toBe(false));
   it('cancels long press after touch movement', () => { expect(movedTooFar({ x: 0, y: 0 }, 11, 0)).toBe(true); expect(movedTooFar({ x: 0, y: 0 }, 5, 0)).toBe(false); });
 });
+describe('per-platform reaction allowlists', () => {
+  it('offers the seven phone-confirmed Messenger emoji', () => {
+    expect(reactionChoices('messenger').map(choice => choice.emoji)).toEqual(['❤','👍','😆','😮','😢','😠','🙏']);
+  });
+  it('offers only the three phone-confirmed Telegram emoji', () => {
+    expect(reactionChoices('telegram').map(choice => choice.emoji)).toEqual(['❤','👍','🙏']);
+  });
+  it('keeps the two platform lists separate', () => {
+    expect(isAllowedReaction('messenger', '😆')).toBe(true);
+    expect(isAllowedReaction('telegram', '😆')).toBe(false);
+    expect(isAllowedReaction('telegram', '🙏')).toBe(true);
+    expect(isAllowedReaction('messenger', '🙏')).toBe(true);
+    expect(isAllowedReaction('messenger', '🎉')).toBe(false);
+  });
+  it('withholds reactions on unknown channels', () => {
+    expect(reactionChoices('instagram')).toEqual([]);
+    expect(isAllowedReaction('instagram', '❤')).toBe(false);
+  });
+  it('allows removal only where it was proven', () => {
+    expect(isAllowedReaction('telegram', null)).toBe(true);
+    expect(isAllowedReaction('messenger', null)).toBe(false);
+  });
+});
