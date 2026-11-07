@@ -82,3 +82,5 @@
 - [x] Test 🙏 on Huth Sakda Telegram: U+1F64F on message 114945 phone-confirmed
 - [x] Per-platform allowlists: picker shows Telegram ❤ 👍 🙏 and Messenger ❤ 👍 😆 😮 😢 😠 🙏; server validates against the platform resolved from the stored message; Messenger removal rejected
 - [x] 59 unit tests pass; build OK; desktop and mobile (tap + long press) pickers verified 7 on Messenger / 3 on Telegram; live server rejection matrix verified; nothing published
+
+- [ ] Reply-to Phase 1 capability matrix (in progress; see .lovable/reply-capability-evidence.md); Phase 2 gated on approval
