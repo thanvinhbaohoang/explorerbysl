@@ -4,5 +4,7 @@ Live effects so far: two real test messages sent from the sandbox (no code deplo
 - Explorer Messenger staff→customer text: reply_to.mid=m_HFvBBT…hA → HTTP 200, mid m__P92W…jqQ. Phone: PASS (user confirmed quote on latest message, 2026-11-07).
 - Telegram staff→customer photo: sendPhoto reply_parameters.message_id=114945 → ok:true, msg 115608, reply_to 114945. Phone: PASS (user confirmed quote on "Test", 2026-11-07).
 - Explorer Messenger staff→customer photo: image attachment + reply_to.mid → HTTP 200, mid m_9E8UGDj…EXw, attachment_id 4551644701716451. (First attempt failed #100 because picsum redirects; resolved final URL succeeded.) Phone: PASS (user confirmed quote, 2026-11-07).
+- Telegram staff→customer voice: sendVoice reply_parameters.message_id=114945 → ok:true, 3s voice note with caption. Phone: PASS (user confirmed quote on "Test", 2026-11-08).
+- Explorer Messenger staff→customer voice: audio attachment + reply_to.mid → HTTP 200. Phone: PASS (user confirmed quote, 2026-11-08).
 - Travel Agency: no approved Huth Sakda chat on that Page → UNAVAILABLE (needs an approved test chat).
 - Messenger incoming log keeps full events (1 of 200 has reply_to). Telegram needs temporary capture (not yet deployed).

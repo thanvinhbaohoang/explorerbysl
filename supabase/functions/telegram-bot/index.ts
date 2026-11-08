@@ -638,6 +638,28 @@ async function saveMessage(message: any) {
 
       let messageType = 'text';
       let messageText = message.text || message.caption || null;
+
+      // TEMPORARY reply_probe (Phase 1 capability test — remove after): record incoming
+      // quote data so we can verify customer→staff replies arrive with an exact message ID.
+      if (message.reply_to_message) {
+        try {
+          await supabase.from('telegram_webhook_failures').insert({
+            update_id: null,
+            chat_id: message.chat?.id ?? null,
+            customer_id: customer?.id ?? null,
+            stage: 'reply_probe',
+            message_type: message.reply_to_message.voice ? 'voice' : message.reply_to_message.photo ? 'photo' : 'text',
+            error: null,
+            raw_update: {
+              message_id: message.message_id,
+              reply_to_message_id: message.reply_to_message.message_id,
+              reply_from_bot: message.reply_to_message.from?.is_bot === true,
+            },
+          });
+        } catch (probeErr) {
+          console.error('reply_probe insert failed:', probeErr);
+        }
+      }
       
       // Capture media_group_id for album grouping (Telegram sends this for multi-photo/video albums)
       const mediaGroupId = message.media_group_id || null;
