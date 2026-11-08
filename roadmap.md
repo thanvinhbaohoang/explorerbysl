@@ -83,4 +83,4 @@
 - [x] Per-platform allowlists: picker shows Telegram ❤ 👍 🙏 and Messenger ❤ 👍 😆 😮 😢 😠 🙏; server validates against the platform resolved from the stored message; Messenger removal rejected
 - [x] 59 unit tests pass; build OK; desktop and mobile (tap + long press) pickers verified 7 on Messenger / 3 on Telegram; live server rejection matrix verified; nothing published
 
-- [ ] Reply-to Phase 1 capability matrix (in progress; see .lovable/reply-capability-evidence.md); Phase 2 gated on approval
+- [ ] Reply-to Phase 1: outgoing text/photo/voice phone-confirmed on Telegram and Explorer Messenger; incoming six cells UNTESTED (latest messages are plain `Hi`, without provider quote IDs). Travel Agency needs an approved chat. Temporary Telegram capture removed; Phase 2 gated on completed evidence and approval. See `.lovable/reply-capability-evidence.md`.
