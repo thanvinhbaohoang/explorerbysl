@@ -15,6 +15,14 @@ Live effects: six real test messages sent to the approved chats; a temporary Tel
 - Explorer by SL Messenger: customer message `m_ePBgqr-MV_g5fNROijcUcPpTTJLtw6WDp_TOK0H2qfSb5TK3oy62yLJny3xBaLmvZv4m3pE7tUq0H1M8TvS2XA`, text `Hi`, received 02:40:49 UTC (09:40:49 Phnom Penh). Raw provider event contains no `reply_to`. Correct-shape query found no quoted events for the approved recipient.
 - These are successful ordinary deliveries, not evidence of native quoting. No target ID can be inferred from their text or time.
 
+### Follow-up at 09:44 Phnom Penh
+
+User reports sending a quote, photo and voice. All six new messages arrived and are saved:
+- Telegram private chat: update 408086200 / message 115969 (photo), update 408086201 / message 115970 (2-second voice), update 408086202 / message 115971 (`Testing testing`). Complete logged provider messages contain no `reply_to_message` or other quoted-target field.
+- Explorer Messenger: photo `m_LBNs-CmqYCsJwyGycO0llPpTTJLtw6WDp_TOK0H2qfSf-skkxXWUtbhiZkTuBQ-ucz6UaMVqoqZfJ0iwktGlEQ` at 09:43:40, audio `m_cy4RVeyHl-Ee1k-fAd8RQvpTTJLtw6WDp_TOK0H2qfSk1er7YdPJ7OZ1K8jWyJ7SAe0gjBp-XNSveFi_EeeWNw` at 09:43:49, text `m_fakoRjiMQp6N1WQLemlqmvpTTJLtw6WDp_TOK0H2qfRvC6dKgSLro2YTZsVmvjJBY5a5xdD5kA7DD2GrgRVuGg` (`Testing`) at 09:44:26. Raw message objects have no `reply_to` field.
+- Messenger media rows currently append `-0` to the raw provider MID; a future exact-target implementation must preserve canonical provider IDs separately rather than assume those synthetic row values are valid targets.
+- Incoming quoting remains UNTESTED, not a platform FAIL: receiving-phone screenshot of a sent message with a visible quoted original is needed to distinguish a native quote from an ordinary send. No target guessed; no new deployment or provider send performed in this follow-up.
+
 | Channel | Staff→customer text | Staff→customer photo | Staff→customer voice | Customer→staff quote of text | Customer→staff quote of photo | Customer→staff quote of voice |
 |---|---|---|---|---|---|---|
 | Telegram private chat | PASS: user phone confirmation | PASS: user phone confirmation | PASS: user phone confirmation | UNTESTED: no quote event | UNTESTED: no quote event | UNTESTED: no quote event |
