@@ -644,7 +644,7 @@ async function saveMessage(message: any) {
       if (message.reply_to_message) {
         try {
           await supabase.from('telegram_webhook_failures').insert({
-            update_id: update.update_id ?? null,
+            update_id: null,
             chat_id: message.chat?.id ?? null,
             customer_id: customer?.id ?? null,
             stage: 'reply_probe',
