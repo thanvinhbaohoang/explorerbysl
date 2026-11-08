@@ -23,4 +23,8 @@ Live effects: six real test messages sent to the approved chats; a temporary Tel
 
 Restoration: temporary Telegram capture removed from source; deployment and verification recorded below. No subscriptions changed in this verification session. No diagnostic rows existed to delete. No additional test messages sent, business data altered or publication performed.
 
+- Restoration deployed successfully on 2026-11-08; submitted source SHA-256 `8800b95b77d69dc1a4eb0625bdf2240077c2e6a5377fc4f31df9382700b4e35c`.
+- Post-deployment GET health check: HTTP 200, `ExplorerBySLBot` running. This proves endpoint availability, not incoming-quote capability.
+- Existing suite: 59/59 tests passed; preview build log reports `build OK`. No reply UI exists to test on desktop/mobile at this phase.
+
 Gate: Phase 1 remains incomplete; Phase 2 remains unapproved. A fresh bounded Telegram capture will be needed for the next coordinated incoming-quote test. Do not call this feature complete or safe to publish.
