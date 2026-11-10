@@ -84,3 +84,9 @@
 - [x] 59 unit tests pass; build OK; desktop and mobile (tap + long press) pickers verified 7 on Messenger / 3 on Telegram; live server rejection matrix verified; nothing published
 
 - [ ] Reply-to Phase 1: outgoing text/photo/voice phone-confirmed on Telegram and Explorer Messenger; incoming six cells UNTESTED (09:44 follow-up text/photo/voice all arrived, but raw events lack quoted-target IDs; needs phone screenshot showing native quote). Travel Agency needs an approved chat. Temporary Telegram capture removed; Phase 2 gated on completed evidence and approval. See `.lovable/reply-capability-evidence.md`.
+
+## Outgoing replies — reduced scope approved 2026-11-10
+- [x] User explicitly chose outgoing replies only: Telegram and Explorer by SL Messenger; incoming quotes and Travel Agency excluded.
+- [ ] Exact-target server validation, native text/photo/voice delivery and retry/duplicate protection.
+- [ ] Desktop/mobile reply selection and draft quote bar; unchanged ordinary sends and Saved libraries.
+- [ ] Tests, live authenticated verification, preservation and release report; no publication.

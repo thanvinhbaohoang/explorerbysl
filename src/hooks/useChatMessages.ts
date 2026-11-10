@@ -81,6 +81,9 @@ export interface Message {
   location_title?: string | null;
   location_live_period?: number | null;
   isPending?: boolean;
+  reply_to_message_id?: string | null;
+  reply_to_provider_id?: string | null;
+  reply_snapshot?: { sender?: string; text?: string; media_type?: string } | null;
 }
 
 export interface Customer {

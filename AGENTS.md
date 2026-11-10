@@ -8,3 +8,4 @@
 - Saved Voice stores one canonical MP3 per entry in the private `saved-voice-media` bucket (`{creator}/{id}/`), writes only via RPCs; selecting loads a local copy into the voice draft and Telegram sends it with `strict_voice` (no sendAudio fallback) — keeps the library private and delivery voice-style.
 - `chat-attachments` stays a public bucket so customers can open sent media by link, but its records can only be listed, added, replaced or deleted by approved staff (has_role); server functions write with service access — no anonymous listing.
 - Message reactions use a dedicated staff-validated function with server-resolved provider IDs and server-owned state/leases; only provider-confirmed results become badges, and historical IDs are never guessed.
+- Outgoing quoted replies use a separate staff-validated delivery function and persistent request IDs; ordinary sends stay unchanged, and ambiguous provider outcomes cannot be automatically resent.
