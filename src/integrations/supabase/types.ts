@@ -443,6 +443,9 @@ export type Database = {
           photo_file_id: string | null
           photo_url: string | null
           platform: string
+          reply_snapshot: Json | null
+          reply_to_message_id: string | null
+          reply_to_provider_id: string | null
           sender_type: string | null
           sent_by_name: string | null
           telegram_id: number | null
@@ -479,6 +482,9 @@ export type Database = {
           photo_file_id?: string | null
           photo_url?: string | null
           platform?: string
+          reply_snapshot?: Json | null
+          reply_to_message_id?: string | null
+          reply_to_provider_id?: string | null
           sender_type?: string | null
           sent_by_name?: string | null
           telegram_id?: number | null
@@ -515,6 +521,9 @@ export type Database = {
           photo_file_id?: string | null
           photo_url?: string | null
           platform?: string
+          reply_snapshot?: Json | null
+          reply_to_message_id?: string | null
+          reply_to_provider_id?: string | null
           sender_type?: string | null
           sent_by_name?: string | null
           telegram_id?: number | null
@@ -536,6 +545,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_reply_to_message_id_fkey"
+            columns: ["reply_to_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
             referencedColumns: ["id"]
           },
         ]
@@ -566,6 +582,64 @@ export type Database = {
           received_at?: string
         }
         Relationships: []
+      }
+      outgoing_reply_requests: {
+        Row: {
+          created_at: string
+          customer_id: string
+          id: string
+          payload_hash: string
+          provider_message_id: string | null
+          result_message_id: string | null
+          status: string
+          target_message_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          id: string
+          payload_hash: string
+          provider_message_id?: string | null
+          result_message_id?: string | null
+          status?: string
+          target_message_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          id?: string
+          payload_hash?: string
+          provider_message_id?: string | null
+          result_message_id?: string | null
+          status?: string
+          target_message_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "outgoing_reply_requests_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outgoing_reply_requests_result_message_id_fkey"
+            columns: ["result_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "outgoing_reply_requests_target_message_id_fkey"
+            columns: ["target_message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       roles: {
         Row: {
