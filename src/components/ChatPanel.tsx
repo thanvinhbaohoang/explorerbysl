@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useChatMessages, Customer, Message } from "@/hooks/useChatMessages";
 import { useMessageReactions } from "@/hooks/useMessageReactions";
 import { MessageReactionControl } from "@/components/MessageReactionControl";
+import { useQuotedReply } from "@/hooks/useQuotedReply";
+import { canReplyToMessage, replyExcerpt } from "@/lib/messageReplies";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -84,6 +86,7 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
   const prevPlatformFilterRef = useRef<'telegram' | 'messenger' | null | undefined>(undefined);
   const pendingScrollToBottomRef = useRef(false);
   const [replyText, setReplyText] = useState("");
+  const [quoteTarget, setQuoteTarget] = useState<Message | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -206,7 +209,13 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
     isSendingSavedVoice,
     togglePreviewPlayback,
     formatDuration,
+    replyCustomer,
+    uploadFileToStorage,
+    setMessages,
   } = useChatMessages(customer);
+  const quotedReply = useQuotedReply(uploadFileToStorage, message => setMessages(previous => previous.some(row => row.id === message.id) ? previous : [...previous, message]));
+  useEffect(() => { setQuoteTarget(null); }, [customer.id, platformFilter]);
+  const chooseReply = (message: Message) => { setQuoteTarget(message); setTimeout(() => replyInputRef.current?.focus(), 0); };
   const reactions = useMessageReactions([customer.id, ...linkedCustomerIds]);
   const reactionLatestMessages = useMemo(() => {
     const latest: Record<string, string> = {};
@@ -451,9 +460,21 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
     setFilePreviews([]);
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
+    if (quotedReply.busy) return;
     if (isMessengerOutsideWindow) {
       toast.error("Cannot send message: The 24-hour messaging window has expired.");
+      return;
+    }
+    if (quoteTarget) {
+      if (selectedFiles.length > 1 || (selectedFiles[0] && !selectedFiles[0].type.startsWith('image/'))) {
+        toast.error('Quoted replies support text, one photo or a voice note. Cancel the quote to send an album or other files.');
+        return;
+      }
+      if (!replyText.trim() && selectedFiles.length === 0) return;
+      if (await quotedReply.send(quoteTarget, replyText, selectedFiles[0])) {
+        setQuoteTarget(null); setReplyText(''); clearAllFiles();
+      }
       return;
     }
     if (selectedFiles.length > 0) {
@@ -753,8 +774,10 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
                 />
               ) : (
                 <MessageReactionControl key={item.message.id} message={item.message} rows={reactions.rows} react={reactions.react} ready={reactions.ready}
+                  onReply={!quotedReply.busy && !isMessengerOutsideWindow && canReplyToMessage(item.message, (replyCustomer || customer).id, (replyCustomer || customer).page_id) ? () => chooseReply(item.message) : undefined}
                   pageId={item.message.customer_id === customer.id ? customer.page_id : linkedCustomersMap[item.message.customer_id]?.page_id}
                   latestCustomerTimestamp={reactionLatestMessages[item.message.customer_id]}>
+                {item.message.reply_snapshot && <div className="mb-1 rounded border-l-2 border-primary bg-muted px-3 py-2 text-xs"><span className="font-medium">{item.message.reply_snapshot.sender || 'Customer'}</span><p className="truncate">{item.message.reply_snapshot.text || 'Original message unavailable'}</p></div>}
                 <MessageBubble 
                   message={item.message} 
                   customer={customer}
@@ -771,6 +794,7 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
 
       {/* Input area */}
       <div className="flex-shrink-0 border-t p-4 pb-safe">
+        {quoteTarget && <div className="mb-3 flex min-w-0 items-center gap-2 border-l-2 border-primary bg-muted px-3 py-2" aria-label="Reply draft"><div className="min-w-0 flex-1"><p className="text-xs font-medium">Replying to customer</p><p className="truncate text-sm text-muted-foreground">{replyExcerpt(quoteTarget)}</p></div><Button variant="ghost" size="icon" aria-label="Cancel reply" disabled={quotedReply.busy} onClick={() => setQuoteTarget(null)}><X className="h-4 w-4" /></Button></div>}
         {/* Hidden file inputs - now with multiple */}
         <input type="file" id="chat-image-upload" className="hidden" accept="image/*" multiple onChange={handleFileSelect} />
         <input type="file" id="chat-video-upload" className="hidden" accept="video/*" multiple onChange={handleFileSelect} />
@@ -862,10 +886,10 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
                 </div>
                 <span className="text-sm font-medium tabular-nums">{formatDuration(recordingDuration)}</span>
               </div>
-              <Button variant="outline" size="icon" onClick={discardRecording} disabled={isSendingSavedVoice}>
+              <Button variant="outline" size="icon" onClick={discardRecording} disabled={isSendingSavedVoice || quotedReply.busy}>
                 <Trash2 className="h-4 w-4" />
               </Button>
-              <Button size="icon" onClick={sendVoiceClip} disabled={isSendingSavedVoice || isMessengerOutsideWindow} aria-label="Send voice message">
+              <Button size="icon" onClick={async () => { if (!quoteTarget) { await sendVoiceClip(); return; } if (recordedAudio && await quotedReply.send(quoteTarget, '', recordedAudio.file, recordingDuration)) { discardRecording(); setQuoteTarget(null); } }} disabled={isSendingSavedVoice || quotedReply.busy || isMessengerOutsideWindow} aria-label="Send voice message">
                 <Send className="h-4 w-4" />
               </Button>
             </>
@@ -915,7 +939,7 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
                 onChange={(e) => setReplyText(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
-                disabled={isMessengerOutsideWindow}
+                disabled={isMessengerOutsideWindow || quotedReply.busy}
                 className="flex-1 min-w-0 min-h-[40px] max-h-[120px] resize-none py-2"
                 rows={1}
                 autoFocus
@@ -923,7 +947,8 @@ export const ChatPanel = ({ customer, onBack, onSwitchCustomer }: ChatPanelProps
               
               <Button 
                 onClick={handleSend} 
-                disabled={(!replyText.trim() && selectedFiles.length === 0) || isMessengerOutsideWindow}
+                disabled={(!replyText.trim() && selectedFiles.length === 0) || isMessengerOutsideWindow || quotedReply.busy}
+                aria-label="Send message"
                 size="icon"
               >
                 <Send className="h-4 w-4" />
